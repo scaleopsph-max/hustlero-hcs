@@ -1,0 +1,36 @@
+# Dependencies and build output
+node_modules/
+.next/
+dist/
+build/
+coverage/
+.turbo/
+.wrangler/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+*.pem
+*.key
+
+# Supabase local state
+supabase/.branches/
+supabase/.temp/
+
+# Logs and local artifacts
+*.log
+*.tsbuildinfo
+playwright-report/
+test-results/
+artifacts/private/
+exports/
+backups/
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
