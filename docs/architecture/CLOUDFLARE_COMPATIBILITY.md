@@ -15,7 +15,7 @@ The four React applications retain ordinary Next.js scripts as a development fal
 | POS | Pass | Pass | `hustlero-hcs-pos` |
 | Super Admin | Pass | Pass | `hustlero-hcs-admin` |
 
-The API Worker dry-run also passes as `hustlero-hcs-api`.
+The API Worker dry-run also passes as `hustlero-hcs-api`, including its Supabase JWKS verifier and PostgreSQL driver. Its live `HYPERDRIVE` binding is intentionally deferred until the dedicated development database credential exists.
 
 ## Known beta behavior
 

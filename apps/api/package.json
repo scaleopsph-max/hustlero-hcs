@@ -12,10 +12,14 @@
   "dependencies": {
     "@hcs/contracts": "*",
     "@hcs/domain": "*",
-    "hono": "4.13.8"
+    "hono": "4.13.8",
+    "jose": "6.2.12",
+    "pg": "8.23.0",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260921.1",
+    "@types/pg": "8.23.1",
     "typescript": "5.9.3",
     "wrangler": "4.136.0"
   }

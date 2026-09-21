@@ -13,6 +13,7 @@ Read these documents before making changes:
 - [Locked product specification](docs/PROJECT_SPEC.md)
 - [Foundation index](docs/FOUNDATION.md)
 - [System architecture](docs/architecture/SYSTEM_ARCHITECTURE.md)
+- [Authentication and database connectivity](docs/architecture/AUTH_AND_DATABASE_CONNECTIVITY.md)
 - [MVP scope](docs/product/MVP_SCOPE.md)
 - [Database blueprint](docs/database/DATABASE_BLUEPRINT.md)
 - [Permissions and security](docs/security/PERMISSIONS_AND_SECURITY.md)
@@ -33,7 +34,7 @@ npm run check
 
 Start an individual application with `npm run dev:web`, `npm run dev:backoffice`, `npm run dev:pos`, `npm run dev:admin`, or `npm run dev:api`.
 
-The Cloudflare compatibility builds are available through `npm run build:cloudflare`. A Docker-compatible runtime is required before running `npx supabase start`, `npx supabase db reset`, or the database test suite.
+The Cloudflare compatibility builds are available through `npm run build:cloudflare`. A Docker-compatible runtime is required before running `npx supabase start`, `npx supabase db reset`, or the database test suite locally; the same database checks also run in GitHub CI.
 
 ## Repository
 

@@ -30,11 +30,14 @@ Last updated: 2026-09-21
 - Formatting, lint, strict typecheck, Vitest, dependency audit, and CI workflow established
 - Supabase CLI project initialized with explicit Data API opt-in behavior
 - First private-schema tenancy migration and pgTAP foundation test versioned
+- GitHub CI successfully completed a fresh Supabase start, database reset, migration, and all 14 pgTAP assertions
+- Supabase JWKS access-token verification implemented for the API
+- Protected `GET /v1/me` endpoint implemented with server-resolved tenant, branch, permission, and entitlement access
+- Cloudflare Hyperdrive/PostgreSQL session-access repository implemented with parameterized SQL
 - Dependency audit reports zero known vulnerabilities
 
 ## Not started
 
-- Authenticated Supabase session verification in the API
 - Tenant onboarding vertical slice
 - Catalog, inventory, register, and sales implementation
 - Cloudflare Worker creation
@@ -42,13 +45,15 @@ Last updated: 2026-09-21
 
 ## Current blockers/gates
 
-- Docker-compatible runtime is not installed, so local `supabase db reset`, pgTAP execution, and migration linting remain pending
-- The local project is intentionally not linked to or applied against remote Supabase until the migration passes locally
+- Docker-compatible runtime is not installed locally; database verification currently runs in GitHub CI
+- The migration has passed in an isolated CI Supabase instance but remains intentionally unapplied to the remote development project
+- Supabase asymmetric JWT signing must be confirmed before deploying the JWKS verifier
+- A dedicated database credential and development Hyperdrive resource are still required; no credential or binding ID is stored in the repository
 - vinext is beta; builds pass, while route classification remains reported as unknown for the current static pages
 
 ## Next safe action
 
-Install Docker Desktop or another Docker-compatible runtime, run the first migration and database tests locally, then implement verified Supabase token handling and the tenant onboarding vertical slice.
+Configure the development Supabase signing key and Cloudflare Hyperdrive resource, smoke-test the authenticated session context, then build the tenant onboarding vertical slice.
 
 ## Production state
 
