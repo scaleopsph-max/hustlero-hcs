@@ -27,8 +27,8 @@ select ok(
 );
 select is(
   (select count(*)::integer from pg_policies where schemaname = 'app'),
-  3,
-  'only the three reviewed tenant read policies are present'
+  11,
+  'only the reviewed browser and API context policies are present'
 );
 
 select * from finish();

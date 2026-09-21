@@ -34,6 +34,8 @@ Last updated: 2026-09-21
 - Supabase JWKS access-token verification implemented for the API
 - Protected `GET /v1/me` endpoint implemented with server-resolved tenant, branch, permission, and entitlement access
 - Cloudflare Hyperdrive/PostgreSQL session-access repository implemented with parameterized SQL
+- Supabase project confirmed to use an active asymmetric ECC P-256 JWT signing key
+- Versioned no-login Hyperdrive and column-limited API context-reader database roles added with pgTAP coverage
 - Dependency audit reports zero known vulnerabilities
 
 ## Not started
@@ -47,8 +49,8 @@ Last updated: 2026-09-21
 
 - Docker-compatible runtime is not installed locally; database verification currently runs in GitHub CI
 - The migration has passed in an isolated CI Supabase instance but remains intentionally unapplied to the remote development project
-- Supabase asymmetric JWT signing must be confirmed before deploying the JWKS verifier
-- A dedicated database credential and development Hyperdrive resource are still required; no credential or binding ID is stored in the repository
+- The dedicated database role must be enabled with a generated password after its migration passes CI; no credential is stored in the repository
+- A development Hyperdrive resource is still required; no credential or binding ID is stored in the repository
 - vinext is beta; builds pass, while route classification remains reported as unknown for the current static pages
 
 ## Next safe action

@@ -27,7 +27,7 @@ Client-provided tenant IDs, location IDs, roles, permissions, and entitlements a
 ## Deployment prerequisites
 
 1. Confirm or migrate the development Supabase project to asymmetric JWT signing.
-2. Create a dedicated database credential with the minimum privileges needed by the API.
+2. Enable the versioned `hcs_hyperdrive` role with a generated password. It inherits only the column-level `hcs_api_context_reader` grants required by `GET /v1/me` and cannot bypass RLS.
 3. Create the development Hyperdrive resource using the Supabase direct or pooler connection details.
 4. Add the resulting Hyperdrive binding ID and `SUPABASE_URL` to the development Worker environment.
 5. Repeat with isolated resources for staging and production; never reuse development credentials.
