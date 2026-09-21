@@ -16,8 +16,6 @@ exception
 end
 $$;
 
-alter role hcs_api_context_reader nologin nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
-alter role hcs_hyperdrive nologin nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
 alter role hcs_hyperdrive set statement_timeout = '5s';
 alter role hcs_hyperdrive set idle_in_transaction_session_timeout = '10s';
 alter role hcs_hyperdrive set search_path = pg_catalog;
