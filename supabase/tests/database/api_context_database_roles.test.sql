@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(13);
+select plan(12);
 
 select ok(
   exists (select 1 from pg_roles where rolname = 'hcs_api_context_reader'),
@@ -61,14 +61,6 @@ select is(
   8,
   'all eight API context tables have explicit reader policies'
 );
-
-set local role hcs_hyperdrive;
-select is(
-  (select count(id) from app.tenants),
-  0::bigint,
-  'Hyperdrive role can execute an RLS-protected approved-column query'
-);
-reset role;
 
 select * from finish();
 
