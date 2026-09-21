@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HCS Super Admin dashboard</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:'Figtree','Segoe UI',system-ui,sans-serif;color:#F5F5F6;background:#08080A;font-variant-numeric:tabular-nums}
+button,input{font-family:inherit}
+a{color:#E2C15F}a:hover{color:#F5E9BE}
+.g{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);box-shadow:0 8px 32px rgba(0,0,0,0.35),inset 0 1px 0 rgba(255,255,255,0.10);-webkit-backdrop-filter:blur(24px) saturate(140%);backdrop-filter:blur(24px) saturate(140%)}
+.gs{background:rgba(255,255,255,0.10);border:1px solid rgba(255,255,255,0.18);box-shadow:0 16px 48px rgba(0,0,0,0.45),inset 0 1px 0 rgba(255,255,255,0.16);-webkit-backdrop-filter:blur(32px) saturate(150%);backdrop-filter:blur(32px) saturate(150%)}
+.gg{background:rgba(212,175,55,0.14);border:1px solid rgba(212,175,55,0.45);box-shadow:0 8px 32px rgba(0,0,0,0.35),inset 0 1px 0 rgba(255,255,255,0.14);-webkit-backdrop-filter:blur(24px) saturate(140%);backdrop-filter:blur(24px) saturate(140%)}
+</style>
+</helmet>
+<div style="position:relative;overflow:hidden;isolation:isolate;width:1440px;height:1040px;padding:16px;display:flex;gap:16px;background:#08080A;">
+  <div style="position:absolute;z-index:-1;left:-160px;top:-140px;width:560px;height:560px;border-radius:50%;background:#D4AF37;opacity:0.24;filter:blur(150px);pointer-events:none;"></div>
+  <div style="position:absolute;z-index:-1;right:-120px;top:120px;width:560px;height:560px;border-radius:50%;background:#6B6B75;opacity:0.32;filter:blur(150px);pointer-events:none;"></div>
+  <div style="position:absolute;z-index:-1;left:560px;top:700px;width:520px;height:520px;border-radius:50%;background:#D4AF37;opacity:0.16;filter:blur(150px);pointer-events:none;"></div>
+
+  <div class="g" style="width:248px;flex:none;border-radius:24px;color:#D6D6DA;display:flex;flex-direction:column;gap:18px;padding:20px 14px;">
+    <div style="display:flex;align-items:center;gap:12px;padding:0 6px;">
+      <svg viewBox="0 0 32 32" role="img" aria-label="HCS logo" style="width:36px;height:36px;flex:none"><rect width="32" height="32" rx="8" style="fill:#D4AF37"></rect><path d="M10 8v16M22 8v16" style="fill:none;stroke:#0A0A0B;stroke-width:3.5;stroke-linecap:round"></path><path d="M10 16h12" style="fill:none;stroke:#0A0A0B;stroke-width:3.5;stroke-linecap:round"></path></svg>
+      <div style="display:flex;flex-direction:column;"><span style="font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:18px;line-height:20px;font-weight:700;color:#fff;">HCS Super Admin</span><span style="font-size:12px;color:#B4B4BA;">Platform operators only</span></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:2px;">
+      <sc-for list="{{nav}}" as="n" hint-placeholder-count="14">
+        <a href="#" style="display:flex;align-items:center;gap:12px;height:40px;padding:0 12px;border-radius:12px;text-decoration:none;font-size:14px;font-weight:500;background:{{n.bg}};color:{{n.fg}};">
+          <svg viewBox="0 0 24 24" style="width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="{{n.icon}}"></path></svg>
+          <span style="flex-grow:1;">{{n.label}}</span>
+          <sc-if value="{{n.badge}}" hint-placeholder-val="{{false}}">
+            <span style="min-width:22px;height:22px;padding:0 7px;border-radius:999px;background:#C93B33;color:#fff;font-size:12px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;">{{n.badge}}</span>
+          </sc-if>
+        </a>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:16px;">
+    <div class="gg" style="flex:none;min-height:56px;border-radius:18px;padding:10px 20px;display:flex;align-items:center;gap:12px;font-size:14px;line-height:20px;color:#F5E9BE;">
+      <svg viewBox="0 0 24 24" style="width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round"><path d="M12 3l8 3v6c0 4.5-3.2 8.2-8 9-4.8-.8-8-4.5-8-9V6z M8.5 12l2.5 2.5 4.5-5"></path></svg>
+      <span>You are in the platform console. Tenant data opens only through Support access with a reason or ticket. It is read-only by default and every view is audited.</span>
+    </div>
+    <div class="g" style="height:64px;flex:none;border-radius:20px;padding:0 20px;display:flex;align-items:center;justify-content:space-between;">
+      <h1 style="margin:0;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:24px;line-height:28px;font-weight:700;color:#fff;">Platform dashboard</h1>
+      <div style="display:flex;align-items:center;gap:14px;">
+        <span style="display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:999px;background:#D4AF37;color:#0A0A0B;font-size:13px;font-weight:700;">Production</span>
+        <div style="display:flex;align-items:center;gap:10px;"><div style="width:40px;height:40px;border-radius:999px;background:rgba(255,255,255,0.12);color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;">PA</div><div style="display:flex;flex-direction:column;"><span style="font-size:14px;font-weight:600;color:#fff;">Platform admin</span><span style="font-size:12px;color:#B4B4BA;">MFA verified</span></div></div>
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 4px 0;"><h2 style="margin:0;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:20px;line-height:24px;font-weight:700;color:#fff;">System health</h2><span style="display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:999px;background:rgba(108,168,232,0.16);color:#9CC6F2;font-size:12px;font-weight:600;">Sample data</span></div>
+    <div style="display:grid;grid-template-columns:repeat(3, minmax(0,1fr));gap:12px;">
+      <sc-for list="{{services}}" as="s" hint-placeholder-count="9">
+        <div class="g" style="border-radius:18px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:76px;">
+          <div style="display:flex;flex-direction:column;min-width:0;"><span style="font-size:15px;font-weight:600;color:#fff;">{{s.name}}</span><span style="font-size:13px;color:#B4B4BA;">{{s.metric}}</span></div>
+          <span style="flex:none;display:inline-flex;align-items:center;height:26px;padding:0 12px;border-radius:999px;background:{{s.bg}};color:{{s.fg}};font-size:12px;font-weight:600;">{{s.status}}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display:flex;gap:12px;">
+      <sc-for list="{{metrics}}" as="m" hint-placeholder-count="6">
+        <div class="g" style="flex:1 1 0;min-width:0;border-radius:18px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;">
+          <span style="font-size:13px;color:#B4B4BA;">{{m.label}}</span>
+          <span style="font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:24px;line-height:30px;font-weight:700;color:{{m.color}};">{{m.value}}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display:flex;gap:16px;align-items:stretch;">
+      <div class="g" style="flex:1 1 0;min-width:0;border-radius:24px;padding:20px;display:flex;flex-direction:column;gap:4px;">
+        <h3 style="margin:0 0 8px;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:18px;line-height:22px;font-weight:700;color:#fff;">Jobs by state</h3>
+        <sc-for list="{{jobs}}" as="j" hint-placeholder-count="5">
+          <div style="display:flex;justify-content:space-between;align-items:center;min-height:44px;border-top:1px solid rgba(255,255,255,0.08);font-size:14px;">
+            <span style="display:inline-flex;align-items:center;height:26px;padding:0 12px;border-radius:999px;background:{{j.bg}};color:{{j.fg}};font-size:12px;font-weight:600;">{{j.state}}</span>
+            <span style="font-weight:700;color:#fff;">{{j.count}}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <div class="g" style="flex:1.5 1 0;min-width:0;border-radius:24px;padding:20px;display:flex;flex-direction:column;gap:4px;">
+        <h3 style="margin:0 0 8px;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:18px;line-height:22px;font-weight:700;color:#fff;">Tenants needing attention</h3>
+        <div style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1.3fr) 96px;gap:12px;padding:8px 0;border-top:1px solid rgba(255,255,255,0.12);font-size:12px;font-weight:600;color:#B4B4BA;"><span>Tenant</span><span>Issue</span><span>Status</span></div>
+        <sc-for list="{{tenants}}" as="t" hint-placeholder-count="3">
+          <div style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1.3fr) 96px;gap:12px;align-items:center;min-height:60px;border-top:1px solid rgba(255,255,255,0.08);font-size:14px;">
+            <div style="display:flex;flex-direction:column;"><span style="font-weight:600;color:#fff;">{{t.name}}</span><span style="font-size:12px;color:#B4B4BA;">{{t.plan}}</span></div>
+            <span style="line-height:20px;color:#E9E9EB;">{{t.issue}}</span>
+            <span style="display:inline-flex;align-items:center;justify-self:start;height:24px;padding:0 10px;border-radius:999px;background:{{t.bg}};color:{{t.fg}};font-size:12px;font-weight:600;">{{t.status}}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <div class="g" style="flex:1.3 1 0;min-width:0;border-radius:24px;padding:20px;display:flex;flex-direction:column;gap:4px;">
+        <h3 style="margin:0 0 8px;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:18px;line-height:22px;font-weight:700;color:#fff;">Support access requests</h3>
+        <sc-for list="{{requests}}" as="r" hint-placeholder-count="2">
+          <div style="display:flex;flex-direction:column;gap:10px;padding:14px 0;border-top:1px solid rgba(255,255,255,0.08);">
+            <div style="display:flex;flex-direction:column;gap:2px;"><span style="font-size:14px;font-weight:600;color:#fff;">{{r.tenant}}</span><span style="font-size:13px;line-height:19px;color:#E9E9EB;">{{r.reason}}</span><span style="font-size:12px;color:#B4B4BA;">{{r.scope}}</span></div>
+            <div style="display:flex;gap:8px;"><button style="height:40px;padding:0 14px;border:0;border-radius:10px;background:#F5F5F6;color:#0A0A0B;font-size:13px;font-weight:600;">Grant read-only</button><button style="height:40px;padding:0 14px;border:1px solid rgba(255,255,255,0.24);border-radius:10px;background:rgba(255,255,255,0.08);color:#fff;font-size:13px;font-weight:600;">Decline</button></div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1040}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const I = {
+      dash: 'M3 3h7v9H3z M14 3h7v5h-7z M14 12h7v9h-7z M3 16h7v5H3z',
+      building: 'M4 21V7l8-4 8 4v14 M9 21v-6h6v6 M9 10h.01 M15 10h.01',
+      card: 'M3 6h18v12H3z M3 10h18 M7 15h3',
+      layers: 'M12 3l9 5-9 5-9-5z M3 13l9 5 9-5',
+      sliders: 'M4 7h9 M17 7h3 M4 17h3 M11 17h9 M15 4v6 M9 14v6',
+      shield: 'M12 3l8 3v6c0 4.5-3.2 8.2-8 9-4.8-.8-8-4.5-8-9V6z',
+      user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1',
+      bars: 'M5 20V11 M12 20V4 M19 20v-6 M3 20h18',
+      server: 'M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3z M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6 M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
+      plug: 'M9 3v5 M15 3v5 M6 8h12v3a6 6 0 0 1-12 0z M12 17v4',
+      warn: 'M12 4l9.5 16.5h-19z M12 10v4 M12 17.2v.1',
+      activity: 'M3 12h4l3-8 4 16 3-8h4',
+      mega: 'M4 10v4h3l7 4V6l-7 4z M17 9a4 4 0 0 1 0 6'
+    };
+    const item = (label, icon, extra) => Object.assign({ label: label, icon: icon, bg: 'transparent', fg: '#D6D6DA', badge: '' }, extra || {});
+    const ok = { bg: 'rgba(74,196,128,0.16)', fg: '#7EE0A6' };
+    const deg = { bg: 'rgba(212,175,55,0.18)', fg: '#E9CB6E' };
+    const inc = { bg: 'rgba(240,98,91,0.16)', fg: '#FF9A94' };
+    return {
+      nav: [
+        item('Platform dashboard', I.dash, { bg: 'rgba(212,175,55,0.16)', fg: '#F5E9BE' }),
+        item('Tenants', I.building),
+        item('Subscriptions and add-ons', I.layers),
+        item('Billing', I.card),
+        item('Feature management', I.sliders),
+        item('Support access', I.shield, { badge: '2' }),
+        item('Platform admins', I.user),
+        item('Usage and limits', I.bars),
+        item('System health', I.server),
+        item('Integration health', I.plug),
+        item('Jobs and queues', I.layers),
+        item('Incidents', I.warn, { badge: '1' }),
+        item('Platform audit', I.activity),
+        item('Announcements', I.mega)
+      ],
+      services: [
+        Object.assign({ name: 'API', metric: 'p95 182 ms', status: 'Healthy' }, ok),
+        Object.assign({ name: 'Database', metric: '142 of 400 connections', status: 'Healthy' }, ok),
+        Object.assign({ name: 'Redis', metric: '1.2 ms round trip', status: 'Healthy' }, ok),
+        Object.assign({ name: 'Queue', metric: '1,840 jobs waiting', status: 'Degraded' }, deg),
+        Object.assign({ name: 'Object storage', metric: 'Reads and writes normal', status: 'Healthy' }, ok),
+        Object.assign({ name: 'Email', metric: 'No failures in the last hour', status: 'Healthy' }, ok),
+        Object.assign({ name: 'Back Office', metric: 'Error rate 0.2%', status: 'Healthy' }, ok),
+        Object.assign({ name: 'POS', metric: 'Error rate 0.1%', status: 'Healthy' }, ok),
+        Object.assign({ name: 'Marketplace connectors', metric: 'Shopee sync failing since 1:40 PM', status: 'Incident' }, inc)
+      ],
+      metrics: [
+        { label: 'API latency, p95', value: '182 ms', color: '#FFFFFF' },
+        { label: 'Error rate', value: '0.21%', color: '#FFFFFF' },
+        { label: 'DB connections', value: '142 / 400', color: '#FFFFFF' },
+        { label: 'Failed jobs', value: '37', color: '#F5B876' },
+        { label: 'Queue backlog', value: '1,840', color: '#E9CB6E' },
+        { label: 'Sync failures', value: '18', color: '#FF9A94' }
+      ],
+      jobs: [
+        { state: 'Pending', count: '1,840', bg: 'rgba(255,255,255,0.08)', fg: '#D6D6DA' },
+        { state: 'Processing', count: '64', bg: 'rgba(108,168,232,0.16)', fg: '#9CC6F2' },
+        { state: 'Failed', count: '37', bg: 'rgba(240,160,75,0.16)', fg: '#F5B876' },
+        { state: 'Retrying', count: '21', bg: 'rgba(212,175,55,0.18)', fg: '#E9CB6E' },
+        { state: 'Dead letter', count: '4', bg: 'rgba(240,98,91,0.16)', fg: '#FF9A94' }
+      ],
+      tenants: [
+        Object.assign({ name: 'Kape Kalye Co.', plan: 'Free core, Shopee', issue: 'Shopee order sync failing since 1:40 PM', status: 'Incident' }, inc),
+        Object.assign({ name: 'Bayan Hardware', plan: 'Free core, Warehouse trial', issue: 'Warehouse trial ends in 3 days', status: 'Trial' }, deg),
+        { name: 'Luntian Mart', plan: 'Free core, Finance Pro', issue: 'Invoice unpaid. History stays available.', status: 'Suspended', bg: 'rgba(255,255,255,0.08)', fg: '#D6D6DA' }
+      ],
+      requests: [
+        { tenant: 'Bayan Hardware', reason: 'Ticket SUP-2041: sales report does not match the daily close.', scope: 'Read-only, 24 hours' },
+        { tenant: 'Kape Kalye Co.', reason: 'Ticket SUP-2044: Shopee orders are not syncing.', scope: 'Read-only, 24 hours' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

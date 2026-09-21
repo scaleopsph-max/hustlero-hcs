@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Back Office inventory</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:'Figtree','Segoe UI',system-ui,sans-serif;color:#0E0E10;background:#E9E9EB;font-variant-numeric:tabular-nums}
+button,input{font-family:inherit}
+input::placeholder{color:#46464C}
+a{color:#6B5214}a:hover{color:#47360D}
+.lg{background:rgba(255,255,255,0.68);border:1px solid rgba(255,255,255,0.95);box-shadow:0 0 0 1px rgba(14,14,16,0.05),0 10px 30px rgba(14,14,16,0.08),inset 0 1px 0 #fff;-webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%)}
+.ld{background:rgba(255,255,255,0.84);border:1px solid rgba(255,255,255,0.95);box-shadow:0 0 0 1px rgba(14,14,16,0.05),0 10px 30px rgba(14,14,16,0.08),inset 0 1px 0 #fff;-webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%)}
+.dk{background:rgba(14,14,16,0.88);border:1px solid rgba(255,255,255,0.10);box-shadow:0 16px 48px rgba(14,14,16,0.30),inset 0 1px 0 rgba(255,255,255,0.10);-webkit-backdrop-filter:blur(30px) saturate(140%);backdrop-filter:blur(30px) saturate(140%)}
+</style>
+</helmet>
+<div style="position:relative;overflow:hidden;isolation:isolate;width:1440px;height:1180px;padding:16px;display:flex;gap:16px;background:#E9E9EB;">
+  <div style="position:absolute;z-index:-1;right:-100px;top:-120px;width:600px;height:600px;border-radius:50%;background:#D4AF37;opacity:0.42;filter:blur(140px);pointer-events:none;"></div>
+  <div style="position:absolute;z-index:-1;left:500px;top:760px;width:520px;height:520px;border-radius:50%;background:#D4AF37;opacity:0.24;filter:blur(140px);pointer-events:none;"></div>
+  <div style="position:absolute;z-index:-1;right:160px;top:700px;width:480px;height:480px;border-radius:50%;background:#5C5C63;opacity:0.28;filter:blur(140px);pointer-events:none;"></div>
+
+  <!-- Sidebar -->
+  <div class="dk" style="width:248px;flex:none;border-radius:24px;color:#D6D6DA;display:flex;flex-direction:column;gap:16px;padding:20px 14px;">
+    <div style="display:flex;align-items:center;gap:12px;padding:0 6px;height:44px;">
+      <svg viewBox="0 0 32 32" role="img" aria-label="HCS logo" style="width:36px;height:36px;flex:none"><rect width="32" height="32" rx="8" style="fill:#D4AF37"></rect><path d="M10 8v16M22 8v16" style="fill:none;stroke:#0A0A0B;stroke-width:3.5;stroke-linecap:round"></path><path d="M10 16h12" style="fill:none;stroke:#0A0A0B;stroke-width:3.5;stroke-linecap:round"></path></svg>
+      <span style="font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:19px;font-weight:700;color:#fff;">Hustler Central</span>
+    </div>
+    <button style="display:flex;align-items:center;justify-content:space-between;gap:8px;height:56px;padding:0 14px;border:1px solid rgba(255,255,255,0.12);border-radius:14px;background:rgba(255,255,255,0.08);text-align:left;color:#fff;">
+      <span style="display:flex;flex-direction:column;"><span style="font-size:14px;font-weight:600;">Mabuhay Trading</span><span style="font-size:12px;color:#B4B4BA;">3 locations</span></span>
+      <svg viewBox="0 0 24 24" style="width:18px;height:18px;flex:none;fill:none;stroke:#B4B4BA;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="M6 9l6 6 6-6"></path></svg>
+    </button>
+    <div style="display:flex;flex-direction:column;">
+      <sc-for list="{{nav}}" as="n" hint-placeholder-count="20">
+        <div style="display:flex;flex-direction:column;">
+          <sc-if value="{{n.isHeading}}" hint-placeholder-val="{{false}}">
+            <div style="padding:18px 12px 6px;font-size:12px;font-weight:600;color:#8A8A92;">{{n.label}}</div>
+          </sc-if>
+          <sc-if value="{{n.isLink}}" hint-placeholder-val="{{true}}">
+            <a href="{{n.href}}" style="display:flex;align-items:center;gap:12px;height:40px;padding:0 12px;border-radius:12px;text-decoration:none;font-size:14px;font-weight:500;background:{{n.bg}};color:{{n.fg}};">
+              <svg viewBox="0 0 24 24" style="width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="{{n.icon}}"></path></svg>
+              <span style="flex-grow:1;">{{n.label}}</span>
+              <sc-if value="{{n.badge}}" hint-placeholder-val="{{false}}">
+                <span style="min-width:22px;height:22px;padding:0 7px;border-radius:999px;background:#D4AF37;color:#0A0A0B;font-size:12px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;">{{n.badge}}</span>
+              </sc-if>
+              <sc-if value="{{n.locked}}" hint-placeholder-val="{{false}}">
+                <svg viewBox="0 0 24 24" aria-label="Locked module" style="width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="M6 11h12v9H6z M8.5 11V8a3.5 3.5 0 0 1 7 0v3"></path></svg>
+              </sc-if>
+            </a>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+    <div style="margin-top:auto;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:4px;">
+      <span style="font-size:14px;font-weight:600;color:#fff;">Free core plan</span>
+      <span style="font-size:13px;line-height:18px;color:#B4B4BA;">2 modules are locked. Unlock them any time.</span>
+      <a href="#" style="margin-top:6px;font-size:13px;font-weight:600;color:#E2C15F;">See modules</a>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:16px;">
+    <div class="lg" style="height:64px;flex:none;border-radius:20px;padding:0 20px;display:flex;align-items:center;justify-content:space-between;gap:24px;">
+      <div style="display:flex;flex-direction:column;">
+        <h1 style="margin:0;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:24px;line-height:28px;font-weight:700;color:#0E0E10;">Inventory</h1>
+        <span style="font-size:12px;color:#46464C;">Stock is stored per location and changes only through recorded movements.</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button style="display:flex;align-items:center;gap:8px;height:44px;padding:0 16px;border:1px solid rgba(14,14,16,0.14);background:rgba(255,255,255,0.7);border-radius:12px;font-size:14px;font-weight:600;color:#0E0E10;">
+          <svg viewBox="0 0 24 24" style="width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="M12 4v11 M7.5 11L12 15.5 16.5 11 M5 19h14"></path></svg>Export CSV
+        </button>
+        <button style="display:flex;align-items:center;gap:8px;height:44px;padding:0 18px;border:0;background:#D4AF37;border-radius:12px;font-size:14px;font-weight:700;color:#0A0A0B;">
+          <svg viewBox="0 0 24 24" style="width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M12 5v14 M5 12h14"></path></svg>Receive stock
+        </button>
+        <div style="width:40px;height:40px;margin-left:10px;border-radius:999px;background:#0E0E10;color:#E2C15F;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;" aria-label="Signed in as Ana Reyes">AR</div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:6px;">
+      <sc-for list="{{tabs}}" as="t" hint-placeholder-count="4">
+        <a href="#" style="display:inline-flex;align-items:center;height:40px;padding:0 18px;border-radius:999px;text-decoration:none;font-size:14px;font-weight:600;background:{{t.bg}};color:{{t.fg}};">{{t.label}}</a>
+      </sc-for>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="position:relative;width:340px;">
+        <svg viewBox="0 0 24 24" style="position:absolute;left:14px;top:13px;width:18px;height:18px;color:#46464C;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z M20 20l-4-4"></path></svg>
+        <input type="text" aria-label="Search products, SKU or barcode" placeholder="Search products, SKU or barcode" style="width:100%;height:44px;padding:0 14px 0 42px;border:1px solid rgba(14,14,16,0.14);border-radius:12px;background:rgba(255,255,255,0.7);font-size:14px;color:#0E0E10;">
+      </div>
+      <sc-for list="{{filters}}" as="f" hint-placeholder-count="3">
+        <button style="display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;border:1px solid rgba(14,14,16,0.14);background:rgba(255,255,255,0.7);border-radius:12px;font-size:14px;font-weight:500;color:#0E0E10;">
+          <span>{{f.label}}</span>
+          <svg viewBox="0 0 24 24" style="width:16px;height:16px;flex:none;color:#46464C;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="M6 9l6 6 6-6"></path></svg>
+        </button>
+      </sc-for>
+      <span style="margin-left:auto;font-size:13px;color:#46464C;">Showing 10 of 1,302 SKUs</span>
+    </div>
+
+    <div style="display:flex;gap:16px;align-items:flex-start;">
+
+      <div class="ld" style="width:760px;flex:none;border-radius:24px;padding:8px 16px 16px;display:flex;flex-direction:column;">
+        <div style="display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) 64px 72px 76px 72px 104px;gap:10px;padding:12px 0;border-bottom:1px solid rgba(14,14,16,0.14);font-size:12px;font-weight:600;color:#46464C;">
+          <span>Product and variant</span><span>SKU</span><span style="text-align:right;">On hand</span><span style="text-align:right;">Reserved</span><span style="text-align:right;">Available</span><span style="text-align:right;">In transit</span><span>Status</span>
+        </div>
+        <sc-for list="{{rows}}" as="r" hint-placeholder-count="10">
+          <div style="display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) 64px 72px 76px 72px 104px;gap:10px;align-items:center;min-height:56px;padding:4px 8px;margin:0 -8px;border-radius:12px;border-bottom:1px solid rgba(14,14,16,0.07);font-size:14px;background:{{r.bg}};">
+            <div style="display:flex;flex-direction:column;min-width:0;"><span style="font-weight:600;">{{r.name}}</span><span style="font-size:12px;color:#46464C;">{{r.variant}}</span></div>
+            <span style="color:#2A2A2E;">{{r.sku}}</span>
+            <span style="text-align:right;">{{r.onHand}}</span>
+            <span style="text-align:right;">{{r.reserved}}</span>
+            <span style="text-align:right;font-weight:700;">{{r.available}}</span>
+            <span style="text-align:right;">{{r.transit}}</span>
+            <span style="display:inline-flex;align-items:center;justify-self:start;height:24px;padding:0 10px;border-radius:999px;background:{{r.chipBg}};color:{{r.chipFg}};font-size:12px;font-weight:600;">{{r.status}}</span>
+          </div>
+        </sc-for>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding-top:14px;font-size:13px;color:#46464C;">
+          <span>Page 1 of 131</span>
+          <div style="display:flex;gap:8px;"><button style="height:40px;padding:0 14px;border:1px solid rgba(14,14,16,0.14);border-radius:10px;background:rgba(255,255,255,0.7);font-size:13px;font-weight:600;color:#0E0E10;">Previous</button><button style="height:40px;padding:0 14px;border:1px solid rgba(14,14,16,0.14);border-radius:10px;background:rgba(255,255,255,0.7);font-size:13px;font-weight:600;color:#0E0E10;">Next</button></div>
+        </div>
+      </div>
+
+      <div class="ld" style="flex:1 1 0;min-width:0;border-radius:24px;padding:20px;display:flex;flex-direction:column;gap:18px;">
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+            <div style="display:flex;flex-direction:column;"><h2 style="margin:0;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:22px;line-height:28px;font-weight:700;">Cold brew 500 ml</h2><span style="font-size:14px;color:#46464C;">Original, SKU CB-500-ORG, 2 barcodes</span></div>
+            <button aria-label="Close details" style="width:40px;height:40px;flex:none;border:0;border-radius:10px;background:transparent;color:#2A2A2E;display:flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round"><path d="M6 6l12 12 M18 6L6 18"></path></svg></button>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;"><span style="display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:999px;background:#F8EDC3;color:#6B5214;font-size:12px;font-weight:600;">Low stock</span><span style="font-size:13px;color:#46464C;">Main Branch, reorder level 20</span></div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(2, minmax(0,1fr));gap:10px;">
+          <sc-for list="{{balances}}" as="b" hint-placeholder-count="4">
+            <div style="background:rgba(14,14,16,0.05);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;"><span style="font-size:12px;color:#46464C;">{{b.label}}</span><span style="font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:26px;line-height:32px;font-weight:700;">{{b.value}}</span></div>
+          </sc-for>
+        </div>
+        <span style="font-size:13px;line-height:19px;color:#333338;">Available equals on hand minus reserved. These balances summarize the ledger below. Stock changes only when a movement is recorded.</span>
+
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;padding-bottom:8px;"><h3 style="margin:0;font-size:16px;line-height:22px;font-weight:700;">Movement ledger</h3><span style="font-size:12px;color:#46464C;">Latest 5 of 6</span></div>
+          <sc-for list="{{ledger}}" as="m" hint-placeholder-count="5">
+            <div style="display:flex;flex-direction:column;gap:3px;padding:12px 0;border-top:1px solid rgba(14,14,16,0.10);">
+              <div style="display:flex;justify-content:space-between;"><span style="font-size:14px;font-weight:600;">{{m.type}}</span><span style="font-size:15px;font-weight:700;color:{{m.color}};">{{m.qty}}</span></div>
+              <span style="font-size:12px;color:#333338;">{{m.ref}}, by {{m.who}}</span>
+              <div style="display:flex;justify-content:space-between;font-size:12px;color:#46464C;"><span>{{m.when}}</span><span>Balance after {{m.after}}</span></div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div style="display:flex;gap:10px;">
+            <button style="flex:1 1 0;height:44px;border:1px solid rgba(14,14,16,0.14);border-radius:12px;background:rgba(255,255,255,0.7);font-size:14px;font-weight:600;color:#0E0E10;">Adjust stock</button>
+            <button style="flex:1 1 0;height:44px;border:1px solid rgba(14,14,16,0.14);border-radius:12px;background:rgba(255,255,255,0.7);font-size:14px;font-weight:600;color:#0E0E10;">Record damage</button>
+          </div>
+          <span style="font-size:12px;line-height:18px;color:#46464C;">Adjustments above your approval limit go to Approvals before stock changes.</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1180}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const I = {
+      dash: 'M3 3h7v9H3z M14 3h7v5h-7z M14 12h7v9h-7z M3 16h7v5H3z',
+      receipt: 'M5 3v18l2.5-1.5L10 21l2-1.5 2 1.5 2.5-1.5L19 21V3l-2.5 1.5L14 3l-2 1.5L10 3 7.5 4.5z M9 8.5h6 M9 12h6 M9 15.5h4',
+      box: 'M12 3l8 4.5v9L12 21l-8-4.5v-9z M4 7.5l8 4.5 8-4.5 M12 12v9',
+      warehouse: 'M3 21V9l9-6 9 6v12 M8 21v-7h8v7 M8 17h8',
+      truck: 'M2 6h11v10H2z M13 10h4l3 3v3h-7z M4.5 19a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0 M15.5 19a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0',
+      swap: 'M4 8h14 M14 4l4 4-4 4 M20 16H6 M10 12l-4 4 4 4',
+      users: 'M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20 M10 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35 M15.5 4.2a3.5 3.5 0 0 1 0 6.6',
+      wallet: 'M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M3 10h18 M16 14.5h2.5',
+      check: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M8.5 12.5l2.5 2.5 4.5-5',
+      bell: 'M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9z M10 20a2 2 0 0 0 4 0',
+      bars: 'M5 20V11 M12 20V4 M19 20v-6 M3 20h18',
+      activity: 'M3 12h4l3-8 4 16 3-8h4',
+      user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1',
+      pin: 'M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z M12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+      sliders: 'M4 7h9 M17 7h3 M4 17h3 M11 17h9 M15 4v6 M9 14v6',
+      bag: 'M5 8h14l-1 12H6z M9 8V6a3 3 0 0 1 6 0v2',
+      percent: 'M19 5L5 19 M7 8.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z M17 18.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z'
+    };
+    const link = (label, icon, extra) => Object.assign({ isLink: true, label: label, icon: icon, href: '#', bg: 'transparent', fg: '#D6D6DA', badge: '', locked: false }, extra || {});
+    const head = (label) => ({ isHeading: true, label: label });
+    const active = { bg: 'rgba(212,175,55,0.16)', fg: '#F5E9BE' };
+    const ok = { chipBg: '#DDF3E6', chipFg: '#17603C' };
+    const low = { chipBg: '#F8EDC3', chipFg: '#6B5214' };
+    const out = { chipBg: '#FDE2DF', chipFg: '#A8231A' };
+    const row = (name, variant, sku, onHand, reserved, available, transit, status, tone, selected) => Object.assign({ name: name, variant: variant, sku: sku, onHand: onHand, reserved: reserved, available: available, transit: transit, status: status, bg: selected ? 'rgba(212,175,55,0.22)' : 'transparent' }, tone);
+    return {
+      nav: [
+        head('Run the business'),
+        link('Dashboard', I.dash, { href: 'BO-Dashboard.dc.html' }),
+        link('Sales', I.receipt),
+        link('Products', I.box),
+        link('Inventory', I.warehouse, Object.assign({ href: 'BO-Inventory.dc.html' }, active)),
+        link('Purchasing', I.truck),
+        link('Transfers and restock', I.swap),
+        link('Customers', I.users),
+        head('Money and control'),
+        link('Finance', I.wallet),
+        link('Approvals', I.check, { badge: '3' }),
+        link('Alerts', I.bell, { badge: '5' }),
+        link('Reports', I.bars),
+        link('Audit and activity', I.activity),
+        head('Manage'),
+        link('Employees', I.user),
+        link('Locations', I.pin),
+        link('Settings', I.sliders),
+        head('Add-on modules'),
+        link('Online store', I.bag, { locked: true, fg: '#8A8A92' }),
+        link('Advanced wholesale', I.percent, { locked: true, fg: '#8A8A92' })
+      ],
+      tabs: [
+        { label: 'Stock levels', bg: '#0E0E10', fg: '#FFFFFF' },
+        { label: 'Movement ledger', bg: 'transparent', fg: '#2A2A2E' },
+        { label: 'Adjustments', bg: 'transparent', fg: '#2A2A2E' },
+        { label: 'Counts', bg: 'transparent', fg: '#2A2A2E' }
+      ],
+      filters: [
+        { label: 'Main Branch' },
+        { label: 'All categories' },
+        { label: 'Any status' }
+      ],
+      rows: [
+        row('Cold brew 500 ml', 'Original', 'CB-500-ORG', '18', '2', '16', '0', 'Low stock', low, true),
+        row('Cold brew 500 ml', 'Caramel', 'CB-500-CRM', '42', '0', '42', '0', 'In stock', ok, false),
+        row('Ube pandesal', 'Pack of 6', 'UP-006', '64', '4', '60', '24', 'In stock', ok, false),
+        row('Brown sugar', '1 kg', 'BS-1KG', '0', '0', '0', '48', 'Out of stock', out, false),
+        row('Oat milk', '1 L', 'OM-1L', '9', '3', '6', '0', 'Low stock', low, false),
+        row('Paper cup', '12 oz, sleeve of 50', 'PC-12-50', '210', '0', '210', '0', 'In stock', ok, false),
+        row('Coffee beans', 'Arabica 250 g', 'CBN-A250', '27', '0', '27', '0', 'In stock', ok, false),
+        row('Tumbler', 'Matte green', 'TB-MG', '5', '1', '4', '0', 'Low stock', low, false),
+        row('Drip bag', 'Box of 10', 'DB-010', '33', '0', '33', '0', 'In stock', ok, false),
+        row('Tote bag', 'Canvas', 'TT-CNV', '14', '0', '14', '0', 'In stock', ok, false)
+      ],
+      balances: [
+        { label: 'On hand', value: '18' },
+        { label: 'Reserved', value: '2' },
+        { label: 'Available', value: '16' },
+        { label: 'In transit', value: '0' }
+      ],
+      ledger: [
+        { type: 'Sale', qty: '−2', color: '#A8231A', ref: 'HCS-000482', who: 'Ana R.', when: 'Today, 2:14 PM', after: '18' },
+        { type: 'Sale', qty: '−1', color: '#A8231A', ref: 'HCS-000479', who: 'Ana R.', when: 'Today, 1:32 PM', after: '20' },
+        { type: 'Transfer out', qty: '−12', color: '#A8231A', ref: 'TR-000228 to Cavite Branch', who: 'Jun M.', when: 'Today, 9:05 AM', after: '21' },
+        { type: 'Damage', qty: '−1', color: '#A8231A', ref: 'ADJ-000017, dropped in storage', who: 'Jun M.', when: 'Yesterday, 5:40 PM', after: '33' },
+        { type: 'Purchase receipt', qty: '+30', color: '#17603C', ref: 'PO-000112', who: 'Jun M.', when: 'Fri, 10:20 AM', after: '34' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

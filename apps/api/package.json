@@ -1,0 +1,22 @@
+{
+  "name": "@hcs/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HUSTLERO Worker-native modular monolith API.",
+  "scripts": {
+    "build": "wrangler deploy --dry-run --outdir dist --env=\"\"",
+    "dev": "wrangler dev --port 8787",
+    "typecheck": "tsc --noEmit -p .",
+    "types": "wrangler types worker-configuration.d.ts"
+  },
+  "dependencies": {
+    "@hcs/contracts": "*",
+    "@hcs/domain": "*",
+    "hono": "4.13.8"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260921.1",
+    "typescript": "5.9.3",
+    "wrangler": "4.136.0"
+  }
+}

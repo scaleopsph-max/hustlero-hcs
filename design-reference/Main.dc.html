@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HCS design system</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:'Figtree','Segoe UI',system-ui,sans-serif;color:#F5F5F6;background:#08080A;font-variant-numeric:tabular-nums}
+button,input,textarea{font-family:inherit}
+a{color:#E2C15F}a:hover{color:#F5E9BE}
+.g{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);box-shadow:0 8px 32px rgba(0,0,0,0.35),inset 0 1px 0 rgba(255,255,255,0.10);-webkit-backdrop-filter:blur(24px) saturate(140%);backdrop-filter:blur(24px) saturate(140%)}
+.gs{background:rgba(255,255,255,0.10);border:1px solid rgba(255,255,255,0.18);box-shadow:0 16px 48px rgba(0,0,0,0.45),inset 0 1px 0 rgba(255,255,255,0.16);-webkit-backdrop-filter:blur(32px) saturate(150%);backdrop-filter:blur(32px) saturate(150%)}
+.gg{background:rgba(212,175,55,0.14);border:1px solid rgba(212,175,55,0.45);box-shadow:0 8px 32px rgba(0,0,0,0.35),inset 0 1px 0 rgba(255,255,255,0.14);-webkit-backdrop-filter:blur(24px) saturate(140%);backdrop-filter:blur(24px) saturate(140%)}
+.lg{background:rgba(255,255,255,0.68);border:1px solid rgba(255,255,255,0.95);box-shadow:0 0 0 1px rgba(14,14,16,0.05),0 10px 30px rgba(14,14,16,0.08),inset 0 1px 0 #fff;-webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%)}
+.ld{background:rgba(255,255,255,0.84);border:1px solid rgba(255,255,255,0.95);box-shadow:0 0 0 1px rgba(14,14,16,0.05),0 10px 30px rgba(14,14,16,0.08),inset 0 1px 0 #fff;-webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%)}
+</style>
+</helmet>
+<div style="position:relative;overflow:hidden;isolation:isolate;width:1440px;height:4800px;padding:64px;display:flex;flex-direction:column;gap:72px;background:#08080A;">
+  <div style="position:absolute;z-index:-1;left:-220px;top:-160px;width:640px;height:640px;border-radius:50%;background:#D4AF37;opacity:0.20;filter:blur(150px);pointer-events:none;"></div>
+  <div style="position:absolute;z-index:-1;right:-200px;top:900px;width:620px;height:620px;border-radius:50%;background:#6B6B75;opacity:0.28;filter:blur(150px);pointer-events:none;"></div>
+  <div style="position:absolute;z-index:-1;left:200px;top:2500px;width:560px;height:560px;border-radius:50%;background:#D4AF37;opacity:0.14;filter:blur(150px);pointer-events:none;"></div>
+  <div style="position:absolute;z-index:-1;right:-100px;top:3700px;width:600px;height:600px;border-radius:50%;background:#D4AF37;opacity:0.16;filter:blur(150px);pointer-events:none;"></div>
+
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:48px;">
+    <div style="display:flex;flex-direction:column;gap:20px;max-width:780px;">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <svg viewBox="0 0 32 32" role="img" aria-label="HCS logo" style="width:44px;height:44px;flex:none"><rect width="32" height="32" rx="8" style="fill:#D4AF37"></rect><path d="M10 8v16M22 8v16" style="fill:none;stroke:#0A0A0B;stroke-width:3.5;stroke-linecap:round"></path><path d="M10 16h12" style="fill:none;stroke:#0A0A0B;stroke-width:3.5;stroke-linecap:round"></path></svg>
+        <span style="font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:20px;font-weight:700;color:#fff;">Hustler Central System</span>
+      </div>
+      <h1 style="margin:0;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:64px;line-height:64px;letter-spacing:-0.02em;font-weight:700;color:#fff;">Obsidian and gold</h1>
+      <p style="margin:0;font-size:18px;line-height:28px;color:#B4B4BA;max-width:680px;">Black, graphite and white carry the interface. Gold is kept for the one action that matters and for moments of emphasis. Glass adds depth without adding color.</p>
+    </div>
+    <div class="g" style="width:440px;flex:none;border-radius:20px;padding:20px 24px;display:flex;flex-direction:column;gap:6px;">
+      <span style="font-size:15px;font-weight:700;color:#fff;">Ships as a Tailwind preset</span>
+      <span style="font-size:14px;line-height:22px;color:#B4B4BA;">Colors, type, radii and the glass surfaces below all live in packages/config/hcs-preset.ts, shared by apps/backoffice, apps/pos and packages/ui.</span>
+    </div>
+  </div>
+
+  <section style="display:flex;flex-direction:column;gap:32px;">
+    <h2 style="margin:0;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:36px;line-height:40px;font-weight:700;color:#fff;">Color</h2>
+
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="display:flex;align-items:baseline;gap:16px;"><h3 style="margin:0;font-size:18px;line-height:24px;font-weight:700;color:#fff;">Gold</h3><span style="font-size:14px;color:#B4B4BA;">The accent. Primary buttons, selected states, key numbers. gold-500 carries black text at 9:1.</span></div>
+      <div style="display:flex;gap:10px;">
+        <sc-for list="{{gold}}" as="sw" hint-placeholder-count="10">
+          <div style="flex:0 0 96px;display:flex;flex-direction:column;gap:8px;">
+            <div style="height:72px;border-radius:12px;border:1px solid rgba(255,255,255,0.16);background:{{sw.hex}};"></div>
+            <div style="display:flex;flex-direction:column;gap:2px;"><span style="font-size:13px;font-weight:600;color:#F5F5F6;">{{sw.name}}</span><span style="font-size:12px;color:#B4B4BA;">{{sw.hex}}</span></div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="display:flex;align-items:baseline;gap:16px;"><h3 style="margin:0;font-size:18px;line-height:24px;font-weight:700;color:#fff;">Black, gray and white</h3><span style="font-size:14px;color:#B4B4BA;">One neutral ramp from obsidian to white. Ink-400 is the lightest secondary text on dark; ink-500 on light.</span></div>
+      <div style="display:flex;gap:10px;">
+        <sc-for list="{{ink}}" as="sw" hint-placeholder-count="12">
+          <div style="flex:0 0 96px;display:flex;flex-direction:column;gap:8px;">
+            <div style="height:72px;border-radius:12px;border:1px solid rgba(255,255,255,0.16);background:{{sw.hex}};"></div>
+            <div style="display:flex;flex-direction:column;gap:2px;"><span style="font-size:13px;font-weight:600;color:#F5F5F6;">{{sw.name}}</span><span style="font-size:12px;color:#B4B4BA;">{{sw.hex}}</span></div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:16px;">
+      <div style="flex:1 1 0;background:#08080A;border:1px solid rgba(255,255,255,0.18);border-radius:16px;padding:20px 22px;display:flex;flex-direction:column;gap:6px;"><span style="font-size:16px;font-weight:700;color:#fff;">Obsidian</span><span style="font-size:14px;line-height:22px;color:#B4B4BA;">Base of POS, landing and Super Admin. Glows and glass sit on top of it.</span></div>
+      <div style="flex:1 1 0;background:#1B1B1E;border:1px solid rgba(255,255,255,0.10);border-radius:16px;padding:20px 22px;display:flex;flex-direction:column;gap:6px;"><span style="font-size:16px;font-weight:700;color:#fff;">Graphite</span><span style="font-size:14px;line-height:22px;color:#B4B4BA;">Solid fallback for glass, and the sidebar in Back Office.</span></div>
+      <div style="flex:1 1 0;background:#ECECEE;border-radius:16px;padding:20px 22px;display:flex;flex-direction:column;gap:6px;"><span style="font-size:16px;font-weight:700;color:#0E0E10;">Paper</span><span style="font-size:14px;line-height:22px;color:#46464C;">The Back Office ground. Long reading and data work happens here.</span></div>
+      <div style="flex:1 1 0;background:#D4AF37;border-radius:16px;padding:20px 22px;display:flex;flex-direction:column;gap:6px;"><span style="font-size:16px;font-weight:700;color:#0A0A0B;">Gold</span><span style="font-size:14px;line-height:22px;color:#0A0A0B;">Primary action only. One per screen: Charge, Start free, Complete sale.</span></div>
+    </div>
+
+    <div style="display:flex;gap:24px;align-items:stretch;">
+      <div style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;align-items:baseline;gap:16px;"><h3 style="margin:0;font-size:18px;line-height:24px;font-weight:700;color:#fff;">Signals on dark glass</h3></div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <sc-for list="{{signalsDark}}" as="sg" hint-placeholder-count="5">
+            <div style="background:{{sg.bg}};border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;"><span style="font-size:15px;font-weight:700;color:{{sg.fg}};">{{sg.name}}</span><span style="font-size:13px;color:{{sg.fg}};">{{sg.use}}</span></div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="flex:1 1 0;min-width:0;background:#ECECEE;border-radius:20px;padding:20px;display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;align-items:baseline;gap:16px;"><h3 style="margin:0;font-size:18px;line-height:24px;font-weight:700;color:#0E0E10;">Signals on light glass</h3></div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <sc-for list="{{signalsLight}}" as="sg" hint-placeholder-count="5">
+            <div style="background:{{sg.bg}};border-radius:12px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;"><span style="font-size:15px;font-weight:700;color:{{sg.fg}};">{{sg.name}}</span><span style="font-size:13px;color:{{sg.fg}};">{{sg.use}}</span></div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:32px;">
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <h2 style="margin:0;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:36px;line-height:40px;font-weight:700;color:#fff;">Glass</h2>
+      <p style="margin:0;font-size:16px;line-height:26px;color:#B4B4BA;max-width:760px;">Frosted surfaces that blur what sits behind them. Each screen has a solid base plus two or three soft glows so the blur has something to show.</p>
+    </div>
+
+    <div style="position:relative;overflow:hidden;isolation:isolate;height:320px;border-radius:24px;background:#08080A;border:1px solid rgba(255,255,255,0.10);padding:32px;display:flex;gap:24px;">
+      <div style="position:absolute;z-index:-1;left:120px;top:-60px;width:360px;height:360px;border-radius:50%;background:#D4AF37;opacity:0.55;filter:blur(90px);pointer-events:none;"></div>
+      <div style="position:absolute;z-index:-1;left:760px;top:120px;width:380px;height:300px;border-radius:50%;background:#8A8A92;opacity:0.45;filter:blur(90px);pointer-events:none;"></div>
+      <div class="g" style="flex:1 1 0;border-radius:20px;padding:22px;display:flex;flex-direction:column;gap:8px;"><span style="font-size:17px;font-weight:700;color:#fff;">Glass</span><span style="font-size:14px;line-height:22px;color:#D6D6DA;">Fill white 6%, border white 12%, blur 24, saturation 140%. Cards and panels on dark.</span><span style="margin-top:auto;font-size:12px;color:#B4B4BA;">Tailwind: glass</span></div>
+      <div class="gs" style="flex:1 1 0;border-radius:20px;padding:22px;display:flex;flex-direction:column;gap:8px;"><span style="font-size:17px;font-weight:700;color:#fff;">Glass strong</span><span style="font-size:14px;line-height:22px;color:#E9E9EB;">Fill white 10%, border white 18%, blur 32. Modals, receipts, drawers, the cart.</span><span style="margin-top:auto;font-size:12px;color:#D6D6DA;">Tailwind: glass-strong</span></div>
+      <div class="gg" style="flex:1 1 0;border-radius:20px;padding:22px;display:flex;flex-direction:column;gap:8px;"><span style="font-size:17px;font-weight:700;color:#F5E9BE;">Gold glass</span><span style="font-size:14px;line-height:22px;color:#F5F5F6;">Fill gold 14%, border gold 45%. Selected rows and the one suggested action.</span><span style="margin-top:auto;font-size:12px;color:#EBD68A;">Tailwind: glass-gold</span></div>
+    </div>
+
+    <div style="display:flex;gap:24px;align-items:stretch;">
+      <div style="position:relative;overflow:hidden;isolation:isolate;width:760px;flex:none;height:300px;border-radius:24px;background:#ECECEE;padding:32px;display:flex;gap:24px;">
+        <div style="position:absolute;z-index:-1;left:60px;top:-80px;width:340px;height:340px;border-radius:50%;background:#D4AF37;opacity:0.55;filter:blur(90px);pointer-events:none;"></div>
+        <div style="position:absolute;z-index:-1;left:420px;top:120px;width:340px;height:280px;border-radius:50%;background:#5C5C63;opacity:0.35;filter:blur(90px);pointer-events:none;"></div>
+        <div class="lg" style="flex:1 1 0;border-radius:20px;padding:22px;display:flex;flex-direction:column;gap:8px;"><span style="font-size:17px;font-weight:700;color:#0E0E10;">Light glass</span><span style="font-size:14px;line-height:22px;color:#333338;">Fill white 68%, blur 24. Back Office cards and toolbars.</span><span style="margin-top:auto;font-size:12px;color:#46464C;">Tailwind: glass-light</span></div>
+        <div class="ld" style="flex:1 1 0;border-radius:20px;padding:22px;display:flex;flex-direction:column;gap:8px;"><span style="font-size:17px;font-weight:700;color:#0E0E10;">Data glass</span><span style="font-size:14px;line-height:22px;color:#333338;">Fill white 84%. Tables and long text, so reading never fights the blur.</span><span style="margin-top:auto;font-size:12px;color:#46464C;">Tailwind: glass-data</span></div>
+      </div>
+      <div class="g" style="flex:1 1 0;min-width:0;border-radius:24px;padding:26px 28px;display:flex;flex-direction:column;gap:12px;">
+        <h3 style="margin:0;font-size:18px;line-height:24px;font-weight:700;color:#fff;">Rules that keep glass usable</h3>
+        <span style="font-size:14px;line-height:22px;color:#D6D6DA;">Never stack more than two glass layers.</span>
+        <span style="font-size:14px;line-height:22px;color:#D6D6DA;">Long text and tables sit on data glass, at 84% fill or more.</span>
+        <span style="font-size:14px;line-height:22px;color:#D6D6DA;">Gold is never a glass fill except the gold glass tint. Buttons stay solid.</span>
+        <span style="font-size:14px;line-height:22px;color:#D6D6DA;">Without blur support, or with reduced transparency on, every glass becomes its solid graphite fallback.</span>
+      </div>
+    </div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:32px;">
+    <h2 style="margin:0;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:36px;line-height:40px;font-weight:700;color:#fff;">Typography</h2>
+    <div style="display:flex;gap:28px;align-items:flex-start;">
+      <div class="g" style="width:560px;flex:none;border-radius:24px;padding:36px;display:flex;flex-direction:column;gap:28px;">
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <span style="font-size:14px;font-weight:600;color:#B4B4BA;">Bricolage Grotesque, weights 500 to 800</span>
+          <div style="font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:56px;line-height:58px;font-weight:700;letter-spacing:-0.02em;color:#fff;">Every peso, every item.</div>
+          <p style="margin:0;font-size:15px;line-height:24px;color:#D6D6DA;">Display and headings. Tailwind: font-display.</p>
+        </div>
+        <div style="height:1px;background:rgba(255,255,255,0.12);"></div>
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <span style="font-size:14px;font-weight:600;color:#B4B4BA;">Figtree, weights 400 to 700</span>
+          <div style="font-size:28px;line-height:36px;font-weight:500;color:#fff;">Available equals on hand minus reserved.</div>
+          <div style="display:flex;gap:28px;font-size:26px;line-height:32px;font-weight:600;color:#E2C15F;"><span>₱12,480.50</span><span>0123456789</span></div>
+          <p style="margin:0;font-size:15px;line-height:24px;color:#D6D6DA;">Interface text, tables and every amount. Tailwind: font-sans. Tabular figures keep money aligned.</p>
+        </div>
+      </div>
+      <div class="g" style="flex:1 1 0;min-width:0;border-radius:24px;padding:12px 32px;display:flex;flex-direction:column;">
+        <sc-for list="{{typeScale}}" as="t" hint-placeholder-count="11">
+          <div style="display:flex;align-items:center;gap:24px;padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.08);">
+            <div style="width:170px;flex:none;display:flex;flex-direction:column;gap:2px;"><span style="font-size:13px;font-weight:600;color:#fff;">{{t.token}}</span><span style="font-size:12px;color:#B4B4BA;">{{t.spec}}</span></div>
+            <div style="flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:{{t.family}};font-size:{{t.size}}px;line-height:{{t.lh}}px;font-weight:{{t.weight}};letter-spacing:{{t.track}}em;color:#F5F5F6;">{{t.sample}}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:32px;">
+    <h2 style="margin:0;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:36px;line-height:40px;font-weight:700;color:#fff;">Components and states</h2>
+
+    <div style="display:flex;gap:24px;align-items:flex-start;">
+      <div class="g" style="flex:1 1 0;min-width:0;border-radius:24px;padding:32px;display:flex;flex-direction:column;gap:28px;">
+        <div style="display:flex;flex-direction:column;gap:16px;">
+          <h3 style="margin:0;font-size:18px;line-height:24px;font-weight:700;color:#fff;">Buttons</h3>
+          <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-end;">
+            <div style="display:flex;flex-direction:column;gap:8px;"><button style="height:56px;padding:0 28px;border:0;border-radius:14px;background:#D4AF37;color:#0A0A0B;font-size:17px;font-weight:700;">Charge ₱1,986.00</button><span style="font-size:12px;color:#B4B4BA;">Primary, one per screen</span></div>
+            <div style="display:flex;flex-direction:column;gap:8px;"><button style="height:48px;padding:0 22px;border:0;border-radius:12px;background:#F5F5F6;color:#0A0A0B;font-size:15px;font-weight:600;">Save changes</button><span style="font-size:12px;color:#B4B4BA;">Confirm</span></div>
+            <div style="display:flex;flex-direction:column;gap:8px;"><button style="height:48px;padding:0 22px;border:1px solid rgba(255,255,255,0.24);border-radius:12px;background:rgba(255,255,255,0.08);color:#fff;font-size:15px;font-weight:600;">Cancel</button><span style="font-size:12px;color:#B4B4BA;">Secondary glass</span></div>
+            <div style="display:flex;flex-direction:column;gap:8px;"><button style="height:48px;padding:0 22px;border:0;border-radius:12px;background:#C93B33;color:#fff;font-size:15px;font-weight:600;">Void sale</button><span style="font-size:12px;color:#B4B4BA;">Destructive</span></div>
+            <div style="display:flex;flex-direction:column;gap:8px;"><button disabled="{{true}}" style="height:48px;padding:0 22px;border:1px solid rgba(255,255,255,0.08);border-radius:12px;background:rgba(255,255,255,0.05);color:#8A8A92;font-size:15px;font-weight:600;cursor:not-allowed;">Close register</button><span style="font-size:12px;color:#B4B4BA;">Disabled, with a reason nearby</span></div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:16px;">
+          <h3 style="margin:0;font-size:18px;line-height:24px;font-weight:700;color:#fff;">Chips for health, severity and stock</h3>
+          <div style="display:flex;flex-wrap:wrap;gap:10px;">
+            <sc-for list="{{chips}}" as="c" hint-placeholder-count="8">
+              <span style="display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:999px;background:{{c.bg}};color:{{c.fg}};font-size:13px;font-weight:600;">{{c.label}}</span>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+
+      <div class="g" style="width:430px;flex:none;border-radius:24px;padding:32px;display:flex;flex-direction:column;gap:20px;">
+        <h3 style="margin:0;font-size:18px;line-height:24px;font-weight:700;color:#fff;">Fields</h3>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <label for="ds-sku" style="font-size:14px;font-weight:600;color:#F5F5F6;">SKU</label>
+          <input id="ds-sku" type="text" value="CB-500-ORG" style="height:48px;border:1px solid rgba(255,255,255,0.28);border-radius:12px;padding:0 14px;font-size:16px;color:#fff;background:rgba(255,255,255,0.06);">
+          <span style="font-size:13px;color:#B4B4BA;">Must be unique in your business.</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <label for="ds-barcode" style="font-size:14px;font-weight:600;color:#F5F5F6;">Barcode</label>
+          <input id="ds-barcode" type="text" value="4800016123456" style="height:48px;border:2px solid #FF9A94;border-radius:12px;padding:0 14px;font-size:16px;color:#fff;background:rgba(255,255,255,0.06);">
+          <span style="font-size:13px;line-height:19px;color:#FF9A94;">This barcode already belongs to Cold brew 500 ml, Caramel. Scan a different barcode or open that product.</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <h3 style="margin:0;font-size:18px;line-height:24px;font-weight:700;color:#fff;">Every blocked state answers four questions</h3>
+      <p style="margin:0;font-size:15px;line-height:24px;color:#B4B4BA;max-width:800px;">What happened, why, whether the action went through, and what to do next. No dead-end errors, and POS messages stay short.</p>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3, minmax(0,1fr));gap:20px;">
+      <sc-for list="{{states}}" as="s" hint-placeholder-count="6">
+        <div class="g" style="border-radius:20px;padding:22px;display:flex;flex-direction:column;gap:14px;">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div style="width:40px;height:40px;border-radius:999px;display:flex;align-items:center;justify-content:center;background:{{s.bg}};color:{{s.fg}};">
+              <svg viewBox="0 0 24 24" style="width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="{{s.icon}}"></path></svg>
+            </div>
+            <span style="font-size:13px;font-weight:600;color:#B4B4BA;">{{s.kind}}</span>
+          </div>
+          <div style="font-size:17px;line-height:24px;font-weight:700;color:#fff;">{{s.title}}</div>
+          <p style="margin:0;font-size:14px;line-height:22px;color:#D6D6DA;">{{s.why}}</p>
+          <button style="align-self:flex-start;height:44px;padding:0 18px;border:1px solid rgba(255,255,255,0.24);border-radius:12px;background:rgba(255,255,255,0.08);font-size:14px;font-weight:600;color:#fff;">{{s.action}}</button>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:32px;">
+    <h2 style="margin:0;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:36px;line-height:40px;font-weight:700;color:#fff;">Tailwind setup</h2>
+    <div style="display:flex;gap:24px;align-items:flex-start;">
+      <div class="gs" style="width:820px;flex:none;border-radius:24px;padding:28px 32px;">
+<pre style="margin:0;font-family:'Cascadia Mono','Consolas','Menlo',monospace;font-size:13px;line-height:20px;color:#EBD68A;white-space:pre;overflow:hidden;">// packages/config/hcs-preset.ts (excerpt)
+import plugin from 'tailwindcss/plugin'
+import type { Config } from 'tailwindcss'
+
+export default {
+  theme: {
+    extend: {
+      colors: {
+        gold: { 300: '#E2C15F', 500: '#D4AF37', 700: '#8F6F1C', 800: '#6B5214' },
+        ink: { 50: '#F5F5F6', 200: '#D6D6DA', 400: '#8A8A92', 700: '#2A2A2E', 900: '#0E0E10', 950: '#08080A' },
+      },
+      fontFamily: {
+        display: ['"Bricolage Grotesque"', '"Trebuchet MS"', 'system-ui', 'sans-serif'],
+        sans: ['Figtree', '"Segoe UI"', 'system-ui', 'sans-serif'],
+      },
+      borderRadius: { control: '12px', glass: '20px' },
+      backdropBlur: { glass: '24px', 'glass-lg': '32px' },
+      minHeight: { touch: '44px', 'touch-lg': '56px' },
+    },
+  },
+  plugins: [
+    plugin(function (api) {
+      api.addComponents({
+        '.glass': {
+          background: 'rgba(255,255,255,0.06)',
+          border: '1px solid rgba(255,255,255,0.12)',
+          backdropFilter: 'blur(24px) saturate(140%)',
+        },
+      })
+    }),
+  ],
+} satisfies Partial&lt;Config&gt;</pre>
+      </div>
+      <div class="g" style="flex:1 1 0;min-width:0;border-radius:24px;padding:12px 28px;display:flex;flex-direction:column;">
+        <sc-for list="{{recipes}}" as="r" hint-placeholder-count="6">
+          <div style="display:flex;flex-direction:column;gap:6px;padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.08);">
+            <span style="font-size:14px;font-weight:700;color:#fff;">{{r.name}}</span>
+            <span style="font-size:13px;line-height:20px;color:#EBD68A;">{{r.classes}}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":4800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const disp = "'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif";
+    const body = "'Figtree','Segoe UI',system-ui,sans-serif";
+    const scale = (prefix, rows) => rows.map(([n, h]) => ({ name: prefix + '-' + n, hex: h }));
+    return {
+      gold: scale('gold', [['50','#FBF6E4'],['100','#F5E9BE'],['200','#EBD68A'],['300','#E2C15F'],['400','#D9B24A'],['500','#D4AF37'],['600','#B8912A'],['700','#8F6F1C'],['800','#6B5214'],['900','#47360D']]),
+      ink: scale('ink', [['950','#08080A'],['900','#0E0E10'],['800','#1B1B1E'],['700','#2A2A2E'],['600','#3D3D42'],['500','#5C5C63'],['400','#8A8A92'],['300','#B4B4BA'],['200','#D6D6DA'],['100','#EAEAEC'],['50','#F5F5F6'],['white','#FFFFFF']]),
+      signalsDark: [
+        { name: 'Success', use: 'Healthy, in stock, completed', bg: 'rgba(74,196,128,0.16)', fg: '#7EE0A6' },
+        { name: 'Info', use: 'Neutral notices, syncing', bg: 'rgba(108,168,232,0.16)', fg: '#9CC6F2' },
+        { name: 'Attention', use: 'Degraded, low stock, offline', bg: 'rgba(212,175,55,0.18)', fg: '#E9CB6E' },
+        { name: 'Warning', use: 'Needs a decision soon', bg: 'rgba(240,160,75,0.16)', fg: '#F5B876' },
+        { name: 'Critical', use: 'Incident, variance, out of stock', bg: 'rgba(240,98,91,0.16)', fg: '#FF9A94' }
+      ],
+      signalsLight: [
+        { name: 'Success', use: 'Healthy, in stock, completed', bg: '#DDF3E6', fg: '#17603C' },
+        { name: 'Info', use: 'Neutral notices, syncing', bg: '#E2EEFB', fg: '#1D5FA8' },
+        { name: 'Attention', use: 'Degraded, low stock, offline', bg: '#F8EDC3', fg: '#6B5214' },
+        { name: 'Warning', use: 'Needs a decision soon', bg: '#FDE7CF', fg: '#8F4A08' },
+        { name: 'Critical', use: 'Incident, variance, out of stock', bg: '#FDE2DF', fg: '#A8231A' }
+      ],
+      typeScale: [
+        { token: 'text-display', spec: '64 / 64, 700', size: 64, lh: 64, weight: 700, track: -0.02, family: disp, sample: 'Every peso, every item' },
+        { token: 'text-h1', spec: '40 / 44, 700', size: 40, lh: 44, weight: 700, track: -0.015, family: disp, sample: 'Sales today' },
+        { token: 'text-h2', spec: '30 / 36, 700', size: 30, lh: 36, weight: 700, track: -0.01, family: disp, sample: 'Business pulse' },
+        { token: 'text-h3', spec: '22 / 28, 700', size: 22, lh: 28, weight: 700, track: 0, family: disp, sample: 'Needs attention' },
+        { token: 'text-h4', spec: '18 / 24, 600', size: 18, lh: 24, weight: 600, track: 0, family: body, sample: 'Register 1, Main Branch' },
+        { token: 'text-body-lg', spec: '18 / 28, 400', size: 18, lh: 28, weight: 400, track: 0, family: body, sample: 'Hustler Central System runs your counter, stock and books.' },
+        { token: 'text-body', spec: '15 / 24, 400 (Back Office 14 / 20)', size: 15, lh: 24, weight: 400, track: 0, family: body, sample: 'Available equals on hand minus reserved.' },
+        { token: 'text-small', spec: '13 / 20, 500', size: 13, lh: 20, weight: 500, track: 0, family: body, sample: 'Updated 2 minutes ago' },
+        { token: 'text-caption', spec: '12 / 16, 500', size: 12, lh: 16, weight: 500, track: 0, family: body, sample: 'Receipt HCS-000482' },
+        { token: 'text-pos-price', spec: '28 / 32, 700', size: 28, lh: 32, weight: 700, track: 0, family: disp, sample: '₱140.00' },
+        { token: 'text-pos-total', spec: '44 / 48, 700', size: 44, lh: 48, weight: 700, track: -0.01, family: disp, sample: '₱1,986.00' }
+      ],
+      chips: [
+        { label: 'Healthy', bg: 'rgba(74,196,128,0.16)', fg: '#7EE0A6' },
+        { label: 'Degraded', bg: 'rgba(212,175,55,0.18)', fg: '#E9CB6E' },
+        { label: 'Incident', bg: 'rgba(240,98,91,0.16)', fg: '#FF9A94' },
+        { label: 'Info', bg: 'rgba(108,168,232,0.16)', fg: '#9CC6F2' },
+        { label: 'Attention', bg: 'rgba(212,175,55,0.18)', fg: '#E9CB6E' },
+        { label: 'Warning', bg: 'rgba(240,160,75,0.16)', fg: '#F5B876' },
+        { label: 'Critical', bg: 'rgba(240,98,91,0.16)', fg: '#FF9A94' },
+        { label: 'Locked module', bg: 'rgba(255,255,255,0.08)', fg: '#D6D6DA' }
+      ],
+      states: [
+        { kind: 'Locked feature', icon: 'M6 11h12v9H6z M8.5 11V8a3.5 3.5 0 0 1 7 0v3', bg: 'rgba(255,255,255,0.10)', fg: '#D6D6DA', title: "Advanced Wholesale isn't part of your plan", why: 'Sales orders and payment terms are a paid module. Everything in your free core plan works as before.', action: 'See modules' },
+        { kind: 'Restricted', icon: 'M12 3l8 3v6c0 4.5-3.2 8.2-8 9-4.8-.8-8-4.5-8-9V6z', bg: 'rgba(240,160,75,0.16)', fg: '#F5B876', title: "You can't approve refunds", why: 'Refund approval is limited to managers and owners. The refund has not been made.', action: 'Ask a manager' },
+        { kind: 'Offline', icon: 'M3 3l18 18 M4 9.5a12 12 0 0 1 5-2.9 M15 6.6a12 12 0 0 1 5 2.9 M7 13a7.5 7.5 0 0 1 3-1.7 M14 11.3a7.5 7.5 0 0 1 3 1.7 M12 20h.01', bg: 'rgba(212,175,55,0.18)', fg: '#E9CB6E', title: "You're offline. Keep selling.", why: 'Sales are saved on this device and will sync when the connection returns. Nothing is lost.', action: 'View unsynced sales' },
+        { kind: 'Syncing', icon: 'M20 12a8 8 0 0 0-14-5.3L4 9 M4 4v5h5 M4 12a8 8 0 0 0 14 5.3L20 15 M20 20v-5h-5', bg: 'rgba(108,168,232,0.16)', fg: '#9CC6F2', title: 'Syncing 3 sales', why: 'They are being sent to the server. Each sale is sent only once, even if the connection drops again.', action: 'See details' },
+        { kind: 'Partial failure', icon: 'M12 4l9.5 16.5h-19z M12 10v4 M12 17.2v.1', bg: 'rgba(212,175,55,0.18)', fg: '#E9CB6E', title: 'Sale completed. Email receipt failed.', why: 'The sale, payment and stock update were saved. Only the email did not send.', action: 'Resend receipt' },
+        { kind: 'Empty', icon: 'M4 13l2-8h12l2 8 M4 13v6h16v-6 M4 13h5l1 2h4l1-2h5', bg: 'rgba(74,196,128,0.16)', fg: '#7EE0A6', title: 'No products yet', why: 'Add your first product by hand or import a CSV. Opening stock comes next.', action: 'Import CSV' }
+      ],
+      recipes: [
+        { name: 'Primary action', classes: 'bg-gold-500 text-ink-950 font-bold rounded-control min-h-touch-lg px-7' },
+        { name: 'Confirm button on dark', classes: 'bg-ink-50 text-ink-950 font-semibold rounded-control min-h-touch px-5' },
+        { name: 'Glass panel', classes: 'glass rounded-glass p-5' },
+        { name: 'Selected row or suggestion', classes: 'glass-gold rounded-glass' },
+        { name: 'Back Office card', classes: 'glass-light rounded-glass p-5' },
+        { name: 'Critical chip on dark', classes: 'bg-signal-dark-critical-bg text-signal-dark-critical-fg rounded-full px-3 text-small font-semibold' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

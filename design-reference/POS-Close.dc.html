@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>POS close register</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:'Figtree','Segoe UI',system-ui,sans-serif;color:#F5F5F6;background:#08080A;font-variant-numeric:tabular-nums}
+button,input,textarea{font-family:inherit}
+input::placeholder,textarea::placeholder{color:#B4B4BA}
+a{color:#E2C15F}a:hover{color:#F5E9BE}
+.g{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);box-shadow:0 8px 32px rgba(0,0,0,0.35),inset 0 1px 0 rgba(255,255,255,0.10);-webkit-backdrop-filter:blur(24px) saturate(140%);backdrop-filter:blur(24px) saturate(140%)}
+.gs{background:rgba(255,255,255,0.10);border:1px solid rgba(255,255,255,0.18);box-shadow:0 16px 48px rgba(0,0,0,0.45),inset 0 1px 0 rgba(255,255,255,0.16);-webkit-backdrop-filter:blur(32px) saturate(150%);backdrop-filter:blur(32px) saturate(150%)}
+.gw{background:rgba(240,160,75,0.13);border:1px solid rgba(240,160,75,0.50);box-shadow:0 8px 32px rgba(0,0,0,0.35),inset 0 1px 0 rgba(255,255,255,0.12);-webkit-backdrop-filter:blur(24px) saturate(140%);backdrop-filter:blur(24px) saturate(140%)}
+</style>
+</helmet>
+<div style="position:relative;overflow:hidden;isolation:isolate;width:1280px;height:800px;padding:12px;display:flex;flex-direction:column;gap:12px;background:#08080A;">
+  <div style="position:absolute;z-index:-1;left:700px;top:260px;width:520px;height:520px;border-radius:50%;background:#F0A04B;opacity:0.26;filter:blur(140px);pointer-events:none;"></div>
+  <div style="position:absolute;z-index:-1;left:-140px;top:-100px;width:480px;height:480px;border-radius:50%;background:#D4AF37;opacity:0.20;filter:blur(140px);pointer-events:none;"></div>
+  <div style="position:absolute;z-index:-1;left:200px;top:480px;width:480px;height:480px;border-radius:50%;background:#6B6B75;opacity:0.32;filter:blur(140px);pointer-events:none;"></div>
+
+  <div class="g" style="height:64px;flex:none;border-radius:20px;padding:0 16px;display:flex;align-items:center;justify-content:space-between;">
+    <div style="display:flex;align-items:center;gap:20px;">
+      <a href="POS-Sell.dc.html" style="display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;border:1px solid rgba(255,255,255,0.20);border-radius:12px;color:#fff;font-size:14px;font-weight:600;text-decoration:none;"><svg viewBox="0 0 24 24" style="width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round"><path d="M19 12H5 M11 6l-6 6 6 6"></path></svg>Back to sales</a>
+      <div style="display:flex;flex-direction:column;"><span style="font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:22px;line-height:26px;font-weight:700;color:#fff;">Close register</span><span style="font-size:13px;color:#B4B4BA;">Main Branch, Register 1, opened 7:58 AM by Ana R.</span></div>
+    </div>
+    <span style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:999px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);font-size:13px;font-weight:600;color:#fff;"><span style="width:9px;height:9px;border-radius:999px;background:#4AC480;"></span>Online, synced</span>
+  </div>
+
+  <div style="flex:1 1 0;min-height:0;display:flex;gap:16px;align-items:flex-start;">
+
+    <div style="width:540px;flex:none;display:flex;flex-direction:column;gap:14px;">
+      <div class="gs" style="border-radius:28px;padding:20px 24px;display:flex;flex-direction:column;">
+        <div style="display:flex;flex-direction:column;gap:2px;padding-bottom:12px;"><h1 style="margin:0;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:22px;line-height:28px;font-weight:700;color:#fff;">Count the cash</h1><span style="font-size:14px;color:#D6D6DA;">Count every note and coin in the drawer.</span></div>
+        <sc-for list="{{count}}" as="c" hint-placeholder-count="7">
+          <div style="display:flex;align-items:center;gap:12px;min-height:52px;border-top:1px solid rgba(255,255,255,0.10);">
+            <label for="{{c.id}}" style="flex:1 1 0;font-size:15px;font-weight:600;color:#fff;">{{c.label}}</label>
+            <input id="{{c.id}}" type="text" value="{{c.qty}}" style="width:96px;height:44px;border:1px solid rgba(255,255,255,0.28);border-radius:12px;padding:0 12px;text-align:right;font-size:16px;font-weight:600;color:#fff;background:rgba(255,255,255,0.06);">
+            <span style="width:112px;text-align:right;font-size:15px;color:#E9E9EB;">{{c.amount}}</span>
+          </div>
+        </sc-for>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;padding-top:14px;border-top:2px solid #D4AF37;"><span style="font-size:17px;font-weight:700;color:#fff;">Counted cash</span><span style="font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:32px;line-height:36px;font-weight:700;color:#E2C15F;">₱20,695.00</span></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button disabled="{{true}}" style="height:64px;border:1px solid rgba(255,255,255,0.10);border-radius:18px;background:rgba(255,255,255,0.05);color:#8A8A92;font-size:19px;font-weight:700;cursor:not-allowed;">Close register</button>
+        <span style="font-size:14px;line-height:20px;color:#D6D6DA;">Closing unlocks after a manager approves the difference. The register never closes on its own.</span>
+      </div>
+    </div>
+
+    <div style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:14px;">
+      <div class="g" style="border-radius:28px;padding:20px 24px;display:flex;flex-direction:column;">
+        <h2 style="margin:0 0 8px;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:22px;line-height:28px;font-weight:700;color:#fff;">Expected cash</h2>
+        <sc-for list="{{recon}}" as="r" hint-placeholder-count="4">
+          <div style="display:flex;justify-content:space-between;align-items:center;min-height:36px;border-top:1px solid rgba(255,255,255,0.10);font-size:15px;"><span style="color:#D6D6DA;">{{r.label}}</span><span style="font-weight:600;color:#fff;">{{r.amount}}</span></div>
+        </sc-for>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;padding-top:12px;border-top:2px solid rgba(255,255,255,0.30);"><span style="font-size:17px;font-weight:700;color:#fff;">Expected cash</span><span style="font-size:20px;font-weight:700;color:#fff;">₱20,740.00</span></div>
+      </div>
+
+      <div class="gw" style="border-radius:28px;padding:22px 24px;display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:16px;">
+          <span style="font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:30px;line-height:34px;font-weight:700;color:#F5B876;">Short by ₱45.00</span>
+          <span style="display:inline-flex;align-items:center;height:26px;padding:0 12px;border-radius:999px;background:#F0A04B;color:#0A0A0B;font-size:12px;font-weight:700;">Needs approval</span>
+        </div>
+        <span style="font-size:15px;line-height:22px;color:#F5F5F6;">This is over your ₱20.00 variance limit, so a manager must approve before the register closes. An alert will be raised either way.</span>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <label for="pos-reason" style="font-size:14px;font-weight:600;color:#fff;">Reason for the difference</label>
+          <textarea id="pos-reason" placeholder="Tell the manager what you think happened" style="height:72px;border:1px solid rgba(255,255,255,0.28);border-radius:14px;padding:10px 14px;font-size:15px;color:#fff;background:rgba(255,255,255,0.06);resize:none;"></textarea>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;">
+          <span style="font-size:14px;color:#E9E9EB;">Manager approval applies only to this register close.</span>
+          <button style="flex:none;height:48px;padding:0 18px;border:0;border-radius:14px;background:#F5F5F6;color:#0A0A0B;font-size:15px;font-weight:700;">Enter manager PIN</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      count: [
+        { id: 'c1000', label: '₱1,000 bills', qty: '15', amount: '₱15,000.00' },
+        { id: 'c500', label: '₱500 bills', qty: '8', amount: '₱4,000.00' },
+        { id: 'c200', label: '₱200 bills', qty: '5', amount: '₱1,000.00' },
+        { id: 'c100', label: '₱100 bills', qty: '4', amount: '₱400.00' },
+        { id: 'c50', label: '₱50 bills', qty: '3', amount: '₱150.00' },
+        { id: 'c20', label: '₱20 bills', qty: '5', amount: '₱100.00' },
+        { id: 'ccoins', label: 'Coins, total in pesos', qty: '45', amount: '₱45.00' }
+      ],
+      recon: [
+        { label: 'Opening cash', amount: '₱3,000.00' },
+        { label: 'Cash sales', amount: '+₱18,240.00' },
+        { label: 'Cash refunds', amount: '−₱310.00' },
+        { label: 'Shift expenses', amount: '−₱190.00' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

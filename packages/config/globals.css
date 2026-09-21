@@ -1,0 +1,135 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply bg-ink-950 font-sans text-body text-ink-50 antialiased;
+    /* Every amount lines up in columns. */
+    font-variant-numeric: tabular-nums;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-display;
+  }
+
+  /* Visible keyboard focus. Gold on dark, black on light. */
+  :focus-visible {
+    outline: 2px solid theme('colors.gold.500');
+    outline-offset: 2px;
+  }
+  .surface-light :focus-visible {
+    outline-color: theme('colors.ink.900');
+  }
+
+  /* Back Office is denser than the landing page and POS. */
+  .app-backoffice {
+    font-size: 14px;
+    line-height: 20px;
+  }
+  .app-pos {
+    font-size: 16px;
+    line-height: 24px;
+  }
+}
+
+@layer components {
+  /* Screen roots. Add glows as absolutely positioned blobs with z-index -1. */
+  .surface-dark {
+    @apply relative isolate overflow-hidden bg-ink-950 text-ink-50;
+  }
+  .surface-light {
+    @apply relative isolate overflow-hidden bg-ink-100 text-ink-900;
+  }
+  .glow {
+    @apply pointer-events-none absolute -z-10 rounded-full blur-[140px];
+  }
+  .glow-gold {
+    @apply glow bg-gold-500 opacity-25;
+  }
+  .glow-gray {
+    @apply glow bg-ink-500 opacity-30;
+  }
+
+  /* One primary action per screen. Buttons stay solid, never glass. */
+  .btn-primary {
+    @apply inline-flex min-h-touch-lg items-center justify-center rounded-control bg-gold-500 px-7 font-bold text-ink-950;
+  }
+  .btn-primary:hover {
+    @apply bg-gold-300;
+  }
+  /* Confirm: white on dark, black on light. */
+  .btn-confirm {
+    @apply inline-flex min-h-touch items-center justify-center rounded-control bg-ink-50 px-5 font-semibold text-ink-950;
+  }
+  .surface-light .btn-confirm {
+    @apply bg-ink-900 text-white;
+  }
+  .btn-secondary {
+    @apply inline-flex min-h-touch items-center justify-center rounded-control border border-white/25 bg-white/10 px-5 font-semibold text-white;
+  }
+  .surface-light .btn-secondary {
+    @apply border-ink-900/15 bg-white/70 text-ink-900;
+  }
+  .btn-danger {
+    @apply inline-flex min-h-touch items-center justify-center rounded-control bg-signal-dark-critical-solid px-5 font-semibold text-white;
+  }
+  .btn-primary:disabled,
+  .btn-confirm:disabled,
+  .btn-secondary:disabled,
+  .btn-danger:disabled {
+    @apply cursor-not-allowed border-white/10 bg-white/5 text-ink-400;
+  }
+
+  .chip {
+    @apply inline-flex h-7 items-center rounded-full px-3 text-small font-semibold;
+  }
+  .chip-critical {
+    @apply bg-signal-dark-critical-bg text-signal-dark-critical-fg;
+  }
+  .surface-light .chip-critical {
+    @apply bg-signal-light-critical-bg text-signal-light-critical-fg;
+  }
+
+  .field {
+    @apply h-12 rounded-control border border-white/30 bg-white/5 px-3.5 text-body text-white;
+  }
+  .surface-light .field {
+    @apply border-ink-900/20 bg-white/70 text-ink-900;
+  }
+  .field-error {
+    @apply border-2 border-signal-dark-critical-fg;
+  }
+}
+
+/* Solid fallbacks: no blur support, or the user asked for reduced transparency. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass,
+  .glass-strong,
+  .glass-gold,
+  .glass-solid-dark {
+    background: #1b1b1e;
+  }
+  .glass-light,
+  .glass-data {
+    background: #f5f5f6;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .glass-strong,
+  .glass-gold,
+  .glass-solid-dark {
+    background: #1b1b1e;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .glass-light,
+  .glass-data {
+    background: #f5f5f6;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}

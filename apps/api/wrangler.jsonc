@@ -1,0 +1,27 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "hustlero-hcs-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-21",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "ENVIRONMENT": "development",
+  },
+  "observability": {
+    "enabled": true,
+  },
+  "env": {
+    "staging": {
+      "name": "hustlero-hcs-api-staging",
+      "vars": {
+        "ENVIRONMENT": "staging",
+      },
+    },
+    "production": {
+      "name": "hustlero-hcs-api",
+      "vars": {
+        "ENVIRONMENT": "production",
+      },
+    },
+  },
+}

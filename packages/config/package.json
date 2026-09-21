@@ -1,0 +1,13 @@
+{
+  "name": "@hcs/config",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Design tokens (Tailwind preset) and global CSS shared by every HCS app.",
+  "files": [
+    "hcs-preset.ts",
+    "globals.css"
+  ],
+  "peerDependencies": {
+    "tailwindcss": "3.4.19"
+  }
+}
