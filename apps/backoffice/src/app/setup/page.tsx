@@ -130,7 +130,11 @@ export default function SetupPage() {
     setNotice(null)
     try {
       if (mode === 'sign-up') {
-        const { data, error: authError } = await auth.auth.signUp({ email, password })
+        const { data, error: authError } = await auth.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: `${window.location.origin}/setup` },
+        })
         if (authError) throw authError
         if (!data.session) setNotice('Check your email to confirm your account, then sign in.')
       } else {

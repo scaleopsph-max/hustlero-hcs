@@ -47,6 +47,9 @@ Last updated: 2026-09-22
 - Protected `POST /v1/tenants` and owner-only `GET /v1/onboarding` implemented with shared contracts and unit tests
 - Back Office `/setup` implements account sign-in/sign-up, business and main location creation, and a resumable setup checklist
 - Local lint, TypeScript checks, unit tests, and standard production builds passed for this increment
+- GitHub CI run `35691870052` passed full application checks and onboarding pgTAP assertions
+- Onboarding migration applied to the Supabase development database and recorded as version `20260922054750`
+- Development API Worker updated; live `/health` returned 200 and Back Office-origin CORS preflight returned 204
 
 ## Not started
 
@@ -57,13 +60,12 @@ Last updated: 2026-09-22
 ## Current blockers/gates
 
 - Docker-compatible runtime is not installed locally; database verification currently runs in GitHub CI
-- New onboarding migration and pgTAP tests have not yet run in CI or on the development database
 - Browser-to-API onboarding and a positive owner/tenant integration smoke test have not yet been verified
 - vinext is beta; builds pass, while route classification remains reported as unknown for the current static pages
 
 ## Next safe action
 
-Run CI database assertions for onboarding, apply the verified migration to development, deploy the development API, and smoke-test owner onboarding and cross-tenant denial end to end. Then implement product setup and the remaining go-live prerequisites as separate vertical slices.
+Run an authenticated owner onboarding smoke test in development without creating permanent sample tenant data, then implement product setup and the remaining go-live prerequisites as separate vertical slices.
 
 ## Production state
 
