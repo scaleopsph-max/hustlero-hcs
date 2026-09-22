@@ -11,6 +11,19 @@
     "enabled": true,
   },
   "env": {
+    "development": {
+      "name": "hustlero-hcs-api-development",
+      "vars": {
+        "ENVIRONMENT": "development",
+        "SUPABASE_URL": "https://nlrzdgcxydmcvhushzwv.supabase.co",
+      },
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "0a57f9065dea4b159b7ef2cad9ca3e80",
+        },
+      ],
+    },
     "staging": {
       "name": "hustlero-hcs-api-staging",
       "vars": {

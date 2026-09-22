@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-09-21
+Last updated: 2026-09-22
 
 ## Phase
 
@@ -15,7 +15,7 @@ Last updated: 2026-09-21
 - Supabase development database is Healthy in Southeast Asia (Singapore)
 - Cloudflare account authentication verified
 - Existing Cloudflare applications were inspected and left untouched
-- No HUSTLERO Cloudflare Worker or production deployment exists
+- Development API Worker deployed at `https://hustlero-hcs-api-development.scaleopsph.workers.dev`; no production deployment exists
 - Locked product specification reviewed
 - Approved UI handoff reviewed; clean install, strict typecheck, and four application builds previously passed in an isolated review copy
 - UI handoff dependency audit found critical/high issues in the legacy Next.js 14 dependency baseline; upgrade required before adoption
@@ -36,30 +36,34 @@ Last updated: 2026-09-21
 - Cloudflare Hyperdrive/PostgreSQL session-access repository implemented with parameterized SQL
 - Supabase project confirmed to use an active asymmetric ECC P-256 JWT signing key
 - Versioned no-login Hyperdrive and column-limited API context-reader database roles added with pgTAP coverage
+- Both verified migrations applied to the Supabase development database and recorded in its internal migration ledger
+- Dedicated `hcs_hyperdrive` login enabled with a generated credential; the credential is not stored in the repository
+- Development Hyperdrive configuration `hustlero-hcs-dev` created with query caching disabled
+- Development-only API Worker binding and Supabase URL configured; Cloudflare dry-run and TypeScript check passed
+- Live development API smoke tests passed: `/health` returned 200; missing/invalid access tokens returned 401; a confirmed disposable Supabase Auth user received 200 with an empty tenant list through Hyperdrive
+- Disposable smoke user deleted after verification; no Auth users or tenant data remain from the test
 - Dependency audit reports zero known vulnerabilities
 
 ## Not started
 
 - Tenant onboarding vertical slice
 - Catalog, inventory, register, and sales implementation
-- Cloudflare Worker creation
 - Staging and production environments
 
 ## Current blockers/gates
 
 - Docker-compatible runtime is not installed locally; database verification currently runs in GitHub CI
-- The migration has passed in an isolated CI Supabase instance but remains intentionally unapplied to the remote development project
-- The dedicated database role must be enabled with a generated password after its migration passes CI; no credential is stored in the repository
-- A development Hyperdrive resource is still required; no credential or binding ID is stored in the repository
+- A real owner and tenant onboarding flow is not implemented; the positive API smoke test only covered a user with no tenant memberships
 - vinext is beta; builds pass, while route classification remains reported as unknown for the current static pages
 
 ## Next safe action
 
-Configure the development Supabase signing key and Cloudflare Hyperdrive resource, smoke-test the authenticated session context, then build the tenant onboarding vertical slice.
+Build the tenant onboarding vertical slice, including a real owner membership and first branch, then test positive and negative tenant/branch authorization cases end to end.
 
 ## Production state
 
-- Live URL: none
+- Production URL: none
+- Development API URL: `https://hustlero-hcs-api-development.scaleopsph.workers.dev`
 - Production data: none
 - Production deployment: none
 - Rollback point: not applicable

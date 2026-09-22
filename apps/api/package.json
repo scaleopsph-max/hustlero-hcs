@@ -7,7 +7,7 @@
     "build": "wrangler deploy --dry-run --outdir dist --env=\"\"",
     "dev": "wrangler dev --port 8787",
     "typecheck": "tsc --noEmit -p .",
-    "types": "wrangler types worker-configuration.d.ts"
+    "types": "wrangler types worker-configuration.d.ts --env development --include-runtime=false && prettier --write worker-configuration.d.ts"
   },
   "dependencies": {
     "@hcs/contracts": "*",
