@@ -14,7 +14,9 @@
   },
   "dependencies": {
     "@hcs/config": "*",
+    "@hcs/contracts": "*",
     "@hcs/ui": "*",
+    "@supabase/supabase-js": "^2.58.0",
     "@vinext/cloudflare": "1.0.0-beta.8",
     "lucide-react": "0.544.0",
     "next": "16.3.5",

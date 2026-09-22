@@ -11,6 +11,7 @@ import {
   Receipt,
   ShoppingBag,
   SlidersHorizontal,
+  Store,
   Truck,
   User,
   Users,
@@ -71,6 +72,7 @@ export const navGroups: NavGroup[] = [
   {
     heading: 'Manage',
     items: [
+      { label: 'Business setup', href: '/setup', icon: Store },
       { label: 'Employees', href: '/employees', icon: User },
       { label: 'Locations', href: '/locations', icon: MapPin },
       { label: 'Settings', href: '/settings', icon: SlidersHorizontal },

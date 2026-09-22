@@ -45,6 +45,12 @@ Error codes are stable and operational. Unknown payment state must never be repo
 - `GET/PATCH /v1/onboarding`
 - `POST /v1/onboarding/go-live-check`
 
+Current Phase 1 implementation:
+
+- `POST /v1/tenants` requires a Supabase bearer token and a 16-128 character `Idempotency-Key`. Body: `name`, `slug`, optional `baseCurrency` (default `PHP`), optional `timezone` (default `Asia/Manila`), and `mainLocation` with `code` and `name`. It atomically creates the tenant, main store, owner membership and role, audit event, and outbox event. Identical retries replay the stored response; a changed body with the same key returns 409.
+- `GET /v1/onboarding` requires an owner bearer token. `X-Tenant-Id` selects only a tenant found in that user's server-resolved memberships and is required when the user owns multiple tenants. It reports the full planned step sequence; currently only business and main location can be complete, and `readyToSell` remains false.
+- Remaining onboarding endpoints and step mutations are not implemented yet. The Back Office dashboard and inventory prototype still use sample data.
+
 ### Catalog and inventory
 
 - `POST/GET/PATCH /v1/products`

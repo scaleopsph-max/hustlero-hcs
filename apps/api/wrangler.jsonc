@@ -16,6 +16,7 @@
       "vars": {
         "ENVIRONMENT": "development",
         "SUPABASE_URL": "https://nlrzdgcxydmcvhushzwv.supabase.co",
+        "BACKOFFICE_ORIGIN": "http://localhost:3001",
       },
       "hyperdrive": [
         {

@@ -3,6 +3,7 @@ import { environmentSchema } from '@hcs/contracts'
 export interface Bindings {
   ENVIRONMENT: string
   SUPABASE_URL?: string
+  BACKOFFICE_ORIGIN?: string
   HYPERDRIVE?: {
     connectionString: string
   }

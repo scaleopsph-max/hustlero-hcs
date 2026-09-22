@@ -43,22 +43,27 @@ Last updated: 2026-09-22
 - Live development API smoke tests passed: `/health` returned 200; missing/invalid access tokens returned 401; a confirmed disposable Supabase Auth user received 200 with an empty tenant list through Hyperdrive
 - Disposable smoke user deleted after verification; no Auth users or tenant data remain from the test
 - Dependency audit reports zero known vulnerabilities
+- Owner onboarding foundation implemented locally: atomic, idempotent tenant/main-location bootstrap command with owner role, audit event, and outbox event
+- Protected `POST /v1/tenants` and owner-only `GET /v1/onboarding` implemented with shared contracts and unit tests
+- Back Office `/setup` implements account sign-in/sign-up, business and main location creation, and a resumable setup checklist
+- Local lint, TypeScript checks, unit tests, and standard production builds passed for this increment
 
 ## Not started
 
-- Tenant onboarding vertical slice
+- Remaining onboarding steps and go-live validation
 - Catalog, inventory, register, and sales implementation
 - Staging and production environments
 
 ## Current blockers/gates
 
 - Docker-compatible runtime is not installed locally; database verification currently runs in GitHub CI
-- A real owner and tenant onboarding flow is not implemented; the positive API smoke test only covered a user with no tenant memberships
+- New onboarding migration and pgTAP tests have not yet run in CI or on the development database
+- Browser-to-API onboarding and a positive owner/tenant integration smoke test have not yet been verified
 - vinext is beta; builds pass, while route classification remains reported as unknown for the current static pages
 
 ## Next safe action
 
-Build the tenant onboarding vertical slice, including a real owner membership and first branch, then test positive and negative tenant/branch authorization cases end to end.
+Run CI database assertions for onboarding, apply the verified migration to development, deploy the development API, and smoke-test owner onboarding and cross-tenant denial end to end. Then implement product setup and the remaining go-live prerequisites as separate vertical slices.
 
 ## Production state
 

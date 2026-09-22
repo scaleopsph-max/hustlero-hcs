@@ -1,9 +1,18 @@
+'use client'
+
 import type { ReactNode } from 'react'
+import { usePathname } from 'next/navigation'
 import { Surface } from '@hcs/ui'
 import { Sidebar } from './Sidebar'
 
 /** Back Office shell: light surface with gold and gray glows, black glass sidebar, content column. */
 export function AppShell({ children }: { children: ReactNode }) {
+  const isSetup = usePathname() === '/setup'
+
+  if (isSetup) {
+    return <main className="min-h-screen bg-ink-100 text-ink-900">{children}</main>
+  }
+
   return (
     <Surface
       tone="light"
