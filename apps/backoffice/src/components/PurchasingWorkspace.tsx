@@ -1,7 +1,7 @@
 'use client'
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { ClipboardList, Loader2, Plus, Send, Truck } from 'lucide-react'
+import { ClipboardList, Loader2, Plus, Send, Trash2, Truck } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
   purchasingContextSchema,
@@ -72,6 +72,8 @@ function key(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`
 }
 
+type DraftLine = { id: string; variantId: string; quantity: string; unitCost: string }
+
 export function PurchasingWorkspace() {
   const [auth] = useState(client)
   const [token, setToken] = useState<string | null>(null)
@@ -86,9 +88,9 @@ export function PurchasingWorkspace() {
   const [orderNumber, setOrderNumber] = useState('PO-0001')
   const [supplierId, setSupplierId] = useState('')
   const [locationId, setLocationId] = useState('')
-  const [variantId, setVariantId] = useState('')
-  const [orderQuantity, setOrderQuantity] = useState('1')
-  const [unitCost, setUnitCost] = useState('')
+  const [draftLines, setDraftLines] = useState<DraftLine[]>([
+    { id: 'draft-line-1', variantId: '', quantity: '1', unitCost: '' },
+  ])
   const [receivingOrderId, setReceivingOrderId] = useState<string | null>(null)
   const [receiveQuantities, setReceiveQuantities] = useState<Record<string, string>>({})
   const [deliveryReference, setDeliveryReference] = useState('')
@@ -101,13 +103,18 @@ export function PurchasingWorkspace() {
       setContext(next)
       setSupplierId((current) => current || next.suppliers[0]?.id || '')
       setLocationId((current) => current || next.locations[0]?.id || '')
-      setVariantId((current) => current || next.variants[0]?.id || '')
-      setUnitCost(
-        (current) =>
-          current ||
-          (next.variants[0]?.defaultUnitCostMinor === null || next.variants[0]?.defaultUnitCostMinor === undefined
-            ? ''
-            : String(next.variants[0].defaultUnitCostMinor / 100)),
+      setDraftLines((current) =>
+        current.map((line, index) => {
+          if (index !== 0 || line.variantId || !next.variants[0]) return line
+          return {
+            ...line,
+            variantId: next.variants[0].id,
+            unitCost:
+              next.variants[0].defaultUnitCostMinor === null || next.variants[0].defaultUnitCostMinor === undefined
+                ? ''
+                : String(next.variants[0].defaultUnitCostMinor / 100),
+          }
+        }),
       )
     },
     [auth],
@@ -138,13 +145,15 @@ export function PurchasingWorkspace() {
     })
   }, [auth, load])
 
-  const selectedVariant = useMemo(
-    () => context.variants.find((item) => item.id === variantId),
-    [context.variants, variantId],
-  )
-  const draftTotalMinor = lineTotal(
-    Math.round(Number(orderQuantity || 0) * 1000),
-    Math.round(Number(unitCost || 0) * 100),
+  const draftTotalMinor = useMemo(
+    () =>
+      draftLines.reduce(
+        (total, line) =>
+          total +
+          lineTotal(Math.round(Number(line.quantity || 0) * 1000), Math.round(Number(line.unitCost || 0) * 100)),
+        0,
+      ),
+    [draftLines],
   )
 
   async function submitSupplier(event: FormEvent) {
@@ -205,13 +214,11 @@ export function PurchasingWorkspace() {
               orderNumber,
               expectedAt: null,
               notes: null,
-              lines: [
-                {
-                  variantId,
-                  quantityMilli: Math.round(Number(orderQuantity) * 1000),
-                  unitCostMinor: Math.round(Number(unitCost || 0) * 100),
-                },
-              ],
+              lines: draftLines.map((line) => ({
+                variantId: line.variantId,
+                quantityMilli: Math.round(Number(line.quantity) * 1000),
+                unitCostMinor: Math.round(Number(line.unitCost || 0) * 100),
+              })),
             }),
           },
           auth ?? undefined,
@@ -220,6 +227,17 @@ export function PurchasingWorkspace() {
       )
       setNotice(`Draft ${result.purchaseOrderId.slice(0, 8)} created.`)
       setOrderNumber(`PO-${String(context.orders.length + 2).padStart(4, '0')}`)
+      setDraftLines([
+        {
+          id: `draft-line-${Date.now()}`,
+          variantId: context.variants[0]?.id ?? '',
+          quantity: '1',
+          unitCost:
+            context.variants[0]?.defaultUnitCostMinor == null
+              ? ''
+              : String(context.variants[0].defaultUnitCostMinor / 100),
+        },
+      ])
       await load(token, tenantId)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not create purchase order.')
@@ -386,51 +404,113 @@ export function PurchasingWorkspace() {
               placeholder="Order number"
               required
             />
-            <select
-              className={inputClass}
-              value={variantId}
-              onChange={(event) => {
-                setVariantId(event.target.value)
-                const next = context.variants.find((item) => item.id === event.target.value)
-                if (next?.defaultUnitCostMinor !== null && next?.defaultUnitCostMinor !== undefined)
-                  setUnitCost(String(next.defaultUnitCostMinor / 100))
-              }}
-              required
-            >
-              <option value="">Select product variant</option>
-              {context.variants.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.productName} / {item.variantName} ({item.sku})
-                </option>
+            <div className="grid gap-3">
+              {draftLines.map((line, index) => (
+                <div key={line.id} className="grid gap-2 border-t border-ink-900/10 pt-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-ink-500">Line {index + 1}</span>
+                    {draftLines.length > 1 ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        aria-label={`Remove line ${index + 1}`}
+                        onClick={() => setDraftLines((current) => current.filter((item) => item.id !== line.id))}
+                      >
+                        <Trash2 size={15} />
+                      </Button>
+                    ) : null}
+                  </div>
+                  <select
+                    className={inputClass}
+                    value={line.variantId}
+                    onChange={(event) => {
+                      const next = context.variants.find((item) => item.id === event.target.value)
+                      setDraftLines((current) =>
+                        current.map((item) =>
+                          item.id === line.id
+                            ? {
+                                ...item,
+                                variantId: event.target.value,
+                                unitCost:
+                                  next?.defaultUnitCostMinor == null
+                                    ? item.unitCost
+                                    : String(next.defaultUnitCostMinor / 100),
+                              }
+                            : item,
+                        ),
+                      )
+                    }}
+                    required
+                  >
+                    <option value="">Select product variant</option>
+                    {context.variants.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.productName} / {item.variantName} ({item.sku})
+                      </option>
+                    ))}
+                  </select>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <input
+                      className={inputClass}
+                      type="number"
+                      min="0.001"
+                      step="0.001"
+                      value={line.quantity}
+                      onChange={(event) =>
+                        setDraftLines((current) =>
+                          current.map((item) =>
+                            item.id === line.id ? { ...item, quantity: event.target.value } : item,
+                          ),
+                        )
+                      }
+                      placeholder="Quantity"
+                      required
+                    />
+                    <input
+                      className={inputClass}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={line.unitCost}
+                      onChange={(event) =>
+                        setDraftLines((current) =>
+                          current.map((item) =>
+                            item.id === line.id ? { ...item, unitCost: event.target.value } : item,
+                          ),
+                        )
+                      }
+                      placeholder="Unit cost (PHP)"
+                      required
+                    />
+                  </div>
+                  <p className="text-xs text-ink-500">
+                    Line total:{' '}
+                    {money(
+                      lineTotal(
+                        Math.round(Number(line.quantity || 0) * 1000),
+                        Math.round(Number(line.unitCost || 0) * 100),
+                      ),
+                    )}
+                  </p>
+                </div>
               ))}
-            </select>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <input
-                className={inputClass}
-                type="number"
-                min="0.001"
-                step="0.001"
-                value={orderQuantity}
-                onChange={(event) => setOrderQuantity(event.target.value)}
-                placeholder="Quantity"
-                required
-              />
-              <input
-                className={inputClass}
-                type="number"
-                min="0"
-                step="0.01"
-                value={unitCost}
-                onChange={(event) => setUnitCost(event.target.value)}
-                placeholder="Unit cost (PHP)"
-                required
-              />
             </div>
-            <p className="text-xs text-ink-500">
-              {selectedVariant
-                ? `${selectedVariant.productName} / ${selectedVariant.variantName} · ${money(Math.round(Number(unitCost || 0) * 100))}`
-                : 'Choose an active product variant.'}
-            </p>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                setDraftLines((current) => [
+                  ...current,
+                  { id: `draft-line-${Date.now()}-${current.length}`, variantId: '', quantity: '1', unitCost: '' },
+                ])
+              }
+              disabled={!context.variants.length}
+            >
+              <Plus size={16} className="mr-2" />
+              Add another line
+            </Button>
             <div className="flex items-center justify-between border-t border-ink-900/10 pt-3 text-sm">
               <span className="text-ink-500">Purchase order total</span>
               <span className="font-display text-lg font-bold">{money(draftTotalMinor)}</span>
