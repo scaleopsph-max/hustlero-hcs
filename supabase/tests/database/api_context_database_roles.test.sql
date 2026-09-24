@@ -58,8 +58,8 @@ select is(
     where schemaname = 'app'
       and roles @> array['hcs_api_context_reader']::name[]
   ),
-  8,
-  'all eight API context tables have explicit reader policies'
+  10,
+  'all ten API context tables have explicit reader policies'
 );
 
 select * from finish();

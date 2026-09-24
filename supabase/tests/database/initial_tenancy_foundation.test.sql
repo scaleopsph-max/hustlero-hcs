@@ -27,7 +27,7 @@ select ok(
 );
 select is(
   (select count(*)::integer from pg_policies where schemaname = 'app'),
-  11,
+  13,
   'only the reviewed browser and API context policies are present'
 );
 
