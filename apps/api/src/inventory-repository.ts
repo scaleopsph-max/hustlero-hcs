@@ -1,9 +1,12 @@
 import {
+  inventoryAdjustmentCreateResponseSchema,
   inventoryMovementContextSchema,
   inventoryStockContextSchema,
   openingInventoryContextSchema,
   openingInventoryCreateResponseSchema,
   type InventoryMovementContext,
+  type InventoryAdjustmentCreateRequest,
+  type InventoryAdjustmentCreateResponse,
   type InventoryStockContext,
   type OpeningInventoryContext,
   type OpeningInventoryCreateRequest,
@@ -46,6 +49,16 @@ export type InventoryMovementLoader = (
   limit: number,
   bindings: Bindings,
 ) => Promise<InventoryMovementContext>
+
+export type InventoryAdjustmentRecorder = (
+  userId: string,
+  tenantId: string,
+  request: InventoryAdjustmentCreateRequest,
+  idempotencyKey: string,
+  requestHash: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<InventoryAdjustmentCreateResponse>
 
 const databaseContextSchema = z.object({
   locations: z.array(z.object({ id: z.uuid(), code: z.string(), name: z.string() })),
@@ -239,6 +252,44 @@ export const loadInventoryMovementsFromPostgres: InventoryMovementLoader = async
         balanceAfterMilli: decimalToScaled(balanceAfter, 3),
       })),
     })
+  } finally {
+    await client.end()
+  }
+}
+
+export const recordInventoryAdjustmentInPostgres: InventoryAdjustmentRecorder = async (
+  userId,
+  tenantId,
+  request,
+  idempotencyKey,
+  requestHash,
+  requestId,
+  bindings,
+) => {
+  const client = new Client({ connectionString: connectionString(bindings) })
+  try {
+    await client.connect()
+    const result = await client.query(
+      `select app.record_inventory_adjustment(
+        $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::numeric, $6::numeric,
+        $7::text, $8::text, $9::text, $10::text
+      ) as response`,
+      [
+        userId,
+        tenantId,
+        request.locationId,
+        request.variantId,
+        scaledToDecimal(request.quantityMilli, 3),
+        request.unitCostMinor === null ? null : scaledToDecimal(request.unitCostMinor, 2),
+        request.reason,
+        idempotencyKey,
+        requestHash,
+        requestId,
+      ],
+    )
+    const response = result.rows[0]?.response
+    const parsed = inventoryAdjustmentCreateResponseSchema.parse(response)
+    return parsed
   } finally {
     await client.end()
   }

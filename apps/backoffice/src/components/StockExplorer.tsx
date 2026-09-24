@@ -4,6 +4,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { CheckCircle2, Download, Loader2, PackageSearch, Search, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  inventoryAdjustmentCreateResponseSchema,
   inventoryMovementContextSchema,
   inventoryStockContextSchema,
   sessionContextResponseSchema,
@@ -39,11 +40,13 @@ async function apiRequest(
   tenantId: string,
   auth?: SupabaseClient,
   onTokenRefreshed?: (accessToken: string) => void,
+  options?: RequestInit,
 ) {
   if (!apiUrl) throw new Error('Back Office API URL is not configured.')
   const request = (token: string) =>
     fetch(`${apiUrl.replace(/\/$/, '')}${path}`, {
-      headers: { Authorization: `Bearer ${token}`, 'X-Tenant-Id': tenantId },
+      ...options,
+      headers: { Authorization: `Bearer ${token}`, 'X-Tenant-Id': tenantId, ...options?.headers },
     })
   let response = await request(accessToken)
   if (response.status === 401 && auth) {
@@ -292,6 +295,13 @@ export function StockExplorer() {
           selected={selected}
           movements={selectedMovements}
           onClose={() => setSelectedVariantId(null)}
+          locationId={stock?.selectedLocationId ?? ''}
+          tenantId={tenantId ?? ''}
+          token={token ?? ''}
+          auth={auth}
+          onRecorded={async () => {
+            if (token && tenantId && stock) await loadWorkspace(token, tenantId, stock.selectedLocationId)
+          }}
         />
       ) : (
         <MovementTable movements={filteredMovements} />
@@ -307,6 +317,11 @@ function StockTable({
   selected,
   movements,
   onClose,
+  locationId,
+  tenantId,
+  token,
+  auth,
+  onRecorded,
 }: {
   rows: InventoryStockContext['items']
   selectedVariantId: string | null
@@ -314,6 +329,11 @@ function StockTable({
   selected: InventoryStockContext['items'][number] | null
   movements: InventoryMovementContext['items']
   onClose: () => void
+  locationId: string
+  tenantId: string
+  token: string
+  auth: SupabaseClient | null
+  onRecorded: () => Promise<void>
 }) {
   return (
     <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -368,7 +388,18 @@ function StockTable({
           </div>
         ) : null}
       </Glass>
-      {selected ? <StockDetails item={selected} movements={movements} onClose={onClose} /> : null}
+      {selected ? (
+        <StockDetails
+          item={selected}
+          movements={movements}
+          onClose={onClose}
+          locationId={locationId}
+          tenantId={tenantId}
+          token={token}
+          auth={auth}
+          onRecorded={onRecorded}
+        />
+      ) : null}
     </div>
   )
 }
@@ -377,10 +408,20 @@ function StockDetails({
   item,
   movements,
   onClose,
+  locationId,
+  tenantId,
+  token,
+  auth,
+  onRecorded,
 }: {
   item: InventoryStockContext['items'][number]
   movements: InventoryMovementContext['items']
   onClose: () => void
+  locationId: string
+  tenantId: string
+  token: string
+  auth: SupabaseClient | null
+  onRecorded: () => Promise<void>
 }) {
   return (
     <Glass variant="data" as="aside" className="rounded-panel p-5">
@@ -421,7 +462,149 @@ function StockDetails({
           <p className="border-t border-ink-900/10 py-5 text-sm text-ink-500">No stock movement recorded yet.</p>
         )}
       </div>
+      <AdjustmentForm
+        item={item}
+        locationId={locationId}
+        tenantId={tenantId}
+        token={token}
+        auth={auth}
+        onRecorded={onRecorded}
+      />
     </Glass>
+  )
+}
+
+function parseSignedQuantity(input: string): number {
+  const match = /^(-?)(\d+)(?:\.(\d{0,3}))?$/.exec(input.trim())
+  if (!match) throw new Error('Use a quantity with up to three decimal places.')
+  const scaled = Number(match[2]) * 1000 + Number((match[3] ?? '').padEnd(3, '0'))
+  return match[1] === '-' ? -scaled : scaled
+}
+
+function parseOptionalMoney(input: string): number | null {
+  if (!input.trim()) return null
+  const match = /^(\d+)(?:\.(\d{0,2}))?$/.exec(input.trim())
+  if (!match) throw new Error('Use a unit cost with up to two decimal places.')
+  return Number(match[1]) * 100 + Number((match[2] ?? '').padEnd(2, '0'))
+}
+
+function AdjustmentForm({
+  item,
+  locationId,
+  tenantId,
+  token,
+  auth,
+  onRecorded,
+}: {
+  item: InventoryStockContext['items'][number]
+  locationId: string
+  tenantId: string
+  token: string
+  auth: SupabaseClient | null
+  onRecorded: () => Promise<void>
+}) {
+  const [quantity, setQuantity] = useState('')
+  const [unitCost, setUnitCost] = useState('')
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  async function submit() {
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const request = {
+        locationId,
+        variantId: item.variantId,
+        quantityMilli: parseSignedQuantity(quantity),
+        unitCostMinor: parseOptionalMoney(unitCost),
+        reason: reason.trim(),
+      }
+      inventoryAdjustmentCreateResponseSchema.parse(
+        await apiRequest('/v1/inventory/adjustments', token, tenantId, auth ?? undefined, undefined, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+          body: JSON.stringify(request),
+        }),
+      )
+      setQuantity('')
+      setUnitCost('')
+      setReason('')
+      await onRecorded()
+      setNotice('Stock adjustment recorded.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not record this adjustment.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mt-4 border-t border-ink-900/10 pt-4">
+      <h3 className="font-bold">Adjust stock</h3>
+      <p className="mt-1 text-xs leading-5 text-ink-500">
+        Use a positive quantity to add stock or a negative quantity to correct it.
+      </p>
+      {error ? (
+        <p role="alert" className="mt-3 border-l-2 border-red-600 bg-red-50 p-2 text-xs text-red-800">
+          {error}
+        </p>
+      ) : null}
+      {notice ? (
+        <p role="status" className="mt-3 border-l-2 border-emerald-600 bg-emerald-50 p-2 text-xs text-emerald-900">
+          {notice}
+        </p>
+      ) : null}
+      <div className="mt-3 grid gap-2">
+        <label className="text-xs font-semibold">
+          Quantity
+          <input
+            aria-label="Adjustment quantity"
+            inputMode="decimal"
+            placeholder="-1 or 2.500"
+            value={quantity}
+            disabled={busy}
+            onChange={(event) => setQuantity(event.target.value)}
+            className="mt-1 h-10 w-full rounded-control border border-ink-900/15 bg-white px-3 text-sm"
+          />
+        </label>
+        <label className="text-xs font-semibold">
+          Unit cost (optional)
+          <input
+            aria-label="Adjustment unit cost"
+            inputMode="decimal"
+            placeholder="Use current average cost"
+            value={unitCost}
+            disabled={busy}
+            onChange={(event) => setUnitCost(event.target.value)}
+            className="mt-1 h-10 w-full rounded-control border border-ink-900/15 bg-white px-3 text-sm"
+          />
+        </label>
+        <label className="text-xs font-semibold">
+          Reason
+          <textarea
+            aria-label="Adjustment reason"
+            placeholder="Why is the stock changing?"
+            value={reason}
+            disabled={busy}
+            onChange={(event) => setReason(event.target.value)}
+            className="mt-1 min-h-20 w-full resize-y rounded-control border border-ink-900/15 bg-white px-3 py-2 text-sm"
+          />
+        </label>
+        <Button
+          type="button"
+          size="sm"
+          variant="confirm"
+          disabled={busy || !quantity.trim() || reason.trim().length < 3}
+          onClick={() => void submit()}
+        >
+          {busy ? <Loader2 size={16} className="mr-2 animate-spin" /> : null}
+          Record adjustment
+        </Button>
+      </div>
+    </div>
   )
 }
 

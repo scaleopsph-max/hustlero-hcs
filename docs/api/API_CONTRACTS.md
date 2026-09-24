@@ -95,6 +95,13 @@ Current opening-inventory implementation:
 - Successful batches create one audit event and one outbox event. Identical retries replay the response; changed retries and duplicate openings return 409.
 - The onboarding opening-inventory step becomes complete after the tenant records its first opening movement.
 
+Current adjustment implementation:
+
+- `POST /v1/inventory/adjustments` requires an `Idempotency-Key`, branch and variant references, a non-zero signed integer-thousandth quantity, optional integer-centavo unit cost, and a required human reason.
+- The command is restricted to tenant owners or members with `inventory.manage`, requires opening inventory first, locks the branch/variant balance, appends an `ADJUSTMENT` movement, updates the balance atomically, and blocks negative on-hand or available stock.
+- Successful adjustments create an audit event with the reason and one outbox event. Corrections remain append-only; no movement or balance row is edited directly.
+- Approval thresholds are intentionally deferred until the Approvals module and tenant policy configuration are implemented; this slice enforces inventory-management authorization and auditability.
+
 Current inventory visibility implementation:
 
 - `GET /v1/inventory/stock` returns the live balance projection for active inventory-tracked variants at a server-authorized branch. `available` is computed as `on_hand - reserved`; quantities cross the TypeScript boundary as integer thousandths.

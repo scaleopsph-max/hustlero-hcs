@@ -39,6 +39,28 @@ export const openingInventoryCreateResponseSchema = z.object({
   status: z.literal('recorded'),
 })
 
+export const inventoryAdjustmentCreateRequestSchema = z.strictObject({
+  locationId: identifierSchema,
+  variantId: identifierSchema,
+  quantityMilli: z
+    .number()
+    .int()
+    .min(-999_999_999_999)
+    .max(999_999_999_999)
+    .refine((value) => value !== 0),
+  unitCostMinor: moneyMinorSchema.nullable(),
+  reason: z.string().trim().min(3).max(240),
+})
+
+export const inventoryAdjustmentCreateResponseSchema = z.object({
+  movementId: identifierSchema,
+  locationId: identifierSchema,
+  variantId: identifierSchema,
+  quantityMilli: z.number().int(),
+  onHandMilli: z.number().int(),
+  status: z.literal('recorded'),
+})
+
 export const openingInventoryContextSchema = z.object({
   locations: z.array(inventoryLocationSchema),
   selectedLocationId: identifierSchema,
@@ -104,6 +126,8 @@ export const inventoryMovementContextSchema = z.object({
 
 export type OpeningInventoryCreateRequest = z.infer<typeof openingInventoryCreateRequestSchema>
 export type OpeningInventoryCreateResponse = z.infer<typeof openingInventoryCreateResponseSchema>
+export type InventoryAdjustmentCreateRequest = z.infer<typeof inventoryAdjustmentCreateRequestSchema>
+export type InventoryAdjustmentCreateResponse = z.infer<typeof inventoryAdjustmentCreateResponseSchema>
 export type OpeningInventoryContext = z.infer<typeof openingInventoryContextSchema>
 export type InventoryStockContext = z.infer<typeof inventoryStockContextSchema>
 export type InventoryMovementContext = z.infer<typeof inventoryMovementContextSchema>

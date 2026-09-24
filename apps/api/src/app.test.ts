@@ -7,6 +7,7 @@ import {
   catalogVariantDeactivateResponseSchema,
   catalogVariantUpdateResponseSchema,
   healthResponseSchema,
+  inventoryAdjustmentCreateResponseSchema,
   inventoryMovementContextSchema,
   inventoryStockContextSchema,
   openingInventoryContextSchema,
@@ -133,6 +134,14 @@ const loadInventoryMovements = vi.fn(async () => ({
     },
   ],
 }))
+const recordInventoryAdjustment = vi.fn(async () => ({
+  movementId: '60000000-0000-4000-8000-000000000001',
+  locationId,
+  variantId: '50000000-0000-4000-8000-000000000001',
+  quantityMilli: -500,
+  onHandMilli: 11_500,
+  status: 'recorded' as const,
+}))
 
 const authenticatedApp = createApp({
   verifyAccessToken: async (token) => (token === 'valid-token' ? { userId } : null),
@@ -163,6 +172,7 @@ const authenticatedApp = createApp({
   deactivateCatalogVariant,
   loadInventoryStock,
   loadInventoryMovements,
+  recordInventoryAdjustment,
   loadOpeningInventory,
   recordOpeningInventory,
 })
@@ -365,6 +375,7 @@ describe('API', () => {
       deactivateCatalogVariant,
       loadInventoryStock,
       loadInventoryMovements,
+      recordInventoryAdjustment,
       loadOpeningInventory,
       recordOpeningInventory,
     })
@@ -405,6 +416,7 @@ describe('API', () => {
       deactivateCatalogVariant,
       loadInventoryStock,
       loadInventoryMovements,
+      recordInventoryAdjustment,
       loadOpeningInventory,
       recordOpeningInventory,
     })
@@ -775,6 +787,67 @@ describe('API', () => {
     )
     expect(response.status).toBe(400)
     expect(loadInventoryMovements).not.toHaveBeenCalled()
+  })
+
+  it('records an inventory adjustment with a reason and integer units', async () => {
+    recordInventoryAdjustment.mockClear()
+    const request = {
+      locationId,
+      variantId: '50000000-0000-4000-8000-000000000001',
+      quantityMilli: -500,
+      unitCostMinor: null,
+      reason: 'Damaged during receiving',
+    }
+    const response = await authenticatedApp.request(
+      '/v1/inventory/adjustments',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'inventory-adjustment-001',
+        },
+        body: JSON.stringify(request),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(201)
+    expect(inventoryAdjustmentCreateResponseSchema.safeParse(await response.json()).success).toBe(true)
+    expect(recordInventoryAdjustment).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      request,
+      'inventory-adjustment-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('rejects an adjustment without a non-zero quantity or reason', async () => {
+    recordInventoryAdjustment.mockClear()
+    const response = await authenticatedApp.request(
+      '/v1/inventory/adjustments',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'inventory-adjustment-002',
+        },
+        body: JSON.stringify({
+          locationId,
+          variantId: '50000000-0000-4000-8000-000000000001',
+          quantityMilli: 0,
+          reason: '',
+        }),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(400)
+    expect(recordInventoryAdjustment).not.toHaveBeenCalled()
   })
 
   it('loads opening inventory for the server-resolved tenant and requested location', async () => {

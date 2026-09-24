@@ -11,6 +11,8 @@ import {
   catalogVariantUpdateRequestSchema,
   catalogVariantUpdateResponseSchema,
   healthResponseSchema,
+  inventoryAdjustmentCreateRequestSchema,
+  inventoryAdjustmentCreateResponseSchema,
   inventoryMovementContextSchema,
   inventoryStockContextSchema,
   openingInventoryContextSchema,
@@ -47,9 +49,11 @@ import {
   loadInventoryMovementsFromPostgres,
   loadInventoryStockFromPostgres,
   loadOpeningInventoryFromPostgres,
+  recordInventoryAdjustmentInPostgres,
   recordOpeningInventoryInPostgres,
   type InventoryMovementLoader,
   type InventoryStockLoader,
+  type InventoryAdjustmentRecorder,
   type OpeningInventoryLoader,
   type OpeningInventoryRecorder,
 } from './inventory-repository'
@@ -77,6 +81,7 @@ interface AppDependencies {
   deactivateCatalogVariant: CatalogVariantDeactivator
   loadInventoryStock: InventoryStockLoader
   loadInventoryMovements: InventoryMovementLoader
+  recordInventoryAdjustment: InventoryAdjustmentRecorder
   loadOpeningInventory: OpeningInventoryLoader
   recordOpeningInventory: OpeningInventoryRecorder
 }
@@ -95,6 +100,7 @@ const defaultDependencies: AppDependencies = {
   deactivateCatalogVariant: deactivateCatalogVariantInPostgres,
   loadInventoryStock: loadInventoryStockFromPostgres,
   loadInventoryMovements: loadInventoryMovementsFromPostgres,
+  recordInventoryAdjustment: recordInventoryAdjustmentInPostgres,
   loadOpeningInventory: loadOpeningInventoryFromPostgres,
   recordOpeningInventory: recordOpeningInventoryInPostgres,
 }
@@ -1455,6 +1461,167 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
             },
           }),
           404,
+        )
+      }
+      throw error
+    }
+  })
+
+  app.post('/v1/inventory/adjustments', async (context) => {
+    const accessToken = readBearerToken(context.req.header('authorization'))
+    if (!accessToken) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Sign in before adjusting inventory.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+    const user = await dependencies.verifyAccessToken(accessToken, context.env)
+    if (!user) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_ACCESS_TOKEN',
+            message: 'The access token is invalid or expired.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+    const idempotencyKey = context.req.header('idempotency-key')
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_REQUIRED',
+            message: 'A valid Idempotency-Key is required.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    const tenants = await dependencies.loadSessionAccess(user.userId, context.env)
+    const requestedTenantId = context.req.header('x-tenant-id')
+    if (!requestedTenantId && tenants.length > 1) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'TENANT_SELECTION_REQUIRED',
+            message: 'Select a business before adjusting inventory.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        409,
+      )
+    }
+    const tenant = requestedTenantId ? tenants.find((entry) => entry.tenantId === requestedTenantId) : tenants[0]
+    if (!tenant) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVENTORY_ACCESS_DENIED',
+            message: 'You do not have access to this business inventory.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    }
+    const body: unknown = await context.req.json().catch(() => null)
+    const parsed = inventoryAdjustmentCreateRequestSchema.safeParse(body)
+    if (!parsed.success) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_INVENTORY_ADJUSTMENT',
+            message: 'Enter a non-zero quantity and a reason at least three characters long.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    try {
+      const response = await dependencies.recordInventoryAdjustment(
+        user.userId,
+        tenant.tenantId,
+        parsed.data,
+        idempotencyKey,
+        await requestHash(parsed.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(inventoryAdjustmentCreateResponseSchema.parse(response), 201)
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS08') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'IDEMPOTENCY_KEY_CONFLICT',
+              message: 'This request key was already used for a different adjustment.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      }
+      if (code === 'HCS17' || code === 'HCS18') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS18' ? 'INVENTORY_UNAVAILABLE' : 'INVENTORY_ACCESS_DENIED',
+              message:
+                code === 'HCS18' ? 'The inventory module is not enabled.' : 'You do not have inventory permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      }
+      if (code === 'HCS19' || code === 'HCS21') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS19' ? 'LOCATION_NOT_FOUND' : 'VARIANT_NOT_FOUND',
+              message:
+                code === 'HCS19' ? 'The inventory location was not found.' : 'The inventory variant was not found.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          404,
+        )
+      }
+      if (code === 'HCS20' || code === '22P02' || code === '22003') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVALID_INVENTORY_ADJUSTMENT',
+              message: 'Check the adjustment quantity, unit cost, and reason.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          400,
+        )
+      }
+      if (code === 'HCS22') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVENTORY_STATE_CONFLICT',
+              message:
+                'Record opening inventory first, or reduce the adjustment so available stock does not go negative.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
         )
       }
       throw error
