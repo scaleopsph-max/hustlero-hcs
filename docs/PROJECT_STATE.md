@@ -60,6 +60,8 @@ Last updated: 2026-09-24
 - GitHub CI run `35949261791` passed application checks, a fresh Supabase reset, and the catalog pgTAP suite
 - Catalog variant-management migration was applied to development and recorded as version `20260924054148`; later variants use tenant-safe, idempotent API commands with audit and outbox events
 - Catalog product-editing migration was applied to development and recorded as version `20260924060133`; product-master edits keep variants intact
+- Catalog variant-lifecycle migration was applied to development and recorded as version `20260924063914`; variant edits and soft deactivation are tenant-safe, idempotent, audited, and outbox-backed
+- Variant removal preserves historical rows and blocks removal of the last active variant for a product
 
 ## Not started
 
@@ -75,8 +77,8 @@ Last updated: 2026-09-24
 ## In progress
 
 - Owner completed the business-question and feature-selection forms for `LOCAL RECIPE`
-- Manual catalog/product vertical slice: private Product → Variant → SKU → Barcode schema, tenant-safe/idempotent API commands, product-grain list, editable product detail, and nested add-variant flow are implemented and verified in development
-- Development API Worker version `8dbc99b6-6285-46a4-87f6-8967be09a15f` is deployed; authenticated `/products` and `/products/{productId}` were browser-verified with the saved catalog
+- Manual catalog/product vertical slice: private Product → Variant → SKU → Barcode schema, tenant-safe/idempotent API commands, product-grain list, editable product detail, and nested add/edit/deactivate variant flow are implemented and verified in development
+- Development API Worker version `f357a7b9-09c2-43e5-b800-71852e14eb04` is deployed; authenticated `/products/{productId}` was browser-verified with edit controls and inline deactivation confirmation
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action

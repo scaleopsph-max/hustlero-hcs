@@ -3,6 +3,8 @@ import {
   catalogProductUpdateResponseSchema,
   catalogResponseSchema,
   catalogVariantCreateResponseSchema,
+  catalogVariantDeactivateResponseSchema,
+  catalogVariantUpdateResponseSchema,
   type CatalogProductCreateRequest,
   type CatalogProductCreateResponse,
   type CatalogProductUpdateRequest,
@@ -10,6 +12,9 @@ import {
   type CatalogResponse,
   type CatalogVariantCreateRequest,
   type CatalogVariantCreateResponse,
+  type CatalogVariantDeactivateResponse,
+  type CatalogVariantUpdateRequest,
+  type CatalogVariantUpdateResponse,
 } from '@hcs/contracts'
 import { Client } from 'pg'
 import { z } from 'zod'
@@ -46,6 +51,27 @@ export type CatalogProductUpdater = (
   requestId: string,
   bindings: Bindings,
 ) => Promise<CatalogProductUpdateResponse>
+export type CatalogVariantUpdater = (
+  userId: string,
+  tenantId: string,
+  productId: string,
+  variantId: string,
+  request: CatalogVariantUpdateRequest,
+  idempotencyKey: string,
+  requestHash: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<CatalogVariantUpdateResponse>
+export type CatalogVariantDeactivator = (
+  userId: string,
+  tenantId: string,
+  productId: string,
+  variantId: string,
+  idempotencyKey: string,
+  requestHash: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<CatalogVariantDeactivateResponse>
 
 const databaseCatalogSchema = z.object({
   categories: z.array(z.object({ id: z.uuid(), name: z.string() })),
@@ -100,11 +126,13 @@ export const loadCatalogFromPostgres: CatalogLoader = async (userId, tenantId, b
       categories: databaseCatalog.categories,
       products: databaseCatalog.products.map((product) => ({
         ...product,
-        variants: product.variants.map(({ retailPrice, unitCost, ...variant }) => ({
-          ...variant,
-          retailPriceMinor: decimalToMinor(retailPrice),
-          unitCostMinor: unitCost === null ? null : decimalToMinor(unitCost),
-        })),
+        variants: product.variants
+          .filter((variant) => variant.isActive)
+          .map(({ retailPrice, unitCost, ...variant }) => ({
+            ...variant,
+            retailPriceMinor: decimalToMinor(retailPrice),
+            unitCostMinor: unitCost === null ? null : decimalToMinor(unitCost),
+          })),
       })),
     })
   } finally {
@@ -221,6 +249,72 @@ export const updateCatalogProductInPostgres: CatalogProductUpdater = async (
       ],
     )
     return catalogProductUpdateResponseSchema.parse(result.rows[0]?.response)
+  } finally {
+    await client.end()
+  }
+}
+
+export const updateCatalogVariantInPostgres: CatalogVariantUpdater = async (
+  userId,
+  tenantId,
+  productId,
+  variantId,
+  request,
+  idempotencyKey,
+  requestHash,
+  requestId,
+  bindings,
+) => {
+  const client = new Client({ connectionString: connectionString(bindings) })
+  try {
+    await client.connect()
+    const result = await client.query(
+      `select app.update_catalog_variant(
+        $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::text, $6::text,
+        $7::numeric, $8::numeric, $9::boolean, $10::text[], $11::text, $12::text, $13::text
+      ) as response`,
+      [
+        userId,
+        tenantId,
+        productId,
+        variantId,
+        request.variantName,
+        request.sku,
+        minorToDecimal(request.retailPriceMinor),
+        request.unitCostMinor === null ? null : minorToDecimal(request.unitCostMinor),
+        request.trackInventory,
+        request.barcodes,
+        idempotencyKey,
+        requestHash,
+        requestId,
+      ],
+    )
+    return catalogVariantUpdateResponseSchema.parse(result.rows[0]?.response)
+  } finally {
+    await client.end()
+  }
+}
+
+export const deactivateCatalogVariantInPostgres: CatalogVariantDeactivator = async (
+  userId,
+  tenantId,
+  productId,
+  variantId,
+  idempotencyKey,
+  requestHash,
+  requestId,
+  bindings,
+) => {
+  const client = new Client({ connectionString: connectionString(bindings) })
+  try {
+    await client.connect()
+    const result = await client.query(
+      `select app.deactivate_catalog_variant(
+        $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::text, $6::text, $7::text
+      ) as response`,
+      [userId, tenantId, productId, variantId, idempotencyKey, requestHash, requestId],
+    )
+    return catalogVariantDeactivateResponseSchema.parse(result.rows[0]?.response)
   } finally {
     await client.end()
   }

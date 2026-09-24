@@ -1,17 +1,20 @@
 'use client'
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { ArrowLeft, Check, Plus } from 'lucide-react'
+import { ArrowLeft, Check, Pencil, Plus, Trash2, X } from 'lucide-react'
 import Link from 'next/link'
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { Fragment, useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
   catalogProductUpdateResponseSchema,
   catalogResponseSchema,
   catalogVariantCreateResponseSchema,
+  catalogVariantDeactivateResponseSchema,
+  catalogVariantUpdateResponseSchema,
   sessionContextResponseSchema,
   type CatalogProductUpdateRequest,
   type CatalogResponse,
   type CatalogVariantCreateRequest,
+  type CatalogVariantUpdateRequest,
 } from '@hcs/contracts'
 import { Button, Glass, formatPeso, parsePeso } from '@hcs/ui'
 import { Topbar } from './Topbar'
@@ -71,6 +74,8 @@ export function ProductDetail({ productId }: { productId: string }) {
   const [retailPrice, setRetailPrice] = useState('')
   const [unitCost, setUnitCost] = useState('')
   const [trackInventory, setTrackInventory] = useState(true)
+  const [editingVariantId, setEditingVariantId] = useState<string | null>(null)
+  const [deletingVariantId, setDeletingVariantId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState<string | null>(null)
@@ -156,13 +161,36 @@ export function ProductDetail({ productId }: { productId: string }) {
     }
   }
 
-  async function addVariant(event: FormEvent<HTMLFormElement>) {
+  function resetVariantForm() {
+    setEditingVariantId(null)
+    setVariantName('Black / XL')
+    setVariantSku('')
+    setVariantBarcode('')
+    setRetailPrice('')
+    setUnitCost('')
+    setTrackInventory(true)
+  }
+
+  function editVariant(variant: CatalogResponse['products'][number]['variants'][number]) {
+    setEditingVariantId(variant.id)
+    setDeletingVariantId(null)
+    setVariantName(variant.name)
+    setVariantSku(variant.sku)
+    setVariantBarcode(variant.barcodes[0] ?? '')
+    setRetailPrice((variant.retailPriceMinor / 100).toFixed(2))
+    setUnitCost(variant.unitCostMinor === null ? '' : (variant.unitCostMinor / 100).toFixed(2))
+    setTrackInventory(variant.trackInventory)
+    setError(null)
+    setNotice(null)
+  }
+
+  async function saveVariant(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!token || !tenantId) return
     setBusy(true)
     setError(null)
     setNotice(null)
-    const request: CatalogVariantCreateRequest = {
+    const request: CatalogVariantCreateRequest | CatalogVariantUpdateRequest = {
       variantName: variantName.trim(),
       sku: variantSku.trim().toUpperCase(),
       retailPriceMinor: parsePeso(retailPrice),
@@ -172,16 +200,52 @@ export function ProductDetail({ productId }: { productId: string }) {
     }
     let requestToken = token
     try {
-      catalogVariantCreateResponseSchema.parse(
+      const editing = editingVariantId !== null
+      const response = await apiRequest(
+        editing
+          ? `/v1/catalog/products/${productId}/variants/${editingVariantId}`
+          : `/v1/catalog/products/${productId}/variants`,
+        requestToken,
+        tenantId,
+        {
+          method: editing ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+          body: JSON.stringify(request),
+        },
+        auth ?? undefined,
+        (refreshedToken) => {
+          requestToken = refreshedToken
+          setToken(refreshedToken)
+        },
+      )
+      if (editing) {
+        catalogVariantUpdateResponseSchema.parse(response)
+      } else {
+        catalogVariantCreateResponseSchema.parse(response)
+      }
+      await loadProduct(requestToken, tenantId)
+      resetVariantForm()
+      setNotice(editing ? 'Variant updated.' : 'Variant added to the product.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not save the variant.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function deactivateVariant(variantId: string) {
+    if (!token || !tenantId) return
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    let requestToken = token
+    try {
+      catalogVariantDeactivateResponseSchema.parse(
         await apiRequest(
-          `/v1/catalog/products/${productId}/variants`,
+          `/v1/catalog/products/${productId}/variants/${variantId}`,
           requestToken,
           tenantId,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
-            body: JSON.stringify(request),
-          },
+          { method: 'DELETE', headers: { 'Idempotency-Key': crypto.randomUUID() } },
           auth ?? undefined,
           (refreshedToken) => {
             requestToken = refreshedToken
@@ -190,14 +254,11 @@ export function ProductDetail({ productId }: { productId: string }) {
         ),
       )
       await loadProduct(requestToken, tenantId)
-      setVariantName('Black / XL')
-      setVariantSku('')
-      setVariantBarcode('')
-      setRetailPrice('')
-      setUnitCost('')
-      setNotice('Variant added to the product.')
+      if (editingVariantId === variantId) resetVariantForm()
+      setDeletingVariantId(null)
+      setNotice('Variant removed from the active catalog. Its history is preserved.')
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not add the variant.')
+      setError(cause instanceof Error ? cause.message : 'Could not remove the variant.')
     } finally {
       setBusy(false)
     }
@@ -239,29 +300,106 @@ export function ProductDetail({ productId }: { productId: string }) {
                     <th className="py-3 font-semibold">Barcode</th>
                     <th className="py-3 text-right font-semibold">Retail price</th>
                     <th className="py-3 text-right font-semibold">Inventory</th>
+                    <th className="py-3 text-right font-semibold">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {product.variants.map((variant) => (
-                    <tr key={variant.id} className="border-t border-ink-900/10">
-                      <td className="py-4 font-semibold">{variant.name}</td>
-                      <td className="py-4">{variant.sku}</td>
-                      <td className="py-4 text-ink-600">{variant.barcodes[0] ?? 'None'}</td>
-                      <td className="py-4 text-right font-semibold">{formatPeso(variant.retailPriceMinor)}</td>
-                      <td className="py-4 text-right text-ink-600">
-                        {variant.trackInventory ? (
-                          <Check size={16} className="ml-auto text-emerald-700" />
-                        ) : (
-                          'Not tracked'
-                        )}
-                      </td>
-                    </tr>
+                    <Fragment key={variant.id}>
+                      <tr className="border-t border-ink-900/10">
+                        <td className="py-4 font-semibold">{variant.name}</td>
+                        <td className="py-4">{variant.sku}</td>
+                        <td className="py-4 text-ink-600">{variant.barcodes[0] ?? 'None'}</td>
+                        <td className="py-4 text-right font-semibold">{formatPeso(variant.retailPriceMinor)}</td>
+                        <td className="py-4 text-right text-ink-600">
+                          {variant.trackInventory ? (
+                            <Check size={16} className="ml-auto text-emerald-700" />
+                          ) : (
+                            'Not tracked'
+                          )}
+                        </td>
+                        <td className="py-4">
+                          <div className="flex justify-end gap-1.5">
+                            <button
+                              type="button"
+                              className="grid size-9 place-items-center rounded-control text-ink-600 hover:bg-ink-900/5 hover:text-ink-900 disabled:opacity-40"
+                              onClick={() => editVariant(variant)}
+                              disabled={busy}
+                              title={`Edit ${variant.name}`}
+                              aria-label={`Edit ${variant.name}`}
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              className="grid size-9 place-items-center rounded-control text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+                              onClick={() => setDeletingVariantId(variant.id)}
+                              disabled={busy || product.variants.length === 1}
+                              title={
+                                product.variants.length === 1
+                                  ? 'A product must keep one active variant'
+                                  : `Remove ${variant.name}`
+                              }
+                              aria-label={`Remove ${variant.name}`}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                      {deletingVariantId === variant.id ? (
+                        <tr className="border-t border-red-200 bg-red-50/70">
+                          <td colSpan={6} className="px-3 py-3">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <p className="text-sm text-red-900">
+                                Remove <strong>{variant.name}</strong> from the active catalog? Its history stays
+                                intact.
+                              </p>
+                              <div className="flex gap-2">
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="sm"
+                                  disabled={busy}
+                                  onClick={() => setDeletingVariantId(null)}
+                                >
+                                  Cancel
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="danger"
+                                  size="sm"
+                                  disabled={busy}
+                                  onClick={() => void deactivateVariant(variant.id)}
+                                >
+                                  <Trash2 size={16} className="mr-2" /> Deactivate
+                                </Button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
             </div>
-            <form className="mt-7 border-t border-ink-900/10 pt-5" onSubmit={(event) => void addVariant(event)}>
-              <p className="text-xs font-semibold uppercase text-ink-500">Add variant</p>
+            <form className="mt-7 border-t border-ink-900/10 pt-5" onSubmit={(event) => void saveVariant(event)}>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-semibold uppercase text-ink-500">
+                  {editingVariantId ? 'Edit variant' : 'Add variant'}
+                </p>
+                {editingVariantId ? (
+                  <button
+                    type="button"
+                    className="inline-flex min-h-9 items-center gap-2 text-sm font-semibold text-ink-600 hover:text-ink-900"
+                    onClick={resetVariantForm}
+                    disabled={busy}
+                  >
+                    <X size={16} /> Cancel edit
+                  </button>
+                ) : null}
+              </div>
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                 <label className="text-sm font-medium">
                   Color / size
@@ -327,7 +465,8 @@ export function ProductDetail({ productId }: { productId: string }) {
                   />
                 </label>
                 <Button type="submit" variant="confirm" size="sm" disabled={busy || !token || !tenantId}>
-                  <Plus size={18} className="mr-2" /> Save variant
+                  {editingVariantId ? <Check size={18} className="mr-2" /> : <Plus size={18} className="mr-2" />}
+                  {editingVariantId ? 'Update variant' : 'Save variant'}
                 </Button>
               </div>
             </form>

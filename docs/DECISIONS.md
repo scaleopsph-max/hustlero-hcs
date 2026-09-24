@@ -18,6 +18,7 @@
 | ADR-012 | Start catalog setup with one product and one required initial variant per command; keep opening stock separate                                                  | Preserves the Product → Variant → SKU → Barcode model while ensuring product creation never mutates inventory balances outside the ledger                                       |
 | ADR-013 | Add later variants to an existing product using a compact variant label such as `Black / XL`; keep SKU, barcode, pricing, and inventory tracking on the variant | Supports common size/color combinations now while leaving a future structured option matrix open without changing the Product → Variant → SKU model                             |
 | ADR-014 | Keep the product list at product-master grain and manage variants inside a dedicated product-detail view                                                        | Prevents size/color rows from overwhelming the catalog while preserving variant-level SKU, barcode, price, and stock controls                                                   |
+| ADR-015 | Treat variant removal as deactivation and require every active product to retain at least one active variant                                                            | Preserves sales, inventory, audit, and integration history while maintaining the Product → Variant invariant                                                                    |
 
 ## Decisions requiring owner confirmation before affected work
 

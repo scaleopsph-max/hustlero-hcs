@@ -4,6 +4,8 @@ import {
   catalogProductUpdateResponseSchema,
   catalogResponseSchema,
   catalogVariantCreateResponseSchema,
+  catalogVariantDeactivateResponseSchema,
+  catalogVariantUpdateResponseSchema,
   healthResponseSchema,
   onboardingResponseSchema,
   sessionContextResponseSchema,
@@ -51,6 +53,16 @@ const updateCatalogProduct = vi.fn(async () => ({
   productId: '40000000-0000-4000-8000-000000000001',
   status: 'updated' as const,
 }))
+const updateCatalogVariant = vi.fn(async () => ({
+  productId: '40000000-0000-4000-8000-000000000001',
+  variantId: '50000000-0000-4000-8000-000000000002',
+  status: 'updated' as const,
+}))
+const deactivateCatalogVariant = vi.fn(async () => ({
+  productId: '40000000-0000-4000-8000-000000000001',
+  variantId: '50000000-0000-4000-8000-000000000002',
+  status: 'deactivated' as const,
+}))
 
 const authenticatedApp = createApp({
   verifyAccessToken: async (token) => (token === 'valid-token' ? { userId } : null),
@@ -77,6 +89,8 @@ const authenticatedApp = createApp({
   createCatalogProduct,
   createCatalogVariant,
   updateCatalogProduct,
+  updateCatalogVariant,
+  deactivateCatalogVariant,
 })
 
 const businessDetails = {
@@ -273,6 +287,8 @@ describe('API', () => {
       createCatalogProduct,
       createCatalogVariant,
       updateCatalogProduct,
+      updateCatalogVariant,
+      deactivateCatalogVariant,
     })
     const response = await multiTenantApp.request(
       '/v1/onboarding',
@@ -307,6 +323,8 @@ describe('API', () => {
       createCatalogProduct,
       createCatalogVariant,
       updateCatalogProduct,
+      updateCatalogVariant,
+      deactivateCatalogVariant,
     })
     const response = await employeeApp.request(
       '/v1/onboarding',
@@ -554,5 +572,90 @@ describe('API', () => {
       expect.any(String),
       bindings,
     )
+  })
+
+  it('updates a variant using server identity and integer minor-unit money', async () => {
+    updateCatalogVariant.mockClear()
+    const request = {
+      variantName: 'Black / Medium',
+      sku: 'TSH-BLK-M',
+      retailPriceMinor: 89_900,
+      unitCostMinor: 55_000,
+      trackInventory: true,
+      barcodes: ['480000000088'],
+    }
+    const response = await authenticatedApp.request(
+      '/v1/catalog/products/40000000-0000-4000-8000-000000000001/variants/50000000-0000-4000-8000-000000000002',
+      {
+        method: 'PATCH',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'catalog-variant-update-001',
+        },
+        body: JSON.stringify(request),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(catalogVariantUpdateResponseSchema.safeParse(await response.json()).success).toBe(true)
+    expect(updateCatalogVariant).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      '40000000-0000-4000-8000-000000000001',
+      '50000000-0000-4000-8000-000000000002',
+      request,
+      'catalog-variant-update-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('deactivates a variant without accepting tenant identity from the body', async () => {
+    deactivateCatalogVariant.mockClear()
+    const response = await authenticatedApp.request(
+      '/v1/catalog/products/40000000-0000-4000-8000-000000000001/variants/50000000-0000-4000-8000-000000000002',
+      {
+        method: 'DELETE',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'catalog-variant-delete-001',
+        },
+      },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(catalogVariantDeactivateResponseSchema.safeParse(await response.json()).success).toBe(true)
+    expect(deactivateCatalogVariant).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      '40000000-0000-4000-8000-000000000001',
+      '50000000-0000-4000-8000-000000000002',
+      'catalog-variant-delete-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('returns a conflict when deactivation would remove the last active variant', async () => {
+    deactivateCatalogVariant.mockRejectedValueOnce(Object.assign(new Error('last variant'), { code: 'HCS13' }))
+    const response = await authenticatedApp.request(
+      '/v1/catalog/products/40000000-0000-4000-8000-000000000001/variants/50000000-0000-4000-8000-000000000002',
+      {
+        method: 'DELETE',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'catalog-variant-delete-last',
+        },
+      },
+      bindings,
+    )
+    expect(response.status).toBe(409)
+    expect(apiErrorResponseSchema.parse(await response.json()).error.code).toBe('LAST_ACTIVE_VARIANT')
   })
 })

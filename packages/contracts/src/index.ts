@@ -9,12 +9,18 @@ export {
   catalogVariantSchema,
   catalogVariantCreateRequestSchema,
   catalogVariantCreateResponseSchema,
+  catalogVariantDeactivateResponseSchema,
+  catalogVariantUpdateRequestSchema,
+  catalogVariantUpdateResponseSchema,
   type CatalogProductCreateRequest,
   type CatalogProductCreateResponse,
   type CatalogProductUpdateRequest,
   type CatalogProductUpdateResponse,
   type CatalogVariantCreateRequest,
   type CatalogVariantCreateResponse,
+  type CatalogVariantDeactivateResponse,
+  type CatalogVariantUpdateRequest,
+  type CatalogVariantUpdateResponse,
   type CatalogResponse,
 } from './catalog'
 export { environmentSchema, healthResponseSchema, type HealthResponse } from './health'
