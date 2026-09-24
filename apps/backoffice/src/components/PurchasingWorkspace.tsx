@@ -64,6 +64,10 @@ function quantity(value: number) {
   return (value / 1000).toLocaleString('en-PH', { maximumFractionDigits: 3 })
 }
 
+function lineTotal(quantityMilli: number, unitCostMinor: number) {
+  return Math.round((quantityMilli * unitCostMinor) / 1000)
+}
+
 function key(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`
 }
@@ -137,6 +141,10 @@ export function PurchasingWorkspace() {
   const selectedVariant = useMemo(
     () => context.variants.find((item) => item.id === variantId),
     [context.variants, variantId],
+  )
+  const draftTotalMinor = lineTotal(
+    Math.round(Number(orderQuantity || 0) * 1000),
+    Math.round(Number(unitCost || 0) * 100),
   )
 
   async function submitSupplier(event: FormEvent) {
@@ -423,6 +431,10 @@ export function PurchasingWorkspace() {
                 ? `${selectedVariant.productName} / ${selectedVariant.variantName} · ${money(Math.round(Number(unitCost || 0) * 100))}`
                 : 'Choose an active product variant.'}
             </p>
+            <div className="flex items-center justify-between border-t border-ink-900/10 pt-3 text-sm">
+              <span className="text-ink-500">Purchase order total</span>
+              <span className="font-display text-lg font-bold">{money(draftTotalMinor)}</span>
+            </div>
             <Button
               type="submit"
               variant="primary"
@@ -509,6 +521,17 @@ export function PurchasingWorkspace() {
                       </span>
                     </div>
                   ))}
+                </div>
+                <div className="mt-3 flex justify-between border-t border-ink-900/10 pt-3 text-sm">
+                  <span className="text-ink-500">Order total</span>
+                  <span className="font-display font-bold">
+                    {money(
+                      order.lines.reduce(
+                        (total, line) => total + lineTotal(line.orderedQuantityMilli, line.unitCostMinor),
+                        0,
+                      ),
+                    )}
+                  </span>
                 </div>
                 {receivingOrderId === order.id ? (
                   <div className="mt-4 grid gap-3 border-t border-ink-900/10 pt-4">
