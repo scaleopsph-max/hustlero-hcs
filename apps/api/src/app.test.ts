@@ -15,6 +15,10 @@ import {
   inventoryStockContextSchema,
   openingInventoryContextSchema,
   openingInventoryCreateResponseSchema,
+  purchaseOrderCreateResponseSchema,
+  purchaseReceiptResponseSchema,
+  purchasingContextSchema,
+  supplierCreateResponseSchema,
   onboardingResponseSchema,
   sessionContextResponseSchema,
 } from '@hcs/contracts'
@@ -179,6 +183,26 @@ const decideApprovalRequest = vi.fn(async (_userId, _tenantId, approvalRequestId
   movementId: request.decision === 'approved' ? '60000000-0000-4000-8000-000000000002' : null,
   status: request.decision,
 }))
+const loadPurchasing = vi.fn(async () => ({ suppliers: [], locations: [], variants: [], orders: [] }))
+const createSupplier = vi.fn(async () => ({
+  supplierId: '80000000-0000-4000-8000-000000000001',
+  status: 'created' as const,
+}))
+const createPurchaseOrder = vi.fn(async () => ({
+  purchaseOrderId: '90000000-0000-4000-8000-000000000001',
+  status: 'draft' as const,
+  lineCount: 1,
+}))
+const sendPurchaseOrder = vi.fn(async (_userId, _tenantId, purchaseOrderId) => ({
+  purchaseOrderId,
+  status: 'ordered' as const,
+}))
+const receivePurchaseOrder = vi.fn(async (_userId, _tenantId, purchaseOrderId) => ({
+  purchaseReceiptId: 'a0000000-0000-4000-8000-000000000001',
+  purchaseOrderId,
+  status: 'received' as const,
+  lineCount: 1,
+}))
 
 const authenticatedApp = createApp({
   verifyAccessToken: async (token) => (token === 'valid-token' ? { userId } : null),
@@ -215,6 +239,11 @@ const authenticatedApp = createApp({
   loadApprovalCenter,
   updateApprovalPolicy,
   decideApprovalRequest,
+  loadPurchasing,
+  createSupplier,
+  createPurchaseOrder,
+  sendPurchaseOrder,
+  receivePurchaseOrder,
 })
 
 const businessDetails = {
@@ -421,6 +450,11 @@ describe('API', () => {
       loadApprovalCenter,
       updateApprovalPolicy,
       decideApprovalRequest,
+      loadPurchasing,
+      createSupplier,
+      createPurchaseOrder,
+      sendPurchaseOrder,
+      receivePurchaseOrder,
     })
     const response = await multiTenantApp.request(
       '/v1/onboarding',
@@ -465,6 +499,11 @@ describe('API', () => {
       loadApprovalCenter,
       updateApprovalPolicy,
       decideApprovalRequest,
+      loadPurchasing,
+      createSupplier,
+      createPurchaseOrder,
+      sendPurchaseOrder,
+      receivePurchaseOrder,
     })
     const response = await employeeApp.request(
       '/v1/onboarding',
@@ -1039,5 +1078,83 @@ describe('API', () => {
     )
     expect(response.status).toBe(400)
     expect(recordOpeningInventory).not.toHaveBeenCalled()
+  })
+
+  it('loads purchasing context for the server-resolved tenant', async () => {
+    loadPurchasing.mockClear()
+    const response = await authenticatedApp.request(
+      '/v1/purchasing',
+      { headers: { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId } },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(purchasingContextSchema.safeParse(await response.json()).success).toBe(true)
+    expect(loadPurchasing).toHaveBeenCalledWith(userId, tenantId, bindings)
+  })
+
+  it('creates supplier and purchase order with idempotency headers', async () => {
+    createSupplier.mockClear()
+    createPurchaseOrder.mockClear()
+    const supplier = await authenticatedApp.request(
+      '/v1/purchasing/suppliers',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'supplier-create-001',
+        },
+        body: JSON.stringify({ name: 'Acme Wholesale', contactName: null, contactPhone: null, contactEmail: null }),
+      },
+      bindings,
+    )
+    expect(supplier.status).toBe(201)
+    expect(supplierCreateResponseSchema.safeParse(await supplier.json()).success).toBe(true)
+    const orderRequest = {
+      supplierId: '80000000-0000-4000-8000-000000000001',
+      locationId,
+      orderNumber: 'PO-0001',
+      expectedAt: null,
+      notes: null,
+      lines: [{ variantId: '50000000-0000-4000-8000-000000000001', quantityMilli: 2_000, unitCostMinor: 55_000 }],
+    }
+    const order = await authenticatedApp.request(
+      '/v1/purchasing/orders',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'purchase-order-create-001',
+        },
+        body: JSON.stringify(orderRequest),
+      },
+      bindings,
+    )
+    expect(order.status).toBe(201)
+    expect(purchaseOrderCreateResponseSchema.safeParse(await order.json()).success).toBe(true)
+  })
+
+  it('rejects purchase receipt payloads without positive lines', async () => {
+    receivePurchaseOrder.mockClear()
+    const response = await authenticatedApp.request(
+      '/v1/purchasing/orders/90000000-0000-4000-8000-000000000001/receive',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'purchase-receipt-empty',
+        },
+        body: JSON.stringify({ lines: [], deliveryReference: null }),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(400)
+    expect(receivePurchaseOrder).not.toHaveBeenCalled()
+    expect(purchaseReceiptResponseSchema.safeParse(await response.json()).success).toBe(false)
   })
 })

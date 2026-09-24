@@ -69,6 +69,8 @@ Last updated: 2026-09-24
 - Inventory approval migration was applied to development and recorded as version `20260924113821`; tenant owners can configure a quantity threshold, above-threshold adjustments remain pending without changing stock, and approve/reject decisions are tenant-safe, idempotent, audited, and outbox-backed
 - Back Office `/approvals` now provides policy configuration and Pending/Approved/Rejected queues; inventory adjustment feedback distinguishes an immediate ledger entry from a request awaiting approval
 - Live branch stock levels and movement history are implemented through private tenant-authorized database functions, API read contracts, and the Back Office Inventory views; the existing mock explorer has been removed
+- Purchasing/receiving migration was applied to development and recorded as version `20260924120609`; suppliers, purchase orders, partial receiving, over-receive protection, inventory receipt movements, audit events, and outbox events are implemented
+- Back Office `/purchasing` is connected to the authenticated API for supplier creation, draft PO creation, sending, and receipt posting
 
 ## Not started
 
@@ -86,12 +88,12 @@ Last updated: 2026-09-24
 - Owner completed the business-question and feature-selection forms for `LOCAL RECIPE`
 - Manual catalog/product vertical slice: private Product → Variant → SKU → Barcode schema, tenant-safe/idempotent API commands, product-grain list, editable product detail, and nested add/edit/deactivate variant flow are implemented and verified in development
 - Opening inventory per branch and variant is implemented and connected to the onboarding checklist; the authenticated `/inventory/opening` screen was verified with the saved `LOCAL RECIPE` catalog without mutating stock
-- Development API Worker version `f677c5f4-575d-45d5-a74d-c3072de7d872` is deployed with stock reads, movement history, controlled adjustments, and the approval API
+- Development API Worker version `c9ffc5f9-6c18-4e99-8bd1-fae79cb94c31` is deployed with inventory, approvals, purchasing, and receiving APIs
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Verify the approval workflow in the authenticated Back Office, then continue to purchasing, supplier orders, and receiving.
+Verify the authenticated Back Office Purchasing workflow with a controlled supplier, PO, and receipt fixture; then continue to transfers and branch replenishment.
 
 ## Production state
 

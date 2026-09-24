@@ -4,6 +4,14 @@ import {
   approvalDecisionResponseSchema,
   approvalPolicyUpdateRequestSchema,
   approvalPolicyUpdateResponseSchema,
+  purchaseOrderCreateRequestSchema,
+  purchaseOrderCreateResponseSchema,
+  purchaseOrderSendResponseSchema,
+  purchaseReceiptRequestSchema,
+  purchaseReceiptResponseSchema,
+  purchasingContextSchema,
+  supplierCreateRequestSchema,
+  supplierCreateResponseSchema,
   apiErrorResponseSchema,
   catalogProductCreateRequestSchema,
   catalogProductCreateResponseSchema,
@@ -30,7 +38,7 @@ import {
   tenantBootstrapRequestSchema,
   tenantBootstrapResponseSchema,
 } from '@hcs/contracts'
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import { requestId } from 'hono/request-id'
 
@@ -79,6 +87,18 @@ import {
   type TenantBootstrapper,
 } from './onboarding-repository'
 import { loadSessionAccessFromPostgres, type SessionAccessLoader } from './session-repository'
+import {
+  createPurchaseOrderInPostgres,
+  createSupplierInPostgres,
+  loadPurchasingFromPostgres,
+  receivePurchaseOrderInPostgres,
+  sendPurchaseOrderInPostgres,
+  type PurchaseOrderCreator,
+  type PurchaseOrderReceiver,
+  type PurchaseOrderSender,
+  type PurchasingLoader,
+  type SupplierCreator,
+} from './purchasing-repository'
 
 interface AppDependencies {
   verifyAccessToken: AccessTokenVerifier
@@ -100,6 +120,11 @@ interface AppDependencies {
   loadApprovalCenter: ApprovalCenterLoader
   updateApprovalPolicy: ApprovalPolicyUpdater
   decideApprovalRequest: ApprovalRequestDecider
+  loadPurchasing: PurchasingLoader
+  createSupplier: SupplierCreator
+  createPurchaseOrder: PurchaseOrderCreator
+  sendPurchaseOrder: PurchaseOrderSender
+  receivePurchaseOrder: PurchaseOrderReceiver
 }
 
 const defaultDependencies: AppDependencies = {
@@ -122,6 +147,11 @@ const defaultDependencies: AppDependencies = {
   loadApprovalCenter: loadApprovalCenterFromPostgres,
   updateApprovalPolicy: updateApprovalPolicyInPostgres,
   decideApprovalRequest: decideApprovalRequestInPostgres,
+  loadPurchasing: loadPurchasingFromPostgres,
+  createSupplier: createSupplierInPostgres,
+  createPurchaseOrder: createPurchaseOrderInPostgres,
+  sendPurchaseOrder: sendPurchaseOrderInPostgres,
+  receivePurchaseOrder: receivePurchaseOrderInPostgres,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -1149,6 +1179,380 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
           code === 'HCS12' ? 404 : 400,
         )
       }
+      throw error
+    }
+  })
+
+  const resolvePurchasingTenant = async (context: Context<{ Bindings: Bindings }>) => {
+    const accessToken = readBearerToken(context.req.header('authorization'))
+    if (!accessToken) return null
+    const user = await dependencies.verifyAccessToken(accessToken, context.env)
+    if (!user) return null
+    const tenants = await dependencies.loadSessionAccess(user.userId, context.env)
+    const requestedTenantId = context.req.header('x-tenant-id')
+    const tenant = requestedTenantId
+      ? tenants.find((entry) => entry.tenantId === requestedTenantId)
+      : tenants.length === 1
+        ? tenants[0]
+        : undefined
+    return tenant ? { userId: user.userId, tenantId: tenant.tenantId } : null
+  }
+
+  app.get('/v1/purchasing', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'PURCHASING_ACCESS_DENIED',
+            message: 'Sign in and select a business to view purchasing.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    try {
+      return context.json(
+        purchasingContextSchema.parse(
+          await dependencies.loadPurchasing(resolved.userId, resolved.tenantId, context.env),
+        ),
+      )
+    } catch (error) {
+      if (postgresErrorCode(error) === 'HCS30')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'PURCHASING_ACCESS_DENIED',
+              message: 'You do not have purchasing permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      throw error
+    }
+  })
+
+  app.post('/v1/purchasing/suppliers', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    const key = context.req.header('idempotency-key')
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'PURCHASING_ACCESS_DENIED',
+            message: 'Sign in and select a business before adding a supplier.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_REQUIRED',
+            message: 'A valid Idempotency-Key is required.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    const parsed = supplierCreateRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_SUPPLIER',
+            message: 'Check the supplier details.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      const response = await dependencies.createSupplier(
+        resolved.userId,
+        resolved.tenantId,
+        parsed.data,
+        key,
+        await requestHash(parsed.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(supplierCreateResponseSchema.parse(response), 201)
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS08')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'IDEMPOTENCY_KEY_CONFLICT',
+              message: 'This request key was used for another supplier.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      if (code === 'HCS30')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'PURCHASING_ACCESS_DENIED',
+              message: 'You do not have purchasing permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      if (code === 'HCS32')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'DUPLICATE_SUPPLIER',
+              message: 'An active supplier with this name already exists.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      throw error
+    }
+  })
+
+  app.post('/v1/purchasing/orders', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    const key = context.req.header('idempotency-key')
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'PURCHASING_ACCESS_DENIED',
+            message: 'Sign in and select a business before creating a purchase order.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_REQUIRED',
+            message: 'A valid Idempotency-Key is required.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    const parsed = purchaseOrderCreateRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_PURCHASE_ORDER',
+            message: 'Check the supplier, location, and order lines.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      const response = await dependencies.createPurchaseOrder(
+        resolved.userId,
+        resolved.tenantId,
+        parsed.data,
+        key,
+        await requestHash(parsed.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(purchaseOrderCreateResponseSchema.parse(response), 201)
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS08')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'IDEMPOTENCY_KEY_CONFLICT',
+              message: 'This request key was used for another purchase order.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      if (code === 'HCS30' || code === 'HCS34')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS34' ? 'PURCHASING_REFERENCE_NOT_FOUND' : 'PURCHASING_ACCESS_DENIED',
+              message:
+                code === 'HCS34' ? 'The supplier or location was not found.' : 'You do not have purchasing permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          code === 'HCS34' ? 404 : 403,
+        )
+      if (code === 'HCS35')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'DUPLICATE_PURCHASE_ORDER',
+              message: 'The order number or product line is already used.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      throw error
+    }
+  })
+
+  app.post('/v1/purchasing/orders/:purchaseOrderId/send', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    const key = context.req.header('idempotency-key')
+    const id = context.req.param('purchaseOrderId')
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'PURCHASING_ACCESS_DENIED',
+            message: 'Sign in and select a business before sending an order.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_REQUIRED',
+            message: 'A valid Idempotency-Key is required.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      const response = await dependencies.sendPurchaseOrder(
+        resolved.userId,
+        resolved.tenantId,
+        id,
+        key,
+        await requestHash({ id }),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(purchaseOrderSendResponseSchema.parse(response))
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS08' || code === 'HCS37')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS08' ? 'IDEMPOTENCY_KEY_CONFLICT' : 'PURCHASE_ORDER_STATE_CONFLICT',
+              message:
+                code === 'HCS08'
+                  ? 'This request key was used for another order action.'
+                  : 'Only draft purchase orders can be sent.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      if (code === 'HCS36')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'PURCHASE_ORDER_NOT_FOUND',
+              message: 'Purchase order was not found.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          404,
+        )
+      throw error
+    }
+  })
+
+  app.post('/v1/purchasing/orders/:purchaseOrderId/receive', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    const key = context.req.header('idempotency-key')
+    const id = context.req.param('purchaseOrderId')
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'PURCHASING_ACCESS_DENIED',
+            message: 'Sign in and select a business before receiving stock.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_REQUIRED',
+            message: 'A valid Idempotency-Key is required.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    const parsed = purchaseReceiptRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_RECEIPT',
+            message: 'Enter at least one positive receiving quantity.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      const response = await dependencies.receivePurchaseOrder(
+        resolved.userId,
+        resolved.tenantId,
+        id,
+        parsed.data,
+        key,
+        await requestHash(parsed.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(purchaseReceiptResponseSchema.parse(response), 201)
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS08' || code === 'HCS40')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS08' ? 'IDEMPOTENCY_KEY_CONFLICT' : 'RECEIPT_EXCEEDS_ORDER',
+              message:
+                code === 'HCS08'
+                  ? 'This request key was used for another receipt.'
+                  : 'Receipt exceeds the remaining ordered quantity.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      if (code === 'HCS36' || code === 'HCS39')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'PURCHASE_ORDER_NOT_FOUND',
+              message: 'The purchase order or line was not found.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          404,
+        )
       throw error
     }
   })
