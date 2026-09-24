@@ -56,6 +56,8 @@ Last updated: 2026-09-24
 - The business-profile and feature-selection migration was applied to development and recorded as version `20260924014406`
 - Development API Worker version `7de03561-01a5-44ab-9e07-37462f7ee60c` is deployed; live `/health` returned 200
 - The authenticated `LOCAL RECIPE` owner UI was verified on desktop and mobile layouts; Step 3 now presents the persisted business-question workflow
+- Catalog foundation migration was applied to development and recorded as version `20260924025829`; private product tables have RLS enabled and direct Hyperdrive table reads are denied
+- GitHub CI run `35949261791` passed application checks, a fresh Supabase reset, and the catalog pgTAP suite
 
 ## Not started
 
@@ -71,13 +73,13 @@ Last updated: 2026-09-24
 ## In progress
 
 - Owner completed the business-question and feature-selection forms for `LOCAL RECIPE`
-- Manual catalog/product vertical slice: private Product → Variant → SKU → Barcode schema, tenant-safe/idempotent API command, product list, and manual-entry UI are implemented locally
-- TypeScript checks and 18 API/domain unit tests pass; migration pgTAP, full build, CI, development migration, deployment, and authenticated UI verification remain pending
+- Manual catalog/product vertical slice: private Product → Variant → SKU → Barcode schema, tenant-safe/idempotent API command, product list, and manual-entry UI are implemented and verified in development
+- Development API Worker version `88199c5c-d438-4381-bffd-11a15da9d8bf` is deployed; authenticated `/products` loads the empty catalog and manual-entry form
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Pass CI for the catalog foundation, apply it to development, deploy the development API, and verify manual creation of the first `LOCAL RECIPE` product. Then build opening inventory as ledger movements.
+Create the first real `LOCAL RECIPE` product from `/products` using the business SKU, price, and optional barcode. Then build opening inventory as ledger movements.
 
 ## Production state
 

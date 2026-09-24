@@ -1,3 +1,4 @@
+-- Product master foundation; opening stock remains a separate ledger slice.
 begin;
 
 insert into app.permissions (code, description) values
