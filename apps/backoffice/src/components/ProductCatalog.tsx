@@ -22,12 +22,30 @@ function client(): SupabaseClient | null {
   return supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null
 }
 
-async function apiRequest(path: string, accessToken: string, tenantId: string, options?: RequestInit) {
+async function apiRequest(
+  path: string,
+  accessToken: string,
+  tenantId: string,
+  options?: RequestInit,
+  auth?: SupabaseClient,
+  onTokenRefreshed?: (accessToken: string) => void,
+) {
   if (!apiUrl) throw new Error('Back Office API URL is not configured.')
-  const response = await fetch(`${apiUrl.replace(/\/$/, '')}${path}`, {
-    ...options,
-    headers: { Authorization: `Bearer ${accessToken}`, 'X-Tenant-Id': tenantId, ...options?.headers },
-  })
+
+  const request = (token: string) =>
+    fetch(`${apiUrl.replace(/\/$/, '')}${path}`, {
+      ...options,
+      headers: { Authorization: `Bearer ${token}`, 'X-Tenant-Id': tenantId, ...options?.headers },
+    })
+
+  let response = await request(accessToken)
+  if (response.status === 401 && auth) {
+    const { data, error } = await auth.auth.refreshSession()
+    if (!error && data.session?.access_token) {
+      onTokenRefreshed?.(data.session.access_token)
+      response = await request(data.session.access_token)
+    }
+  }
   const data: unknown = await response.json()
   if (!response.ok) {
     const error = data as { error?: { message?: string } }
@@ -59,9 +77,16 @@ export function ProductCatalog() {
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const loadCatalog = useCallback(async (accessToken: string, selectedTenantId: string) => {
-    setCatalog(catalogResponseSchema.parse(await apiRequest('/v1/catalog', accessToken, selectedTenantId)))
-  }, [])
+  const loadCatalog = useCallback(
+    async (accessToken: string, selectedTenantId: string) => {
+      setCatalog(
+        catalogResponseSchema.parse(
+          await apiRequest('/v1/catalog', accessToken, selectedTenantId, undefined, auth ?? undefined, setToken),
+        ),
+      )
+    },
+    [auth],
+  )
 
   useEffect(() => {
     if (!auth) {
@@ -74,7 +99,9 @@ export function ProductCatalog() {
         const session = data.session
         if (!session) return
         setToken(session.access_token)
-        const context = sessionContextResponseSchema.parse(await apiRequest('/v1/me', session.access_token, ''))
+        const context = sessionContextResponseSchema.parse(
+          await apiRequest('/v1/me', session.access_token, '', undefined, auth, setToken),
+        )
         const tenant = context.tenants.find((item) => item.isOwner) ?? context.tenants[0]
         if (!tenant) throw new Error('Create a business before adding products.')
         setTenantId(tenant.tenantId)
@@ -120,19 +147,30 @@ export function ProductCatalog() {
     }
     const serialized = JSON.stringify(request)
     const storageKey = `hcs:catalog-product:${tenantId}:${request.sku}`
+    let requestToken = token
     try {
       const previous = JSON.parse(localStorage.getItem(storageKey) ?? 'null') as { body?: string; key?: string } | null
       const idempotencyKey = previous?.body === serialized && previous.key ? previous.key : crypto.randomUUID()
       localStorage.setItem(storageKey, JSON.stringify({ body: serialized, key: idempotencyKey }))
       catalogProductCreateResponseSchema.parse(
-        await apiRequest('/v1/catalog/products', token, tenantId, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
-          body: serialized,
-        }),
+        await apiRequest(
+          '/v1/catalog/products',
+          requestToken,
+          tenantId,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
+            body: serialized,
+          },
+          auth ?? undefined,
+          (refreshedToken) => {
+            requestToken = refreshedToken
+            setToken(refreshedToken)
+          },
+        ),
       )
       localStorage.removeItem(storageKey)
-      await loadCatalog(token, tenantId)
+      await loadCatalog(requestToken, tenantId)
       setName('')
       setSku('')
       setBarcode('')
