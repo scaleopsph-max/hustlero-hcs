@@ -59,6 +59,7 @@ Last updated: 2026-09-24
 - Catalog foundation migration was applied to development and recorded as version `20260924025829`; private product tables have RLS enabled and direct Hyperdrive table reads are denied
 - GitHub CI run `35949261791` passed application checks, a fresh Supabase reset, and the catalog pgTAP suite
 - Catalog variant-management migration was applied to development and recorded as version `20260924054148`; later variants use tenant-safe, idempotent API commands with audit and outbox events
+- Catalog product-editing migration was applied to development and recorded as version `20260924060133`; product-master edits keep variants intact
 
 ## Not started
 
@@ -74,13 +75,13 @@ Last updated: 2026-09-24
 ## In progress
 
 - Owner completed the business-question and feature-selection forms for `LOCAL RECIPE`
-- Manual catalog/product vertical slice: private Product → Variant → SKU → Barcode schema, tenant-safe/idempotent API commands, product list, manual-entry UI, and add-variant flow are implemented and verified in development
-- Development API Worker version `e7fcb786-8980-4247-8914-47a33b06f3f3` is deployed; authenticated `/products` loads the saved catalog and add-variant flow
+- Manual catalog/product vertical slice: private Product → Variant → SKU → Barcode schema, tenant-safe/idempotent API commands, product-grain list, editable product detail, and nested add-variant flow are implemented and verified in development
+- Development API Worker version `8dbc99b6-6285-46a4-87f6-8967be09a15f` is deployed; authenticated `/products` and `/products/{productId}` were browser-verified with the saved catalog
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Deploy the verified add-variant API, add the size/color combinations required by the business, then build opening inventory as ledger movements.
+Build opening inventory as ledger movements per location and variant, then connect it to the onboarding checklist.
 
 ## Production state
 

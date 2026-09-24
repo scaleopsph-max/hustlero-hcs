@@ -58,6 +58,7 @@ Current Phase 1 implementation:
 
 - `GET /v1/catalog`
 - `POST /v1/catalog/products`
+- `PATCH /v1/catalog/products/{productId}`
 - `POST /v1/catalog/products/{productId}/variants`
 - `POST/GET/PATCH /v1/products`
 - `POST/GET/PATCH /v1/variants`
@@ -73,6 +74,7 @@ Current catalog implementation:
 - Catalog reads require owner, `catalog.read`, or `catalog.manage` access. Product creation requires owner or `catalog.manage`, plus an active catalog entitlement.
 - `POST /v1/catalog/products` requires a 16-128 character `Idempotency-Key` and creates one product with its initial variant, tenant-unique SKU, optional category, and optional barcode atomically.
 - `POST /v1/catalog/products/{productId}/variants` adds a later variant to an existing tenant product. Variant labels can represent combinations such as `Black / XL`; each variant owns its tenant-unique SKU, optional barcode, price, cost, and inventory-tracking setting.
+- `PATCH /v1/catalog/products/{productId}` edits product-master name, category, and description without flattening or recreating its variants.
 - Product prices cross the TypeScript boundary as integer centavos and are stored as PostgreSQL `numeric(18,2)`. SKU and barcode values are normalized before tenant-scoped uniqueness checks.
 - The command writes one audit event and one outbox event. Identical retries replay the stored response; a changed payload with the same key returns 409.
 - Catalog creation does not create or edit stock. Opening inventory remains a separate ledger-backed onboarding step.

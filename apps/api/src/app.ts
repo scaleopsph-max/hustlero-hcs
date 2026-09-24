@@ -2,6 +2,8 @@ import {
   apiErrorResponseSchema,
   catalogProductCreateRequestSchema,
   catalogProductCreateResponseSchema,
+  catalogProductUpdateRequestSchema,
+  catalogProductUpdateResponseSchema,
   catalogResponseSchema,
   catalogVariantCreateRequestSchema,
   catalogVariantCreateResponseSchema,
@@ -22,9 +24,11 @@ import {
   createCatalogProductInPostgres,
   createCatalogVariantInPostgres,
   loadCatalogFromPostgres,
+  updateCatalogProductInPostgres,
   type CatalogLoader,
   type CatalogProductCreator,
   type CatalogVariantCreator,
+  type CatalogProductUpdater,
 } from './catalog-repository'
 import { type Bindings, readEnvironment } from './env'
 import {
@@ -46,6 +50,7 @@ interface AppDependencies {
   loadCatalog: CatalogLoader
   createCatalogProduct: CatalogProductCreator
   createCatalogVariant: CatalogVariantCreator
+  updateCatalogProduct: CatalogProductUpdater
 }
 
 const defaultDependencies: AppDependencies = {
@@ -57,6 +62,7 @@ const defaultDependencies: AppDependencies = {
   loadCatalog: loadCatalogFromPostgres,
   createCatalogProduct: createCatalogProductInPostgres,
   createCatalogVariant: createCatalogVariantInPostgres,
+  updateCatalogProduct: updateCatalogProductInPostgres,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -635,6 +641,155 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
               code: code === 'HCS12' ? 'PRODUCT_NOT_FOUND' : 'INVALID_VARIANT_DETAILS',
               message:
                 code === 'HCS12' ? 'The product was not found.' : 'Check the variant, SKU, barcode, and price details.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          code === 'HCS12' ? 404 : 400,
+        )
+      }
+      throw error
+    }
+  })
+
+  app.patch('/v1/catalog/products/:productId', async (context) => {
+    const accessToken = readBearerToken(context.req.header('authorization'))
+    if (!accessToken) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Sign in before editing a product.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+    const user = await dependencies.verifyAccessToken(accessToken, context.env)
+    if (!user) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_ACCESS_TOKEN',
+            message: 'The access token is invalid or expired.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+    const idempotencyKey = context.req.header('idempotency-key')
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_REQUIRED',
+            message: 'A valid Idempotency-Key is required.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    const productId = context.req.param('productId')
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(productId)) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_PRODUCT_DETAILS',
+            message: 'The product reference is invalid.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    const tenants = await dependencies.loadSessionAccess(user.userId, context.env)
+    const requestedTenantId = context.req.header('x-tenant-id')
+    if (!requestedTenantId && tenants.length > 1) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'TENANT_SELECTION_REQUIRED',
+            message: 'Select a business before editing a product.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        409,
+      )
+    }
+    const tenant = requestedTenantId ? tenants.find((entry) => entry.tenantId === requestedTenantId) : tenants[0]
+    if (!tenant) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'CATALOG_ACCESS_DENIED',
+            message: 'You do not have access to this business catalog.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    }
+    const body: unknown = await context.req.json().catch(() => null)
+    const parsed = catalogProductUpdateRequestSchema.safeParse(body)
+    if (!parsed.success) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_PRODUCT_DETAILS',
+            message: 'Check the product name, category, and description.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    try {
+      const response = await dependencies.updateCatalogProduct(
+        user.userId,
+        tenant.tenantId,
+        productId,
+        parsed.data,
+        idempotencyKey,
+        await requestHash(parsed.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(catalogProductUpdateResponseSchema.parse(response))
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS08') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'IDEMPOTENCY_KEY_CONFLICT',
+              message: 'This request key was already used for different product details.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      }
+      if (code === 'HCS09' || code === 'HCS10') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS10' ? 'CATALOG_UNAVAILABLE' : 'CATALOG_ACCESS_DENIED',
+              message: code === 'HCS10' ? 'The catalog module is not enabled.' : 'You do not have catalog permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      }
+      if (code === 'HCS11' || code === 'HCS12') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS12' ? 'PRODUCT_NOT_FOUND' : 'INVALID_PRODUCT_DETAILS',
+              message:
+                code === 'HCS12' ? 'The product was not found.' : 'Check the product name, category, and description.',
               requestId: context.get('requestId'),
             },
           }),

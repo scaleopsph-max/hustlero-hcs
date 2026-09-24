@@ -1,6 +1,7 @@
 import {
   apiErrorResponseSchema,
   catalogProductCreateResponseSchema,
+  catalogProductUpdateResponseSchema,
   catalogResponseSchema,
   catalogVariantCreateResponseSchema,
   healthResponseSchema,
@@ -46,6 +47,10 @@ const createCatalogVariant = vi.fn(async () => ({
   variantId: '50000000-0000-4000-8000-000000000002',
   status: 'created' as const,
 }))
+const updateCatalogProduct = vi.fn(async () => ({
+  productId: '40000000-0000-4000-8000-000000000001',
+  status: 'updated' as const,
+}))
 
 const authenticatedApp = createApp({
   verifyAccessToken: async (token) => (token === 'valid-token' ? { userId } : null),
@@ -71,6 +76,7 @@ const authenticatedApp = createApp({
   loadCatalog,
   createCatalogProduct,
   createCatalogVariant,
+  updateCatalogProduct,
 })
 
 const businessDetails = {
@@ -266,6 +272,7 @@ describe('API', () => {
       loadCatalog,
       createCatalogProduct,
       createCatalogVariant,
+      updateCatalogProduct,
     })
     const response = await multiTenantApp.request(
       '/v1/onboarding',
@@ -299,6 +306,7 @@ describe('API', () => {
       loadCatalog,
       createCatalogProduct,
       createCatalogVariant,
+      updateCatalogProduct,
     })
     const response = await employeeApp.request(
       '/v1/onboarding',
@@ -511,6 +519,37 @@ describe('API', () => {
       '40000000-0000-4000-8000-000000000001',
       request,
       'catalog-variant-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('updates the product master using the server-resolved tenant', async () => {
+    updateCatalogProduct.mockClear()
+    const request = { name: 'Triple Black', categoryName: 'Shirts', description: 'Core shirt line' }
+    const response = await authenticatedApp.request(
+      '/v1/catalog/products/40000000-0000-4000-8000-000000000001',
+      {
+        method: 'PATCH',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'catalog-product-update-001',
+        },
+        body: JSON.stringify(request),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(catalogProductUpdateResponseSchema.safeParse(await response.json()).success).toBe(true)
+    expect(updateCatalogProduct).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      '40000000-0000-4000-8000-000000000001',
+      request,
+      'catalog-product-update-001',
       expect.stringMatching(/^[0-9a-f]{64}$/),
       expect.any(String),
       bindings,

@@ -1,7 +1,7 @@
 'use client'
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { ArrowLeft, Loader2, Package, Plus, Search } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Loader2, Package, Plus, Search } from 'lucide-react'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
@@ -13,7 +13,7 @@ import {
   type CatalogResponse,
   type CatalogVariantCreateRequest,
 } from '@hcs/contracts'
-import { Button, Glass, formatPeso, parsePeso } from '@hcs/ui'
+import { Button, Glass, parsePeso } from '@hcs/ui'
 import { Topbar } from './Topbar'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -303,37 +303,34 @@ export function ProductCatalog() {
                   <tr>
                     <th className="py-3 font-semibold">Product</th>
                     <th className="py-3 font-semibold">Category</th>
-                    <th className="py-3 font-semibold">SKU</th>
-                    <th className="py-3 font-semibold">Barcode</th>
-                    <th className="py-3 text-right font-semibold">Retail price</th>
+                    <th className="py-3 font-semibold">Variants</th>
+                    <th className="py-3 font-semibold">SKU examples</th>
                     <th className="py-3 text-right font-semibold">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredProducts.flatMap((product) =>
-                    product.variants.map((variant, index) => (
-                      <tr key={variant.id} className="border-t border-ink-900/10">
-                        <td className="py-4 font-semibold">
-                          {index === 0 ? product.name : `${product.name} / ${variant.name}`}
-                        </td>
-                        <td className="py-4 text-ink-600">{product.category?.name ?? 'Uncategorized'}</td>
-                        <td className="py-4 font-medium">{variant.sku}</td>
-                        <td className="py-4 text-ink-600">{variant.barcodes[0] ?? 'None'}</td>
-                        <td className="py-4 text-right font-semibold">{formatPeso(variant.retailPriceMinor)}</td>
-                        <td className="py-4 text-right">
-                          {index === 0 ? (
-                            <button
-                              type="button"
-                              className="text-xs font-semibold underline"
-                              onClick={() => setVariantProductId(product.id)}
-                            >
-                              Add variant
-                            </button>
-                          ) : null}
-                        </td>
-                      </tr>
-                    )),
-                  )}
+                  {filteredProducts.map((product) => (
+                    <tr key={product.id} className="border-t border-ink-900/10">
+                      <td className="py-4 font-semibold">{product.name}</td>
+                      <td className="py-4 text-ink-600">{product.category?.name ?? 'Uncategorized'}</td>
+                      <td className="py-4 font-medium">{product.variants.length}</td>
+                      <td className="py-4 text-ink-600">
+                        {product.variants
+                          .slice(0, 3)
+                          .map((variant) => variant.sku)
+                          .join(', ')}
+                        {product.variants.length > 3 ? '…' : ''}
+                      </td>
+                      <td className="py-4 text-right">
+                        <Link
+                          href={`/products/${product.id}`}
+                          className="inline-flex items-center gap-1 text-xs font-semibold underline"
+                        >
+                          Open product <ChevronRight size={15} />
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

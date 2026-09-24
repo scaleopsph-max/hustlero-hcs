@@ -66,6 +66,17 @@ export const catalogVariantCreateResponseSchema = z.object({
   status: z.literal('created'),
 })
 
+export const catalogProductUpdateRequestSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(1000).nullable().default(null),
+  categoryName: z.string().trim().max(80).nullable().default(null),
+})
+
+export const catalogProductUpdateResponseSchema = z.object({
+  productId: identifierSchema,
+  status: z.literal('updated'),
+})
+
 export const catalogCategorySchema = z.object({ id: identifierSchema, name: z.string().min(1) })
 
 export const catalogVariantSchema = z.object({
@@ -97,4 +108,6 @@ export type CatalogProductCreateRequest = z.infer<typeof catalogProductCreateReq
 export type CatalogProductCreateResponse = z.infer<typeof catalogProductCreateResponseSchema>
 export type CatalogVariantCreateRequest = z.infer<typeof catalogVariantCreateRequestSchema>
 export type CatalogVariantCreateResponse = z.infer<typeof catalogVariantCreateResponseSchema>
+export type CatalogProductUpdateRequest = z.infer<typeof catalogProductUpdateRequestSchema>
+export type CatalogProductUpdateResponse = z.infer<typeof catalogProductUpdateResponseSchema>
 export type CatalogResponse = z.infer<typeof catalogResponseSchema>

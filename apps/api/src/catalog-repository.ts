@@ -1,9 +1,12 @@
 import {
   catalogProductCreateResponseSchema,
+  catalogProductUpdateResponseSchema,
   catalogResponseSchema,
   catalogVariantCreateResponseSchema,
   type CatalogProductCreateRequest,
   type CatalogProductCreateResponse,
+  type CatalogProductUpdateRequest,
+  type CatalogProductUpdateResponse,
   type CatalogResponse,
   type CatalogVariantCreateRequest,
   type CatalogVariantCreateResponse,
@@ -33,6 +36,16 @@ export type CatalogVariantCreator = (
   requestId: string,
   bindings: Bindings,
 ) => Promise<CatalogVariantCreateResponse>
+export type CatalogProductUpdater = (
+  userId: string,
+  tenantId: string,
+  productId: string,
+  request: CatalogProductUpdateRequest,
+  idempotencyKey: string,
+  requestHash: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<CatalogProductUpdateResponse>
 
 const databaseCatalogSchema = z.object({
   categories: z.array(z.object({ id: z.uuid(), name: z.string() })),
@@ -173,6 +186,41 @@ export const createCatalogVariantInPostgres: CatalogVariantCreator = async (
       ],
     )
     return catalogVariantCreateResponseSchema.parse(result.rows[0]?.response)
+  } finally {
+    await client.end()
+  }
+}
+
+export const updateCatalogProductInPostgres: CatalogProductUpdater = async (
+  userId,
+  tenantId,
+  productId,
+  request,
+  idempotencyKey,
+  requestHash,
+  requestId,
+  bindings,
+) => {
+  const client = new Client({ connectionString: connectionString(bindings) })
+  try {
+    await client.connect()
+    const result = await client.query(
+      `select app.update_catalog_product(
+        $1::uuid, $2::uuid, $3::uuid, $4::text, $5::text, $6::text, $7::text, $8::text, $9::text
+      ) as response`,
+      [
+        userId,
+        tenantId,
+        productId,
+        request.name,
+        request.description,
+        request.categoryName,
+        idempotencyKey,
+        requestHash,
+        requestId,
+      ],
+    )
+    return catalogProductUpdateResponseSchema.parse(result.rows[0]?.response)
   } finally {
     await client.end()
   }
