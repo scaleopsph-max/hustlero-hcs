@@ -7,9 +7,11 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import {
   catalogProductCreateResponseSchema,
   catalogResponseSchema,
+  catalogVariantCreateResponseSchema,
   sessionContextResponseSchema,
   type CatalogProductCreateRequest,
   type CatalogResponse,
+  type CatalogVariantCreateRequest,
 } from '@hcs/contracts'
 import { Button, Glass, formatPeso, parsePeso } from '@hcs/ui'
 import { Topbar } from './Topbar'
@@ -72,6 +74,13 @@ export function ProductCatalog() {
   const [retailPrice, setRetailPrice] = useState('')
   const [unitCost, setUnitCost] = useState('')
   const [trackInventory, setTrackInventory] = useState(true)
+  const [variantProductId, setVariantProductId] = useState<string | null>(null)
+  const [newVariantName, setNewVariantName] = useState('Black / XL')
+  const [variantSku, setVariantSku] = useState('')
+  const [variantBarcode, setVariantBarcode] = useState('')
+  const [variantRetailPrice, setVariantRetailPrice] = useState('')
+  const [variantUnitCost, setVariantUnitCost] = useState('')
+  const [variantTrackInventory, setVariantTrackInventory] = useState(true)
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState<string | null>(null)
@@ -184,6 +193,59 @@ export function ProductCatalog() {
     }
   }
 
+  async function createVariant(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!token || !tenantId || !variantProductId) return
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    const request: CatalogVariantCreateRequest = {
+      variantName: newVariantName.trim(),
+      sku: variantSku.trim().toUpperCase(),
+      retailPriceMinor: parsePeso(variantRetailPrice),
+      unitCostMinor: variantUnitCost.trim() ? parsePeso(variantUnitCost) : null,
+      trackInventory: variantTrackInventory,
+      barcodes: variantBarcode.trim() ? [variantBarcode.trim().toUpperCase()] : [],
+    }
+    const serialized = JSON.stringify(request)
+    const storageKey = `hcs:catalog-variant:${tenantId}:${variantProductId}:${request.sku}`
+    let requestToken = token
+    try {
+      const previous = JSON.parse(localStorage.getItem(storageKey) ?? 'null') as { body?: string; key?: string } | null
+      const idempotencyKey = previous?.body === serialized && previous.key ? previous.key : crypto.randomUUID()
+      localStorage.setItem(storageKey, JSON.stringify({ body: serialized, key: idempotencyKey }))
+      catalogVariantCreateResponseSchema.parse(
+        await apiRequest(
+          `/v1/catalog/products/${variantProductId}/variants`,
+          requestToken,
+          tenantId,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
+            body: serialized,
+          },
+          auth ?? undefined,
+          (refreshedToken) => {
+            requestToken = refreshedToken
+            setToken(refreshedToken)
+          },
+        ),
+      )
+      localStorage.removeItem(storageKey)
+      await loadCatalog(requestToken, tenantId)
+      setNewVariantName('Black / XL')
+      setVariantSku('')
+      setVariantBarcode('')
+      setVariantRetailPrice('')
+      setVariantUnitCost('')
+      setNotice('Variant added to the product.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not add the variant.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <>
       <Topbar
@@ -244,6 +306,7 @@ export function ProductCatalog() {
                     <th className="py-3 font-semibold">SKU</th>
                     <th className="py-3 font-semibold">Barcode</th>
                     <th className="py-3 text-right font-semibold">Retail price</th>
+                    <th className="py-3 text-right font-semibold">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -257,12 +320,115 @@ export function ProductCatalog() {
                         <td className="py-4 font-medium">{variant.sku}</td>
                         <td className="py-4 text-ink-600">{variant.barcodes[0] ?? 'None'}</td>
                         <td className="py-4 text-right font-semibold">{formatPeso(variant.retailPriceMinor)}</td>
+                        <td className="py-4 text-right">
+                          {index === 0 ? (
+                            <button
+                              type="button"
+                              className="text-xs font-semibold underline"
+                              onClick={() => setVariantProductId(product.id)}
+                            >
+                              Add variant
+                            </button>
+                          ) : null}
+                        </td>
                       </tr>
                     )),
                   )}
                 </tbody>
               </table>
             </div>
+          ) : null}
+          {variantProductId ? (
+            <form className="mt-6 border-t border-ink-900/10 pt-5" onSubmit={(event) => void createVariant(event)}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase text-ink-500">Variant entry</p>
+                  <h2 className="mt-1 font-display text-lg font-bold">
+                    Add to {catalog.products.find((product) => product.id === variantProductId)?.name ?? 'product'}
+                  </h2>
+                  <p className="mt-1 text-sm text-ink-500">Use a label such as Black / XL or White / Medium.</p>
+                </div>
+                <button
+                  type="button"
+                  className="text-sm font-semibold underline"
+                  onClick={() => setVariantProductId(null)}
+                >
+                  Cancel
+                </button>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                <label className="text-sm font-medium">
+                  Color / size
+                  <input
+                    className={`${inputClass} mt-1.5`}
+                    required
+                    maxLength={80}
+                    value={newVariantName}
+                    onChange={(event) => setNewVariantName(event.target.value)}
+                    placeholder="Black / XL"
+                  />
+                </label>
+                <label className="text-sm font-medium">
+                  SKU
+                  <input
+                    className={`${inputClass} mt-1.5 uppercase`}
+                    required
+                    maxLength={64}
+                    pattern="[A-Za-z0-9._-]+"
+                    value={variantSku}
+                    onChange={(event) => setVariantSku(event.target.value)}
+                  />
+                </label>
+                <label className="text-sm font-medium">
+                  Barcode
+                  <input
+                    className={`${inputClass} mt-1.5`}
+                    maxLength={64}
+                    pattern="[A-Za-z0-9._-]+"
+                    value={variantBarcode}
+                    onChange={(event) => setVariantBarcode(event.target.value)}
+                    placeholder="Optional"
+                  />
+                </label>
+                <label className="text-sm font-medium">
+                  Retail price
+                  <input
+                    className={`${inputClass} mt-1.5`}
+                    required
+                    inputMode="decimal"
+                    pattern="[0-9]+([.][0-9]{1,2})?"
+                    value={variantRetailPrice}
+                    onChange={(event) => setVariantRetailPrice(event.target.value)}
+                    placeholder="0.00"
+                  />
+                </label>
+                <label className="text-sm font-medium">
+                  Unit cost
+                  <input
+                    className={`${inputClass} mt-1.5`}
+                    inputMode="decimal"
+                    pattern="[0-9]+([.][0-9]{1,2})?"
+                    value={variantUnitCost}
+                    onChange={(event) => setVariantUnitCost(event.target.value)}
+                    placeholder="Optional"
+                  />
+                </label>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <label className="flex min-h-11 items-center gap-3 text-sm font-medium">
+                  Track inventory
+                  <input
+                    type="checkbox"
+                    checked={variantTrackInventory}
+                    onChange={(event) => setVariantTrackInventory(event.target.checked)}
+                  />
+                </label>
+                <Button type="submit" variant="confirm" size="sm" disabled={busy || !token || !tenantId}>
+                  {busy ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Plus size={18} className="mr-2" />}
+                  Save variant
+                </Button>
+              </div>
+            </form>
           ) : null}
         </Glass>
 

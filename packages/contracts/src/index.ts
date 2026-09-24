@@ -5,8 +5,12 @@ export {
   catalogProductSchema,
   catalogResponseSchema,
   catalogVariantSchema,
+  catalogVariantCreateRequestSchema,
+  catalogVariantCreateResponseSchema,
   type CatalogProductCreateRequest,
   type CatalogProductCreateResponse,
+  type CatalogVariantCreateRequest,
+  type CatalogVariantCreateResponse,
   type CatalogResponse,
 } from './catalog'
 export { environmentSchema, healthResponseSchema, type HealthResponse } from './health'

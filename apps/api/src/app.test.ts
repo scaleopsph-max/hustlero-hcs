@@ -2,6 +2,7 @@ import {
   apiErrorResponseSchema,
   catalogProductCreateResponseSchema,
   catalogResponseSchema,
+  catalogVariantCreateResponseSchema,
   healthResponseSchema,
   onboardingResponseSchema,
   sessionContextResponseSchema,
@@ -40,6 +41,11 @@ const createCatalogProduct = vi.fn(async () => ({
   variantId: '50000000-0000-4000-8000-000000000001',
   status: 'created' as const,
 }))
+const createCatalogVariant = vi.fn(async () => ({
+  productId: '40000000-0000-4000-8000-000000000001',
+  variantId: '50000000-0000-4000-8000-000000000002',
+  status: 'created' as const,
+}))
 
 const authenticatedApp = createApp({
   verifyAccessToken: async (token) => (token === 'valid-token' ? { userId } : null),
@@ -64,6 +70,7 @@ const authenticatedApp = createApp({
   updateOnboarding,
   loadCatalog,
   createCatalogProduct,
+  createCatalogVariant,
 })
 
 const businessDetails = {
@@ -258,6 +265,7 @@ describe('API', () => {
       updateOnboarding,
       loadCatalog,
       createCatalogProduct,
+      createCatalogVariant,
     })
     const response = await multiTenantApp.request(
       '/v1/onboarding',
@@ -290,6 +298,7 @@ describe('API', () => {
       updateOnboarding,
       loadCatalog,
       createCatalogProduct,
+      createCatalogVariant,
     })
     const response = await employeeApp.request(
       '/v1/onboarding',
@@ -464,6 +473,44 @@ describe('API', () => {
       tenantId,
       request,
       'catalog-request-002',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('adds a variant to an existing product using the server-resolved tenant', async () => {
+    createCatalogVariant.mockClear()
+    const request = {
+      variantName: 'Black / XL',
+      sku: 'TSH-BLK-XL',
+      retailPriceMinor: 99_900,
+      unitCostMinor: 65_000,
+      trackInventory: true,
+      barcodes: ['480000000099'],
+    }
+    const response = await authenticatedApp.request(
+      '/v1/catalog/products/40000000-0000-4000-8000-000000000001/variants',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'catalog-variant-001',
+        },
+        body: JSON.stringify(request),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(201)
+    expect(catalogVariantCreateResponseSchema.safeParse(await response.json()).success).toBe(true)
+    expect(createCatalogVariant).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      '40000000-0000-4000-8000-000000000001',
+      request,
+      'catalog-variant-001',
       expect.stringMatching(/^[0-9a-f]{64}$/),
       expect.any(String),
       bindings,

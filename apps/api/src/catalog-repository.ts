@@ -1,9 +1,12 @@
 import {
   catalogProductCreateResponseSchema,
   catalogResponseSchema,
+  catalogVariantCreateResponseSchema,
   type CatalogProductCreateRequest,
   type CatalogProductCreateResponse,
   type CatalogResponse,
+  type CatalogVariantCreateRequest,
+  type CatalogVariantCreateResponse,
 } from '@hcs/contracts'
 import { Client } from 'pg'
 import { z } from 'zod'
@@ -20,6 +23,16 @@ export type CatalogProductCreator = (
   requestId: string,
   bindings: Bindings,
 ) => Promise<CatalogProductCreateResponse>
+export type CatalogVariantCreator = (
+  userId: string,
+  tenantId: string,
+  productId: string,
+  request: CatalogVariantCreateRequest,
+  idempotencyKey: string,
+  requestHash: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<CatalogVariantCreateResponse>
 
 const databaseCatalogSchema = z.object({
   categories: z.array(z.object({ id: z.uuid(), name: z.string() })),
@@ -121,6 +134,45 @@ export const createCatalogProductInPostgres: CatalogProductCreator = async (
       ],
     )
     return catalogProductCreateResponseSchema.parse(result.rows[0]?.response)
+  } finally {
+    await client.end()
+  }
+}
+
+export const createCatalogVariantInPostgres: CatalogVariantCreator = async (
+  userId,
+  tenantId,
+  productId,
+  request,
+  idempotencyKey,
+  requestHash,
+  requestId,
+  bindings,
+) => {
+  const client = new Client({ connectionString: connectionString(bindings) })
+  try {
+    await client.connect()
+    const result = await client.query(
+      `select app.create_catalog_variant(
+        $1::uuid, $2::uuid, $3::uuid, $4::text, $5::text,
+        $6::numeric, $7::numeric, $8::boolean, $9::text[], $10::text, $11::text, $12::text
+      ) as response`,
+      [
+        userId,
+        tenantId,
+        productId,
+        request.variantName,
+        request.sku,
+        minorToDecimal(request.retailPriceMinor),
+        request.unitCostMinor === null ? null : minorToDecimal(request.unitCostMinor),
+        request.trackInventory,
+        request.barcodes,
+        idempotencyKey,
+        requestHash,
+        requestId,
+      ],
+    )
+    return catalogVariantCreateResponseSchema.parse(result.rows[0]?.response)
   } finally {
     await client.end()
   }

@@ -58,6 +58,7 @@ Last updated: 2026-09-24
 - The authenticated `LOCAL RECIPE` owner UI was verified on desktop and mobile layouts; Step 3 now presents the persisted business-question workflow
 - Catalog foundation migration was applied to development and recorded as version `20260924025829`; private product tables have RLS enabled and direct Hyperdrive table reads are denied
 - GitHub CI run `35949261791` passed application checks, a fresh Supabase reset, and the catalog pgTAP suite
+- Catalog variant-management migration was applied to development and recorded as version `20260924054148`; later variants use tenant-safe, idempotent API commands with audit and outbox events
 
 ## Not started
 
@@ -73,13 +74,13 @@ Last updated: 2026-09-24
 ## In progress
 
 - Owner completed the business-question and feature-selection forms for `LOCAL RECIPE`
-- Manual catalog/product vertical slice: private Product → Variant → SKU → Barcode schema, tenant-safe/idempotent API command, product list, and manual-entry UI are implemented and verified in development
-- Development API Worker version `88199c5c-d438-4381-bffd-11a15da9d8bf` is deployed; authenticated `/products` loads the empty catalog and manual-entry form
+- Manual catalog/product vertical slice: private Product → Variant → SKU → Barcode schema, tenant-safe/idempotent API commands, product list, manual-entry UI, and add-variant flow are implemented and verified in development
+- Development API Worker version `e7fcb786-8980-4247-8914-47a33b06f3f3` is deployed; authenticated `/products` loads the saved catalog and add-variant flow
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Create the first real `LOCAL RECIPE` product from `/products` using the business SKU, price, and optional barcode. Then build opening inventory as ledger movements.
+Deploy the verified add-variant API, add the size/color combinations required by the business, then build opening inventory as ledger movements.
 
 ## Production state
 

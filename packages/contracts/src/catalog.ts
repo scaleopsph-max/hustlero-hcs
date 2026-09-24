@@ -36,6 +36,36 @@ export const catalogProductCreateResponseSchema = z.object({
   status: z.literal('created'),
 })
 
+export const catalogVariantCreateRequestSchema = z.object({
+  variantName: z.string().trim().min(1).max(80),
+  sku: z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .regex(/^[A-Za-z0-9._-]+$/),
+  retailPriceMinor: moneyMinorSchema,
+  unitCostMinor: moneyMinorSchema.nullable().default(null),
+  trackInventory: z.boolean().default(true),
+  barcodes: z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(3)
+        .max(64)
+        .regex(/^[A-Za-z0-9._-]+$/),
+    )
+    .max(10)
+    .default([]),
+})
+
+export const catalogVariantCreateResponseSchema = z.object({
+  productId: identifierSchema,
+  variantId: identifierSchema,
+  status: z.literal('created'),
+})
+
 export const catalogCategorySchema = z.object({ id: identifierSchema, name: z.string().min(1) })
 
 export const catalogVariantSchema = z.object({
@@ -65,4 +95,6 @@ export const catalogResponseSchema = z.object({
 
 export type CatalogProductCreateRequest = z.infer<typeof catalogProductCreateRequestSchema>
 export type CatalogProductCreateResponse = z.infer<typeof catalogProductCreateResponseSchema>
+export type CatalogVariantCreateRequest = z.infer<typeof catalogVariantCreateRequestSchema>
+export type CatalogVariantCreateResponse = z.infer<typeof catalogVariantCreateResponseSchema>
 export type CatalogResponse = z.infer<typeof catalogResponseSchema>
