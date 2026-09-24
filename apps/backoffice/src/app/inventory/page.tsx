@@ -1,5 +1,6 @@
 import { Download, Plus } from 'lucide-react'
-import { Button } from '@hcs/ui'
+import { Button, buttonClasses } from '@hcs/ui'
+import Link from 'next/link'
 import { StockExplorer } from '@/components/StockExplorer'
 import { Topbar } from '@/components/Topbar'
 
@@ -18,10 +19,10 @@ export default function InventoryPage() {
               <Download size={18} strokeWidth={1.75} className="mr-2" />
               Export CSV
             </Button>
-            <Button variant="primary" size="sm">
+            <Link href="/inventory/opening" className={buttonClasses({ variant: 'primary', size: 'sm' })}>
               <Plus size={18} strokeWidth={2} className="mr-2" />
-              Receive stock
-            </Button>
+              Opening inventory
+            </Link>
           </>
         }
       />

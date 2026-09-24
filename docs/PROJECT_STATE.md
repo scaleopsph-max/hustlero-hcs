@@ -4,7 +4,7 @@ Last updated: 2026-09-24
 
 ## Phase
 
-`PHASE 1 - PLATFORM SKELETON`
+`PHASE 2 - CATALOG AND INVENTORY`
 
 ## Completed and verified
 
@@ -62,11 +62,13 @@ Last updated: 2026-09-24
 - Catalog product-editing migration was applied to development and recorded as version `20260924060133`; product-master edits keep variants intact
 - Catalog variant-lifecycle migration was applied to development and recorded as version `20260924063914`; variant edits and soft deactivation are tenant-safe, idempotent, audited, and outbox-backed
 - Variant removal preserves historical rows and blocks removal of the last active variant for a product
+- Opening-inventory migration was applied to development and recorded as version `20260924101416`; private movement and balance tables use RLS and deny direct Worker table access
+- Tenant-safe branch/variant opening inventory is implemented with integer-thousandth quantities, centavo costs, idempotency, append-only enforcement, audit, outbox, and atomic balance projection
 
 ## Not started
 
 - Remaining onboarding steps and go-live validation
-- Catalog, inventory, register, and sales implementation
+- Remaining inventory workflows, register, and sales implementation
 - Staging and production environments
 
 ## Current blockers/gates
@@ -78,12 +80,13 @@ Last updated: 2026-09-24
 
 - Owner completed the business-question and feature-selection forms for `LOCAL RECIPE`
 - Manual catalog/product vertical slice: private Product → Variant → SKU → Barcode schema, tenant-safe/idempotent API commands, product-grain list, editable product detail, and nested add/edit/deactivate variant flow are implemented and verified in development
-- Development API Worker version `f357a7b9-09c2-43e5-b800-71852e14eb04` is deployed; authenticated `/products/{productId}` was browser-verified with edit controls and inline deactivation confirmation
+- Opening inventory per branch and variant is implemented and connected to the onboarding checklist; the authenticated `/inventory/opening` screen was verified with the saved `LOCAL RECIPE` catalog without mutating stock
+- Development API Worker version `9d41cd6a-cd5d-430a-a46a-1f41ca3b1f6c` is deployed
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Build opening inventory as ledger movements per location and variant, then connect it to the onboarding checklist.
+After the owner records real opening quantities, connect the Inventory stock-level and movement-ledger views to live balances, then implement controlled adjustments.
 
 ## Production state
 

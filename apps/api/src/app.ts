@@ -11,6 +11,9 @@ import {
   catalogVariantUpdateRequestSchema,
   catalogVariantUpdateResponseSchema,
   healthResponseSchema,
+  openingInventoryContextSchema,
+  openingInventoryCreateRequestSchema,
+  openingInventoryCreateResponseSchema,
   onboardingResponseSchema,
   onboardingUpdateRequestSchema,
   onboardingUpdateResponseSchema,
@@ -39,6 +42,12 @@ import {
 } from './catalog-repository'
 import { type Bindings, readEnvironment } from './env'
 import {
+  loadOpeningInventoryFromPostgres,
+  recordOpeningInventoryInPostgres,
+  type OpeningInventoryLoader,
+  type OpeningInventoryRecorder,
+} from './inventory-repository'
+import {
   bootstrapTenantInPostgres,
   loadOnboardingFromPostgres,
   updateOnboardingInPostgres,
@@ -60,6 +69,8 @@ interface AppDependencies {
   updateCatalogProduct: CatalogProductUpdater
   updateCatalogVariant: CatalogVariantUpdater
   deactivateCatalogVariant: CatalogVariantDeactivator
+  loadOpeningInventory: OpeningInventoryLoader
+  recordOpeningInventory: OpeningInventoryRecorder
 }
 
 const defaultDependencies: AppDependencies = {
@@ -74,6 +85,8 @@ const defaultDependencies: AppDependencies = {
   updateCatalogProduct: updateCatalogProductInPostgres,
   updateCatalogVariant: updateCatalogVariantInPostgres,
   deactivateCatalogVariant: deactivateCatalogVariantInPostgres,
+  loadOpeningInventory: loadOpeningInventoryFromPostgres,
+  recordOpeningInventory: recordOpeningInventoryInPostgres,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -1105,6 +1118,261 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
     }
   })
 
+  app.get('/v1/inventory/opening-balances', async (context) => {
+    const accessToken = readBearerToken(context.req.header('authorization'))
+    if (!accessToken) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Sign in to view opening inventory.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+    const user = await dependencies.verifyAccessToken(accessToken, context.env)
+    if (!user) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_ACCESS_TOKEN',
+            message: 'The access token is invalid or expired.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+    const tenants = await dependencies.loadSessionAccess(user.userId, context.env)
+    const requestedTenantId = context.req.header('x-tenant-id')
+    if (!requestedTenantId && tenants.length > 1) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'TENANT_SELECTION_REQUIRED',
+            message: 'Select a business to view opening inventory.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        409,
+      )
+    }
+    const tenant = requestedTenantId ? tenants.find((entry) => entry.tenantId === requestedTenantId) : tenants[0]
+    if (!tenant) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVENTORY_ACCESS_DENIED',
+            message: 'You do not have access to this business inventory.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    }
+    const locationId = context.req.query('locationId') ?? null
+    if (
+      locationId !== null &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(locationId)
+    ) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_LOCATION',
+            message: 'The inventory location reference is invalid.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    try {
+      const response = await dependencies.loadOpeningInventory(user.userId, tenant.tenantId, locationId, context.env)
+      return context.json(openingInventoryContextSchema.parse(response))
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS17' || code === 'HCS18') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS18' ? 'INVENTORY_UNAVAILABLE' : 'INVENTORY_ACCESS_DENIED',
+              message:
+                code === 'HCS18' ? 'The inventory module is not enabled.' : 'You do not have inventory permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      }
+      if (code === 'HCS19') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'LOCATION_NOT_FOUND',
+              message: 'The inventory location was not found.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          404,
+        )
+      }
+      throw error
+    }
+  })
+
+  app.post('/v1/inventory/opening-balances', async (context) => {
+    const accessToken = readBearerToken(context.req.header('authorization'))
+    if (!accessToken) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Sign in before recording opening inventory.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+    const user = await dependencies.verifyAccessToken(accessToken, context.env)
+    if (!user) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_ACCESS_TOKEN',
+            message: 'The access token is invalid or expired.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+    const idempotencyKey = context.req.header('idempotency-key')
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_REQUIRED',
+            message: 'A valid Idempotency-Key is required.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    const tenants = await dependencies.loadSessionAccess(user.userId, context.env)
+    const requestedTenantId = context.req.header('x-tenant-id')
+    if (!requestedTenantId && tenants.length > 1) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'TENANT_SELECTION_REQUIRED',
+            message: 'Select a business before recording opening inventory.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        409,
+      )
+    }
+    const tenant = requestedTenantId ? tenants.find((entry) => entry.tenantId === requestedTenantId) : tenants[0]
+    if (!tenant) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVENTORY_ACCESS_DENIED',
+            message: 'You do not have access to this business inventory.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    }
+    const body: unknown = await context.req.json().catch(() => null)
+    const parsed = openingInventoryCreateRequestSchema.safeParse(body)
+    if (!parsed.success) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_OPENING_INVENTORY',
+            message: 'Add at least one positive quantity and a valid unit cost.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    try {
+      const response = await dependencies.recordOpeningInventory(
+        user.userId,
+        tenant.tenantId,
+        parsed.data,
+        idempotencyKey,
+        await requestHash(parsed.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(openingInventoryCreateResponseSchema.parse(response), 201)
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS08' || code === 'HCS16' || code === '23505') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS08' ? 'IDEMPOTENCY_KEY_CONFLICT' : 'OPENING_INVENTORY_EXISTS',
+              message:
+                code === 'HCS08'
+                  ? 'This request key was already used for different opening inventory.'
+                  : 'Opening inventory already exists, or stock has already moved for one of these variants.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      }
+      if (code === 'HCS17' || code === 'HCS18') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS18' ? 'INVENTORY_UNAVAILABLE' : 'INVENTORY_ACCESS_DENIED',
+              message:
+                code === 'HCS18' ? 'The inventory module is not enabled.' : 'You do not have inventory permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      }
+      if (code === 'HCS19' || code === 'HCS21') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS19' ? 'LOCATION_NOT_FOUND' : 'VARIANT_NOT_FOUND',
+              message:
+                code === 'HCS19' ? 'The inventory location was not found.' : 'An inventory variant was not found.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          404,
+        )
+      }
+      if (code === 'HCS20' || code === '22P02' || code === '22003') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVALID_OPENING_INVENTORY',
+              message: 'Check the opening quantities and unit costs.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          400,
+        )
+      }
+      throw error
+    }
+  })
+
   app.get('/v1/onboarding', async (context) => {
     const accessToken = readBearerToken(context.req.header('authorization'))
     if (!accessToken) {
@@ -1177,7 +1445,7 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
           { code: 'business_questions', status: setup.businessQuestionsComplete ? 'complete' : 'pending' },
           { code: 'feature_selection', status: setup.featureSelectionComplete ? 'complete' : 'pending' },
           { code: 'products', status: setup.hasProducts ? 'complete' : 'pending' },
-          { code: 'opening_inventory', status: 'pending' },
+          { code: 'opening_inventory', status: setup.hasOpeningInventory ? 'complete' : 'pending' },
           { code: 'payment_methods', status: 'pending' },
           { code: 'basic_fund_setup', status: 'pending' },
           { code: 'employees', status: 'pending' },

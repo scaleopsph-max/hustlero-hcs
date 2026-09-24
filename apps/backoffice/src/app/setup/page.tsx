@@ -31,6 +31,11 @@ const stepLabels: Record<OnboardingResponse['steps'][number]['code'], string> = 
   test_sale: 'Guided test sale',
 }
 
+const stepHrefs: Partial<Record<OnboardingResponse['steps'][number]['code'], string>> = {
+  products: '/products',
+  opening_inventory: '/inventory/opening',
+}
+
 type Business = { tenantId: string; tenantName: string; isOwner: boolean }
 
 function client(): SupabaseClient | null {
@@ -637,7 +642,13 @@ export default function SetupPage() {
                         <span className={step.status === 'complete' ? 'text-emerald-700' : 'text-ink-400'}>
                           {step.status === 'complete' ? <Check size={18} /> : <Circle size={18} />}
                         </span>
-                        <span className="flex-1">{stepLabels[step.code]}</span>
+                        {stepHrefs[step.code] ? (
+                          <Link href={stepHrefs[step.code]!} className="flex-1 font-medium hover:underline">
+                            {stepLabels[step.code]}
+                          </Link>
+                        ) : (
+                          <span className="flex-1">{stepLabels[step.code]}</span>
+                        )}
                         <span className="text-xs text-ink-500">
                           {step.status === 'complete' ? 'Complete' : 'Pending'}
                         </span>

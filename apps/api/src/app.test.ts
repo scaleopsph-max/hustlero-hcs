@@ -7,6 +7,8 @@ import {
   catalogVariantDeactivateResponseSchema,
   catalogVariantUpdateResponseSchema,
   healthResponseSchema,
+  openingInventoryContextSchema,
+  openingInventoryCreateResponseSchema,
   onboardingResponseSchema,
   sessionContextResponseSchema,
 } from '@hcs/contracts'
@@ -28,6 +30,7 @@ const featureOptions = [
 const loadOnboarding = vi.fn(async () => ({
   hasMainLocation: true,
   hasProducts: false,
+  hasOpeningInventory: false,
   businessQuestionsComplete: false,
   featureSelectionComplete: false,
   businessProfile: null,
@@ -63,6 +66,29 @@ const deactivateCatalogVariant = vi.fn(async () => ({
   variantId: '50000000-0000-4000-8000-000000000002',
   status: 'deactivated' as const,
 }))
+const loadOpeningInventory = vi.fn(async () => ({
+  locations: [{ id: locationId, code: 'MAIN', name: 'Main Store' }],
+  selectedLocationId: locationId,
+  items: [
+    {
+      productId: '40000000-0000-4000-8000-000000000001',
+      productName: 'Triple Black',
+      variantId: '50000000-0000-4000-8000-000000000001',
+      variantName: 'Small',
+      sku: 'TSH-BLK-S',
+      defaultUnitCostMinor: 55_000,
+      openingUnitCostMinor: null,
+      openingQuantityMilli: 0,
+      onHandMilli: 0,
+      opened: false,
+    },
+  ],
+}))
+const recordOpeningInventory = vi.fn(async () => ({
+  locationId,
+  movementCount: 1,
+  status: 'recorded' as const,
+}))
 
 const authenticatedApp = createApp({
   verifyAccessToken: async (token) => (token === 'valid-token' ? { userId } : null),
@@ -91,6 +117,8 @@ const authenticatedApp = createApp({
   updateCatalogProduct,
   updateCatalogVariant,
   deactivateCatalogVariant,
+  loadOpeningInventory,
+  recordOpeningInventory,
 })
 
 const businessDetails = {
@@ -289,6 +317,8 @@ describe('API', () => {
       updateCatalogProduct,
       updateCatalogVariant,
       deactivateCatalogVariant,
+      loadOpeningInventory,
+      recordOpeningInventory,
     })
     const response = await multiTenantApp.request(
       '/v1/onboarding',
@@ -325,6 +355,8 @@ describe('API', () => {
       updateCatalogProduct,
       updateCatalogVariant,
       deactivateCatalogVariant,
+      loadOpeningInventory,
+      recordOpeningInventory,
     })
     const response = await employeeApp.request(
       '/v1/onboarding',
@@ -657,5 +689,76 @@ describe('API', () => {
     )
     expect(response.status).toBe(409)
     expect(apiErrorResponseSchema.parse(await response.json()).error.code).toBe('LAST_ACTIVE_VARIANT')
+  })
+
+  it('loads opening inventory for the server-resolved tenant and requested location', async () => {
+    loadOpeningInventory.mockClear()
+    const response = await authenticatedApp.request(
+      `/v1/inventory/opening-balances?locationId=${locationId}`,
+      { headers: { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId } },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(openingInventoryContextSchema.safeParse(await response.json()).success).toBe(true)
+    expect(loadOpeningInventory).toHaveBeenCalledWith(userId, tenantId, locationId, bindings)
+  })
+
+  it('records opening inventory using integer quantity and money units', async () => {
+    recordOpeningInventory.mockClear()
+    const request = {
+      locationId,
+      entries: [
+        {
+          variantId: '50000000-0000-4000-8000-000000000001',
+          quantityMilli: 12_000,
+          unitCostMinor: 55_000,
+        },
+      ],
+    }
+    const response = await authenticatedApp.request(
+      '/v1/inventory/opening-balances',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'opening-inventory-001',
+        },
+        body: JSON.stringify(request),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(201)
+    expect(openingInventoryCreateResponseSchema.safeParse(await response.json()).success).toBe(true)
+    expect(recordOpeningInventory).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      request,
+      'opening-inventory-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('rejects empty opening inventory before reaching the database', async () => {
+    recordOpeningInventory.mockClear()
+    const response = await authenticatedApp.request(
+      '/v1/inventory/opening-balances',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'opening-inventory-empty',
+        },
+        body: JSON.stringify({ locationId, entries: [] }),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(400)
+    expect(recordOpeningInventory).not.toHaveBeenCalled()
   })
 })
