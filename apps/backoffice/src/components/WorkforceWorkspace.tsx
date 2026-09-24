@@ -56,6 +56,7 @@ export function WorkforceWorkspace({ focus = 'employees' }: { focus?: 'employees
   }, [])
   useEffect(() => {
     if (!auth) {
+      setError('Back Office authentication is not configured. Restart the app after adding the local environment file.')
       setLoading(false)
       return
     }
@@ -156,6 +157,9 @@ export function WorkforceWorkspace({ focus = 'employees' }: { focus?: 'employees
                 required
               />
               <select className={input} value={roleId} onChange={(e) => setRoleId(e.target.value)} required>
+                {!data.roles.some((role) => role.code !== 'owner') ? (
+                  <option value="">No staff roles available</option>
+                ) : null}
                 {data.roles
                   .filter((r) => r.code !== 'owner')
                   .map((r) => (
@@ -170,6 +174,9 @@ export function WorkforceWorkspace({ focus = 'employees' }: { focus?: 'employees
                 onChange={(e) => setEmployeeLocation(e.target.value)}
                 required
               >
+                {!data.locations.some((location) => location.isActive) ? (
+                  <option value="">No active locations available</option>
+                ) : null}
                 {data.locations
                   .filter((l) => l.isActive)
                   .map((l) => (
@@ -241,6 +248,9 @@ export function WorkforceWorkspace({ focus = 'employees' }: { focus?: 'employees
                 onChange={(e) => setRegisterLocation(e.target.value)}
                 required
               >
+                {!data.locations.some((location) => location.isActive) ? (
+                  <option value="">No active locations available</option>
+                ) : null}
                 {data.locations
                   .filter((l) => l.isActive)
                   .map((l) => (
