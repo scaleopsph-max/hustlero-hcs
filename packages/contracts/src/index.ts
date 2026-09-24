@@ -1,10 +1,22 @@
 export { environmentSchema, healthResponseSchema, type HealthResponse } from './health'
 export {
+  businessSetupQuestionsSchema,
+  businessTypeSchema,
+  featureSelectionSchema,
   onboardingResponseSchema,
   onboardingStepCodeSchema,
+  onboardingUpdateRequestSchema,
+  onboardingUpdateResponseSchema,
+  productSetupMethodSchema,
+  salesChannelSchema,
+  selectableFeatureCodeSchema,
   tenantBootstrapRequestSchema,
   tenantBootstrapResponseSchema,
+  type BusinessSetupQuestions,
+  type FeatureSelection,
   type OnboardingResponse,
+  type OnboardingUpdateRequest,
+  type OnboardingUpdateResponse,
   type TenantBootstrapRequest,
   type TenantBootstrapResponse,
 } from './onboarding'

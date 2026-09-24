@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-09-22
+Last updated: 2026-09-24
 
 ## Phase
 
@@ -50,6 +50,7 @@ Last updated: 2026-09-22
 - GitHub CI run `35691870052` passed full application checks and onboarding pgTAP assertions
 - Onboarding migration applied to the Supabase development database and recorded as version `20260922054750`
 - Development API Worker updated; live `/health` returned 200 and Back Office-origin CORS preflight returned 204
+- Authenticated owner onboarding was completed in the development UI for `LOCAL RECIPE`; the business, one active main location, and one active owner were verified in the development database
 
 ## Not started
 
@@ -60,12 +61,17 @@ Last updated: 2026-09-22
 ## Current blockers/gates
 
 - Docker-compatible runtime is not installed locally; database verification currently runs in GitHub CI
-- Browser-to-API onboarding and a positive owner/tenant integration smoke test have not yet been verified
 - vinext is beta; builds pass, while route classification remains reported as unknown for the current static pages
+
+## In progress
+
+- Business setup questions and core feature-selection vertical slice
+- Private onboarding profile, core feature catalog/entitlements, owner-only save commands, audit/outbox behavior, shared contracts, and actionable Back Office wizard are implemented locally
+- Local TypeScript and unit tests pass; migration pgTAP, full build, CI, development migration, and deployment remain pending
 
 ## Next safe action
 
-Run an authenticated owner onboarding smoke test in development without creating permanent sample tenant data, then implement product setup and the remaining go-live prerequisites as separate vertical slices.
+Pass CI for the business-question and feature-selection migration, apply it to development, deploy the development API, and verify both steps through the authenticated `LOCAL RECIPE` owner UI. Then begin the catalog/product vertical slice.
 
 ## Production state
 

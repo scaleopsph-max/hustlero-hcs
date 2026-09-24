@@ -13,7 +13,24 @@ const userId = '10000000-0000-4000-8000-000000000001'
 const tenantId = '20000000-0000-4000-8000-000000000001'
 const locationId = '30000000-0000-4000-8000-000000000001'
 const bootstrapTenant = vi.fn(async () => ({ tenantId, mainLocationId: locationId, status: 'setup' as const }))
-const countActiveLocations = vi.fn(async () => 1)
+const featureOptions = [
+  { code: 'catalog' as const, name: 'Products and catalog', enabled: true, required: true },
+  { code: 'sales' as const, name: 'Sales and checkout', enabled: true, required: true },
+  { code: 'reports' as const, name: 'Basic reports', enabled: true, required: true },
+  { code: 'inventory' as const, name: 'Inventory tracking', enabled: false, required: false },
+]
+const loadOnboarding = vi.fn(async () => ({
+  hasMainLocation: true,
+  businessQuestionsComplete: false,
+  featureSelectionComplete: false,
+  businessProfile: null,
+  featureOptions,
+}))
+const updateOnboarding = vi.fn(async (_userId, _tenantId, request) => ({
+  step: request.step,
+  status: 'complete' as const,
+  ...(request.step === 'feature_selection' ? { enabledFeatures: request.enabledFeatures } : {}),
+}))
 
 const authenticatedApp = createApp({
   verifyAccessToken: async (token) => (token === 'valid-token' ? { userId } : null),
@@ -34,7 +51,8 @@ const authenticatedApp = createApp({
     ]
   },
   bootstrapTenant,
-  countActiveLocations,
+  loadOnboarding,
+  updateOnboarding,
 })
 
 const businessDetails = {
@@ -225,7 +243,8 @@ describe('API', () => {
         },
       ],
       bootstrapTenant,
-      countActiveLocations,
+      loadOnboarding,
+      updateOnboarding,
     })
     const response = await multiTenantApp.request(
       '/v1/onboarding',
@@ -254,7 +273,8 @@ describe('API', () => {
         },
       ],
       bootstrapTenant,
-      countActiveLocations,
+      loadOnboarding,
+      updateOnboarding,
     })
     const response = await employeeApp.request(
       '/v1/onboarding',
@@ -287,5 +307,68 @@ describe('API', () => {
       { ...bindings, BACKOFFICE_ORIGIN: 'http://localhost:3001' },
     )
     expect(denied.headers.get('access-control-allow-origin')).toBeNull()
+  })
+
+  it('validates and saves business setup questions for the server-resolved owner', async () => {
+    updateOnboarding.mockClear()
+    const invalid = await authenticatedApp.request(
+      '/v1/onboarding',
+      {
+        method: 'PATCH',
+        headers: { authorization: 'Bearer valid-token', 'content-type': 'application/json', 'x-tenant-id': tenantId },
+        body: JSON.stringify({ step: 'business_questions', businessType: 'unknown' }),
+      },
+      bindings,
+    )
+    expect(invalid.status).toBe(400)
+    expect(updateOnboarding).not.toHaveBeenCalled()
+
+    const request = {
+      step: 'business_questions' as const,
+      businessType: 'retail' as const,
+      salesChannels: ['in_store' as const],
+      tracksInventory: true,
+      productSetupMethod: 'manual' as const,
+    }
+    const response = await authenticatedApp.request(
+      '/v1/onboarding',
+      {
+        method: 'PATCH',
+        headers: { authorization: 'Bearer valid-token', 'content-type': 'application/json', 'x-tenant-id': tenantId },
+        body: JSON.stringify(request),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(updateOnboarding).toHaveBeenCalledWith(userId, tenantId, request, expect.any(String), bindings)
+  })
+
+  it('saves only selectable feature codes', async () => {
+    const invalid = await authenticatedApp.request(
+      '/v1/onboarding',
+      {
+        method: 'PATCH',
+        headers: { authorization: 'Bearer valid-token', 'content-type': 'application/json', 'x-tenant-id': tenantId },
+        body: JSON.stringify({ step: 'feature_selection', enabledFeatures: ['online_store'] }),
+      },
+      bindings,
+    )
+    expect(invalid.status).toBe(400)
+
+    const response = await authenticatedApp.request(
+      '/v1/onboarding',
+      {
+        method: 'PATCH',
+        headers: { authorization: 'Bearer valid-token', 'content-type': 'application/json', 'x-tenant-id': tenantId },
+        body: JSON.stringify({ step: 'feature_selection', enabledFeatures: ['inventory', 'customers'] }),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      step: 'feature_selection',
+      status: 'complete',
+      enabledFeatures: ['inventory', 'customers'],
+    })
   })
 })

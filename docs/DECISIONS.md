@@ -13,6 +13,8 @@
 | ADR-007 | Keep Data API exposure explicit and minimal | Reduce accidental table exposure and authorization surface |
 | ADR-008 | Keep POS online-first for MVP | Avoid unsafe offline conflict behavior before policies are proven |
 | ADR-009 | Use HUSTLERO (HCS) as the current product name | Supersedes the legacy product heading without changing locked business behavior |
+| ADR-010 | Keep the initial adaptive-onboarding questionnaire small and reversible | Business type, sales channels, inventory tracking, and product setup method are sufficient to tailor early setup without locking the tenant into an irreversible classification |
+| ADR-011 | Enable catalog, sales, and basic reports for every tenant; let owners toggle only entitled core modules during onboarding | Preserves a usable free/core path and prevents tenant owners from self-entitling unavailable paid add-ons |
 
 ## Decisions requiring owner confirmation before affected work
 

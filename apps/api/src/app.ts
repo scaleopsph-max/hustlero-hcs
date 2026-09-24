@@ -2,6 +2,8 @@ import {
   apiErrorResponseSchema,
   healthResponseSchema,
   onboardingResponseSchema,
+  onboardingUpdateRequestSchema,
+  onboardingUpdateResponseSchema,
   sessionContextResponseSchema,
   tenantBootstrapRequestSchema,
   tenantBootstrapResponseSchema,
@@ -14,8 +16,10 @@ import { readBearerToken, verifySupabaseAccessToken, type AccessTokenVerifier } 
 import { type Bindings, readEnvironment } from './env'
 import {
   bootstrapTenantInPostgres,
-  countActiveLocationsInPostgres,
-  type ActiveLocationCounter,
+  loadOnboardingFromPostgres,
+  updateOnboardingInPostgres,
+  type OnboardingLoader,
+  type OnboardingUpdater,
   type TenantBootstrapper,
 } from './onboarding-repository'
 import { loadSessionAccessFromPostgres, type SessionAccessLoader } from './session-repository'
@@ -24,14 +28,16 @@ interface AppDependencies {
   verifyAccessToken: AccessTokenVerifier
   loadSessionAccess: SessionAccessLoader
   bootstrapTenant: TenantBootstrapper
-  countActiveLocations: ActiveLocationCounter
+  loadOnboarding: OnboardingLoader
+  updateOnboarding: OnboardingUpdater
 }
 
 const defaultDependencies: AppDependencies = {
   verifyAccessToken: verifySupabaseAccessToken,
   loadSessionAccess: loadSessionAccessFromPostgres,
   bootstrapTenant: bootstrapTenantInPostgres,
-  countActiveLocations: countActiveLocationsInPostgres,
+  loadOnboarding: loadOnboardingFromPostgres,
+  updateOnboarding: updateOnboardingInPostgres,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -56,7 +62,7 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
     '/v1/*',
     cors({
       origin: (origin, context) => (origin === context.env.BACKOFFICE_ORIGIN ? origin : ''),
-      allowMethods: ['GET', 'POST', 'OPTIONS'],
+      allowMethods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
       allowHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key', 'X-Tenant-Id'],
     }),
   )
@@ -284,16 +290,18 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
       )
     }
 
-    const hasMainLocation = (await dependencies.countActiveLocations(tenant.tenantId, context.env)) > 0
+    const setup = await dependencies.loadOnboarding(tenant.tenantId, context.env)
     return context.json(
       onboardingResponseSchema.parse({
         tenantId: tenant.tenantId,
         readyToSell: false,
+        businessProfile: setup.businessProfile,
+        featureOptions: setup.featureOptions,
         steps: [
           { code: 'business', status: 'complete' },
-          { code: 'main_location', status: hasMainLocation ? 'complete' : 'pending' },
-          { code: 'business_questions', status: 'pending' },
-          { code: 'feature_selection', status: 'pending' },
+          { code: 'main_location', status: setup.hasMainLocation ? 'complete' : 'pending' },
+          { code: 'business_questions', status: setup.businessQuestionsComplete ? 'complete' : 'pending' },
+          { code: 'feature_selection', status: setup.featureSelectionComplete ? 'complete' : 'pending' },
           { code: 'products', status: 'pending' },
           { code: 'opening_inventory', status: 'pending' },
           { code: 'payment_methods', status: 'pending' },
@@ -305,6 +313,130 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
         ],
       }),
     )
+  })
+
+  app.patch('/v1/onboarding', async (context) => {
+    const accessToken = readBearerToken(context.req.header('authorization'))
+    if (!accessToken) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Sign in to continue business setup.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+
+    const user = await dependencies.verifyAccessToken(accessToken, context.env)
+    if (!user) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_ACCESS_TOKEN',
+            message: 'The access token is invalid or expired.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+
+    const tenants = await dependencies.loadSessionAccess(user.userId, context.env)
+    const requestedTenantId = context.req.header('x-tenant-id')
+    if (!requestedTenantId && tenants.length > 1) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'TENANT_SELECTION_REQUIRED',
+            message: 'Select a business to continue setup.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        409,
+      )
+    }
+
+    const tenant = requestedTenantId ? tenants.find((entry) => entry.tenantId === requestedTenantId) : tenants[0]
+    if (!tenant || !tenant.isOwner) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'ONBOARDING_ACCESS_DENIED',
+            message: 'Business setup is available to its owner.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    }
+
+    const body: unknown = await context.req.json().catch(() => null)
+    const parsed = onboardingUpdateRequestSchema.safeParse(body)
+    if (!parsed.success) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_ONBOARDING_DETAILS',
+            message: 'Check the setup answers and try again.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+
+    try {
+      const response = await dependencies.updateOnboarding(
+        user.userId,
+        tenant.tenantId,
+        parsed.data,
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(onboardingUpdateResponseSchema.parse(response))
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS04') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'ONBOARDING_ACCESS_DENIED',
+              message: 'Business setup is available to its active owner.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      }
+      if (code === 'HCS06') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'ONBOARDING_STEP_OUT_OF_ORDER',
+              message: 'Complete the business setup questions first.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      }
+      if (code === 'HCS05' || code === 'HCS07') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVALID_ONBOARDING_DETAILS',
+              message: 'Check the setup answers and try again.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          400,
+        )
+      }
+      throw error
+    }
   })
 
   app.onError((error, context) => {

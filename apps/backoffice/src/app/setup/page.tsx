@@ -1,10 +1,11 @@
 'use client'
 
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js'
-import { ArrowRight, Check, Circle, Loader2, LogOut, Store } from 'lucide-react'
+import { ArrowRight, Check, Circle, Loader2, Lock, LogOut, Store } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
   onboardingResponseSchema,
+  onboardingUpdateResponseSchema,
   sessionContextResponseSchema,
   tenantBootstrapResponseSchema,
   type OnboardingResponse,
@@ -64,6 +65,14 @@ export default function SetupPage() {
   const [slug, setSlug] = useState('')
   const [locationName, setLocationName] = useState('Main Store')
   const [locationCode, setLocationCode] = useState('MAIN')
+  const [businessType, setBusinessType] = useState<'retail' | 'food_and_beverage' | 'services' | 'mixed'>('retail')
+  const [salesChannels, setSalesChannels] = useState<Array<'in_store' | 'online' | 'wholesale'>>(['in_store'])
+  const [tracksInventory, setTracksInventory] = useState(true)
+  const [productSetupMethod, setProductSetupMethod] = useState<'manual' | 'csv' | 'later'>('manual')
+  const [enabledFeatures, setEnabledFeatures] = useState<
+    Array<'inventory' | 'purchasing' | 'customers' | 'employees' | 'finance'>
+  >([])
+  const [editingStep, setEditingStep] = useState<'business_questions' | 'feature_selection' | null>(null)
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState<string | null>(null)
@@ -75,6 +84,27 @@ export default function SetupPage() {
     setBusinesses(owned)
     setSelectedTenantId((current) =>
       current && owned.some((item) => item.tenantId === current) ? current : (owned[0]?.tenantId ?? null),
+    )
+  }, [])
+
+  const loadOnboardingStatus = useCallback(async (accessToken: string, tenantId: string) => {
+    const data = onboardingResponseSchema.parse(
+      await apiRequest('/v1/onboarding', accessToken, { headers: { 'X-Tenant-Id': tenantId } }),
+    )
+    setOnboarding(data)
+    if (data.businessProfile) {
+      setBusinessType(data.businessProfile.businessType)
+      setSalesChannels(data.businessProfile.salesChannels)
+      setTracksInventory(data.businessProfile.tracksInventory)
+      setProductSetupMethod(data.businessProfile.productSetupMethod)
+    }
+    setEnabledFeatures(
+      data.featureOptions
+        .filter((feature) => feature.enabled && !feature.required)
+        .map((feature) => feature.code)
+        .filter((code): code is 'inventory' | 'purchasing' | 'customers' | 'employees' | 'finance' =>
+          ['inventory', 'purchasing', 'customers', 'employees', 'finance'].includes(code),
+        ),
     )
   }, [])
 
@@ -117,10 +147,10 @@ export default function SetupPage() {
       setOnboarding(null)
       return
     }
-    void apiRequest('/v1/onboarding', token, { headers: { 'X-Tenant-Id': selectedTenantId } })
-      .then((data) => setOnboarding(onboardingResponseSchema.parse(data)))
-      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Could not load setup status.'))
-  }, [token, selectedTenantId])
+    void loadOnboardingStatus(token, selectedTenantId).catch((cause: unknown) =>
+      setError(cause instanceof Error ? cause.message : 'Could not load setup status.'),
+    )
+  }, [token, selectedTenantId, loadOnboardingStatus])
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -182,6 +212,44 @@ export default function SetupPage() {
       setBusy(false)
     }
   }
+
+  async function saveOnboardingStep(body: unknown) {
+    if (!token || !selectedTenantId) return
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      onboardingUpdateResponseSchema.parse(
+        await apiRequest('/v1/onboarding', token, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': selectedTenantId },
+          body: JSON.stringify(body),
+        }),
+      )
+      await loadOnboardingStatus(token, selectedTenantId)
+      setEditingStep(null)
+      setNotice('Setup progress saved.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not save setup progress.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function toggleSalesChannel(channel: 'in_store' | 'online' | 'wholesale') {
+    setSalesChannels((current) =>
+      current.includes(channel) ? current.filter((item) => item !== channel) : [...current, channel],
+    )
+  }
+
+  function toggleFeature(code: 'inventory' | 'purchasing' | 'customers' | 'employees' | 'finance') {
+    setEnabledFeatures((current) =>
+      current.includes(code) ? current.filter((item) => item !== code) : [...current, code],
+    )
+  }
+
+  const questionsComplete = onboarding?.steps.find((step) => step.code === 'business_questions')?.status === 'complete'
+  const featuresComplete = onboarding?.steps.find((step) => step.code === 'feature_selection')?.status === 'complete'
 
   const inputClass =
     'min-h-11 w-full rounded-md border border-ink-900/15 bg-white px-3 text-sm outline-none focus:border-ink-900'
@@ -376,6 +444,182 @@ export default function SetupPage() {
                   </select>
                 </label>
               ) : null}
+              {onboarding && questionsComplete && featuresComplete && !editingStep ? (
+                <div className="mt-7 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    className="min-h-11 rounded-md border border-ink-900/15 bg-white px-4 text-sm font-semibold"
+                    onClick={() => setEditingStep('business_questions')}
+                  >
+                    Edit business answers
+                  </button>
+                  <button
+                    type="button"
+                    className="min-h-11 rounded-md border border-ink-900/15 bg-white px-4 text-sm font-semibold"
+                    onClick={() => setEditingStep('feature_selection')}
+                  >
+                    Edit feature choices
+                  </button>
+                </div>
+              ) : null}
+              {onboarding && (!questionsComplete || editingStep === 'business_questions') ? (
+                <form
+                  className="mt-8 border-t border-ink-900/10 pt-6"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    void saveOnboardingStep({
+                      step: 'business_questions',
+                      businessType,
+                      salesChannels,
+                      tracksInventory,
+                      productSetupMethod,
+                    })
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-semibold uppercase text-ink-500">Step 3</p>
+                      <h2 className="mt-1 font-display text-xl font-bold">Business setup questions</h2>
+                    </div>
+                    <span className="text-sm text-ink-500">Required</span>
+                  </div>
+
+                  <fieldset className="mt-6">
+                    <legend className="text-sm font-semibold">What best describes your business?</legend>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {[
+                        ['retail', 'Retail'],
+                        ['food_and_beverage', 'Food and beverage'],
+                        ['services', 'Services'],
+                        ['mixed', 'Mixed business'],
+                      ].map(([value, label]) => (
+                        <label
+                          key={value}
+                          className={`flex min-h-11 cursor-pointer items-center gap-3 rounded-md border px-3 text-sm ${businessType === value ? 'border-ink-900 bg-white' : 'border-ink-900/15'}`}
+                        >
+                          <input
+                            type="radio"
+                            name="businessType"
+                            value={value}
+                            checked={businessType === value}
+                            onChange={() => setBusinessType(value as typeof businessType)}
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+
+                  <fieldset className="mt-6">
+                    <legend className="text-sm font-semibold">Where do you sell?</legend>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                      {[
+                        ['in_store', 'In store'],
+                        ['online', 'Online'],
+                        ['wholesale', 'Wholesale'],
+                      ].map(([value, label]) => (
+                        <label
+                          key={value}
+                          className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-ink-900/15 px-3 text-sm"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={salesChannels.includes(value as (typeof salesChannels)[number])}
+                            onChange={() => toggleSalesChannel(value as (typeof salesChannels)[number])}
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+
+                  <label className="mt-6 flex min-h-12 cursor-pointer items-center justify-between gap-4 border-y border-ink-900/10 py-3 text-sm font-medium">
+                    Track product inventory
+                    <input
+                      type="checkbox"
+                      checked={tracksInventory}
+                      onChange={(event) => setTracksInventory(event.target.checked)}
+                    />
+                  </label>
+
+                  <fieldset className="mt-6">
+                    <legend className="text-sm font-semibold">How will you add products?</legend>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                      {[
+                        ['manual', 'Add manually'],
+                        ['csv', 'Import CSV'],
+                        ['later', 'Set up later'],
+                      ].map(([value, label]) => (
+                        <label
+                          key={value}
+                          className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md border border-ink-900/15 px-3 text-sm"
+                        >
+                          <input
+                            type="radio"
+                            name="productSetupMethod"
+                            checked={productSetupMethod === value}
+                            onChange={() => setProductSetupMethod(value as typeof productSetupMethod)}
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+
+                  <button type="submit" disabled={busy || salesChannels.length === 0} className={`${buttonClass} mt-7`}>
+                    {busy ? <Loader2 size={18} className="animate-spin" /> : null}
+                    {questionsComplete ? 'Save answers' : 'Save and continue'}
+                    <ArrowRight size={17} />
+                  </button>
+                </form>
+              ) : null}
+
+              {onboarding &&
+              questionsComplete &&
+              editingStep !== 'business_questions' &&
+              (!featuresComplete || editingStep === 'feature_selection') ? (
+                <form
+                  className="mt-8 border-t border-ink-900/10 pt-6"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    void saveOnboardingStep({ step: 'feature_selection', enabledFeatures })
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-semibold uppercase text-ink-500">Step 4</p>
+                      <h2 className="mt-1 font-display text-xl font-bold">Choose your tools</h2>
+                    </div>
+                    <span className="text-sm text-ink-500">Change later</span>
+                  </div>
+                  <div className="mt-6 grid gap-2 sm:grid-cols-2">
+                    {onboarding.featureOptions.map((feature) => (
+                      <label
+                        key={feature.code}
+                        className={`flex min-h-14 items-center gap-3 rounded-md border px-3 text-sm ${feature.enabled ? 'border-ink-900 bg-white' : 'border-ink-900/15'} ${feature.required ? 'cursor-default' : 'cursor-pointer'}`}
+                      >
+                        {feature.required ? (
+                          <Check size={18} className="text-emerald-700" />
+                        ) : (
+                          <input
+                            type="checkbox"
+                            checked={enabledFeatures.includes(feature.code as (typeof enabledFeatures)[number])}
+                            onChange={() => toggleFeature(feature.code as (typeof enabledFeatures)[number])}
+                          />
+                        )}
+                        <span className="flex-1 font-medium">{feature.name}</span>
+                        {feature.required ? <Lock size={15} className="text-ink-400" aria-label="Included" /> : null}
+                      </label>
+                    ))}
+                  </div>
+                  <button type="submit" disabled={busy} className={`${buttonClass} mt-7`}>
+                    {busy ? <Loader2 size={18} className="animate-spin" /> : null}
+                    Save feature choices
+                    <ArrowRight size={17} />
+                  </button>
+                </form>
+              ) : null}
+
               <div className="mt-8 border-t border-ink-900/10 pt-6">
                 <h2 className="font-display text-lg font-bold">Setup progress</h2>
                 {onboarding ? (
