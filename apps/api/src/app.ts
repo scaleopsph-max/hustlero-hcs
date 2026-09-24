@@ -18,6 +18,13 @@ import {
   transferDispatchResponseSchema,
   transferReceiveRequestSchema,
   transferReceiveResponseSchema,
+  employeeCreateRequestSchema,
+  employeeCreateResponseSchema,
+  locationCreateRequestSchema,
+  locationCreateResponseSchema,
+  registerCreateRequestSchema,
+  registerCreateResponseSchema,
+  workforceContextSchema,
   apiErrorResponseSchema,
   catalogProductCreateRequestSchema,
   catalogProductCreateResponseSchema,
@@ -115,6 +122,16 @@ import {
   type TransferLoader,
   type TransferReceiver,
 } from './transfers-repository'
+import {
+  createEmployeeInPostgres,
+  createLocationInPostgres,
+  createRegisterInPostgres,
+  loadWorkforceFromPostgres,
+  type EmployeeCreator,
+  type LocationCreator,
+  type RegisterCreator,
+  type WorkforceLoader,
+} from './workforce-repository'
 
 interface AppDependencies {
   verifyAccessToken: AccessTokenVerifier
@@ -145,6 +162,10 @@ interface AppDependencies {
   createTransfer: TransferCreator
   dispatchTransfer: TransferDispatcher
   receiveTransfer: TransferReceiver
+  loadWorkforce: WorkforceLoader
+  createLocation: LocationCreator
+  createEmployee: EmployeeCreator
+  createRegister: RegisterCreator
 }
 
 const defaultDependencies: AppDependencies = {
@@ -176,6 +197,10 @@ const defaultDependencies: AppDependencies = {
   createTransfer: createTransferInPostgres,
   dispatchTransfer: dispatchTransferInPostgres,
   receiveTransfer: receiveTransferInPostgres,
+  loadWorkforce: loadWorkforceFromPostgres,
+  createLocation: createLocationInPostgres,
+  createEmployee: createEmployeeInPostgres,
+  createRegister: createRegisterInPostgres,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -1854,6 +1879,193 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
       throw error
     }
   })
+
+  app.get('/v1/workforce', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'WORKFORCE_ACCESS_DENIED',
+            message: 'Sign in and select a business to view workforce setup.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    try {
+      return context.json(
+        workforceContextSchema.parse(await dependencies.loadWorkforce(resolved.userId, resolved.tenantId, context.env)),
+      )
+    } catch (error) {
+      if (postgresErrorCode(error) === 'HCS60')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'WORKFORCE_ACCESS_DENIED',
+              message: 'You do not have workforce permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      throw error
+    }
+  })
+
+  const workforceCommand = async (
+    context: Context<{ Bindings: Bindings }>,
+    kind: 'location' | 'employee' | 'register',
+  ) => {
+    const resolved = await resolvePurchasingTenant(context)
+    const key = context.req.header('idempotency-key')
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'WORKFORCE_ACCESS_DENIED',
+            message: 'Sign in and select a business first.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_REQUIRED',
+            message: 'A valid Idempotency-Key is required.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    const body: unknown = await context.req.json().catch(() => null)
+    try {
+      if (kind === 'location') {
+        const parsed = locationCreateRequestSchema.safeParse(body)
+        if (!parsed.success)
+          return context.json(
+            apiErrorResponseSchema.parse({
+              error: {
+                code: 'INVALID_LOCATION',
+                message: 'Check the location details.',
+                requestId: context.get('requestId'),
+              },
+            }),
+            400,
+          )
+        return context.json(
+          locationCreateResponseSchema.parse(
+            await dependencies.createLocation(
+              resolved.userId,
+              resolved.tenantId,
+              parsed.data,
+              key,
+              await requestHash(parsed.data),
+              context.get('requestId'),
+              context.env,
+            ),
+          ),
+          201,
+        )
+      }
+      if (kind === 'employee') {
+        const parsed = employeeCreateRequestSchema.safeParse(body)
+        if (!parsed.success)
+          return context.json(
+            apiErrorResponseSchema.parse({
+              error: {
+                code: 'INVALID_EMPLOYEE',
+                message: 'Check employee, role, branches, and the 4 to 6 digit PIN.',
+                requestId: context.get('requestId'),
+              },
+            }),
+            400,
+          )
+        return context.json(
+          employeeCreateResponseSchema.parse(
+            await dependencies.createEmployee(
+              resolved.userId,
+              resolved.tenantId,
+              parsed.data,
+              key,
+              await requestHash({ ...parsed.data, pin: '[REDACTED]' }),
+              context.get('requestId'),
+              context.env,
+            ),
+          ),
+          201,
+        )
+      }
+      const parsed = registerCreateRequestSchema.safeParse(body)
+      if (!parsed.success)
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVALID_REGISTER',
+              message: 'Check the register and location details.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          400,
+        )
+      return context.json(
+        registerCreateResponseSchema.parse(
+          await dependencies.createRegister(
+            resolved.userId,
+            resolved.tenantId,
+            parsed.data,
+            key,
+            await requestHash(parsed.data),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+        201,
+      )
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS60')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'WORKFORCE_ACCESS_DENIED',
+              message: 'Owner access is required.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      if (['HCS62', 'HCS65', 'HCS67'].includes(code ?? ''))
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'WORKFORCE_CONFLICT',
+              message: 'That code is already in use.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      if (['HCS64', 'HCS66'].includes(code ?? ''))
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'WORKFORCE_REFERENCE_NOT_FOUND',
+              message: 'The selected role or location was not found.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          404,
+        )
+      throw error
+    }
+  }
+  app.post('/v1/workforce/locations', (context) => workforceCommand(context, 'location'))
+  app.post('/v1/workforce/employees', (context) => workforceCommand(context, 'employee'))
+  app.post('/v1/workforce/registers', (context) => workforceCommand(context, 'register'))
 
   app.get('/v1/approvals', async (context) => {
     const accessToken = readBearerToken(context.req.header('authorization'))

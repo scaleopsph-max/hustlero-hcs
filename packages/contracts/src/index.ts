@@ -105,6 +105,19 @@ export {
   type TransferReceiveRequest,
 } from './transfers'
 export {
+  employeeCreateRequestSchema,
+  employeeCreateResponseSchema,
+  locationCreateRequestSchema,
+  locationCreateResponseSchema,
+  registerCreateRequestSchema,
+  registerCreateResponseSchema,
+  workforceContextSchema,
+  type EmployeeCreateRequest,
+  type LocationCreateRequest,
+  type RegisterCreateRequest,
+  type WorkforceContext,
+} from './workforce'
+export {
   apiErrorResponseSchema,
   sessionContextResponseSchema,
   tenantAccessSchema,

@@ -21,6 +21,8 @@ import {
   supplierCreateResponseSchema,
   transferContextSchema,
   transferCreateResponseSchema,
+  employeeCreateResponseSchema,
+  workforceContextSchema,
   onboardingResponseSchema,
   sessionContextResponseSchema,
 } from '@hcs/contracts'
@@ -220,6 +222,16 @@ const receiveTransfer = vi.fn(async (_userId, _tenantId, id) => ({
   status: 'received' as const,
   itemCount: 1,
 }))
+const loadWorkforce = vi.fn(async () => ({ locations: [], roles: [], employees: [], registers: [] }))
+const createLocation = vi.fn(async () => ({ locationId, status: 'created' as const }))
+const createEmployee = vi.fn(async () => ({
+  employeeId: 'c0000000-0000-4000-8000-000000000001',
+  status: 'created' as const,
+}))
+const createRegister = vi.fn(async () => ({
+  registerId: 'd0000000-0000-4000-8000-000000000001',
+  status: 'created' as const,
+}))
 
 const authenticatedApp = createApp({
   verifyAccessToken: async (token) => (token === 'valid-token' ? { userId } : null),
@@ -265,6 +277,10 @@ const authenticatedApp = createApp({
   createTransfer,
   dispatchTransfer,
   receiveTransfer,
+  loadWorkforce,
+  createLocation,
+  createEmployee,
+  createRegister,
 })
 
 const businessDetails = {
@@ -480,6 +496,10 @@ describe('API', () => {
       createTransfer,
       dispatchTransfer,
       receiveTransfer,
+      loadWorkforce,
+      createLocation,
+      createEmployee,
+      createRegister,
     })
     const response = await multiTenantApp.request(
       '/v1/onboarding',
@@ -533,6 +553,10 @@ describe('API', () => {
       createTransfer,
       dispatchTransfer,
       receiveTransfer,
+      loadWorkforce,
+      createLocation,
+      createEmployee,
+      createRegister,
     })
     const response = await employeeApp.request(
       '/v1/onboarding',
@@ -1228,6 +1252,54 @@ describe('API', () => {
       tenantId,
       request,
       'transfer-create-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('loads workforce setup for the server-resolved tenant', async () => {
+    loadWorkforce.mockClear()
+    const response = await authenticatedApp.request(
+      '/v1/workforce',
+      { headers: { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId } },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(workforceContextSchema.safeParse(await response.json()).success).toBe(true)
+    expect(loadWorkforce).toHaveBeenCalledWith(userId, tenantId, bindings)
+  })
+
+  it('creates an employee without including the PIN in the request hash', async () => {
+    createEmployee.mockClear()
+    const request = {
+      employeeCode: 'EMP-001',
+      displayName: 'Cashier One',
+      roleId: 'e0000000-0000-4000-8000-000000000001',
+      locationIds: [locationId],
+      pin: '1234',
+    }
+    const response = await authenticatedApp.request(
+      '/v1/workforce/employees',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'employee-create-001',
+        },
+        body: JSON.stringify(request),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(201)
+    expect(employeeCreateResponseSchema.safeParse(await response.json()).success).toBe(true)
+    expect(createEmployee).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      request,
+      'employee-create-001',
       expect.stringMatching(/^[0-9a-f]{64}$/),
       expect.any(String),
       bindings,
