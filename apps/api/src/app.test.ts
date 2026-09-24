@@ -19,6 +19,8 @@ import {
   purchaseReceiptResponseSchema,
   purchasingContextSchema,
   supplierCreateResponseSchema,
+  transferContextSchema,
+  transferCreateResponseSchema,
   onboardingResponseSchema,
   sessionContextResponseSchema,
 } from '@hcs/contracts'
@@ -203,6 +205,21 @@ const receivePurchaseOrder = vi.fn(async (_userId, _tenantId, purchaseOrderId) =
   status: 'received' as const,
   lineCount: 1,
 }))
+const loadTransfers = vi.fn(async () => ({ locations: [], variants: [], transfers: [] }))
+const createTransfer = vi.fn(async () => ({
+  stockTransferId: 'b0000000-0000-4000-8000-000000000001',
+  status: 'draft' as const,
+  itemCount: 1,
+}))
+const dispatchTransfer = vi.fn(async (_userId, _tenantId, id) => ({
+  stockTransferId: id,
+  status: 'dispatched' as const,
+}))
+const receiveTransfer = vi.fn(async (_userId, _tenantId, id) => ({
+  stockTransferId: id,
+  status: 'received' as const,
+  itemCount: 1,
+}))
 
 const authenticatedApp = createApp({
   verifyAccessToken: async (token) => (token === 'valid-token' ? { userId } : null),
@@ -244,6 +261,10 @@ const authenticatedApp = createApp({
   createPurchaseOrder,
   sendPurchaseOrder,
   receivePurchaseOrder,
+  loadTransfers,
+  createTransfer,
+  dispatchTransfer,
+  receiveTransfer,
 })
 
 const businessDetails = {
@@ -455,6 +476,10 @@ describe('API', () => {
       createPurchaseOrder,
       sendPurchaseOrder,
       receivePurchaseOrder,
+      loadTransfers,
+      createTransfer,
+      dispatchTransfer,
+      receiveTransfer,
     })
     const response = await multiTenantApp.request(
       '/v1/onboarding',
@@ -504,6 +529,10 @@ describe('API', () => {
       createPurchaseOrder,
       sendPurchaseOrder,
       receivePurchaseOrder,
+      loadTransfers,
+      createTransfer,
+      dispatchTransfer,
+      receiveTransfer,
     })
     const response = await employeeApp.request(
       '/v1/onboarding',
@@ -1156,5 +1185,52 @@ describe('API', () => {
     expect(response.status).toBe(400)
     expect(receivePurchaseOrder).not.toHaveBeenCalled()
     expect(purchaseReceiptResponseSchema.safeParse(await response.json()).success).toBe(false)
+  })
+
+  it('loads transfer context for the server-resolved tenant', async () => {
+    loadTransfers.mockClear()
+    const response = await authenticatedApp.request(
+      '/v1/transfers',
+      { headers: { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId } },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(transferContextSchema.safeParse(await response.json()).success).toBe(true)
+    expect(loadTransfers).toHaveBeenCalledWith(userId, tenantId, bindings)
+  })
+
+  it('creates a draft transfer with integer quantity units', async () => {
+    createTransfer.mockClear()
+    const request = {
+      transferNumber: 'TR-0001',
+      sourceLocationId: locationId,
+      destinationLocationId: '30000000-0000-4000-8000-000000000002',
+      items: [{ variantId: '50000000-0000-4000-8000-000000000001', quantityMilli: 2_000 }],
+    }
+    const response = await authenticatedApp.request(
+      '/v1/transfers',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'transfer-create-001',
+        },
+        body: JSON.stringify(request),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(201)
+    expect(transferCreateResponseSchema.safeParse(await response.json()).success).toBe(true)
+    expect(createTransfer).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      request,
+      'transfer-create-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
   })
 })

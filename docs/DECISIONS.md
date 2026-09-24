@@ -24,6 +24,7 @@
 | ADR-018 | Require a reason for direct stock adjustments, block negative available stock, and defer configurable approval thresholds until the Approvals module exists                                            | Prevents unexplained corrections and unsafe balances without inventing an approval policy before its tenant configuration model is implemented                                  |
 | ADR-019 | Keep the inventory-adjustment approval threshold disabled by default; when enabled, queue adjustments whose absolute quantity is greater than the tenant threshold and apply stock only after approval | Preserves current tenant behavior, makes the policy explicit and reversible, and guarantees that pending or rejected requests never mutate the inventory ledger                 |
 | ADR-020 | Treat purchase orders as commitments only; inventory changes only when a receiving command posts an append-only `PURCHASE_RECEIPT` movement. Block over-receiving in the first slice. | Separates ordering intent from physical stock, keeps branch balances reproducible, and prevents accidental stock inflation while damaged/short receipt workflows are added later |
+| ADR-021 | Treat branch transfers as non-revenue stock movements: dispatch posts `TRANSFER_OUT` and destination in-transit stock; receiving posts `TRANSFER_IN` and destination on-hand stock. | Keeps sellable stock and physical custody aligned across branches while preserving the transfer cost basis and immutable movement history |
 
 ## Decisions requiring owner confirmation before affected work
 

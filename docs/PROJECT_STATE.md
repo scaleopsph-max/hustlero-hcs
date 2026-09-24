@@ -71,6 +71,8 @@ Last updated: 2026-09-24
 - Live branch stock levels and movement history are implemented through private tenant-authorized database functions, API read contracts, and the Back Office Inventory views; the existing mock explorer has been removed
 - Purchasing/receiving migration was applied to development and recorded as version `20260924120609`; suppliers, purchase orders, partial receiving, over-receive protection, inventory receipt movements, audit events, and outbox events are implemented
 - Back Office `/purchasing` is connected to the authenticated API for supplier creation, draft PO creation, sending, and receipt posting
+- Transfers foundation and retry-hardening migrations were applied to development as versions `20260924122319` and `20260924123317`; draft branch transfers, idempotent dispatch, in-transit balances, and idempotent partial/full receiving are implemented
+- Back Office `/transfers` now provides the first branch transfer workflow for source/destination locations and active catalog variants
 
 ## Not started
 
@@ -88,12 +90,12 @@ Last updated: 2026-09-24
 - Owner completed the business-question and feature-selection forms for `LOCAL RECIPE`
 - Manual catalog/product vertical slice: private Product → Variant → SKU → Barcode schema, tenant-safe/idempotent API commands, product-grain list, editable product detail, and nested add/edit/deactivate variant flow are implemented and verified in development
 - Opening inventory per branch and variant is implemented and connected to the onboarding checklist; the authenticated `/inventory/opening` screen was verified with the saved `LOCAL RECIPE` catalog without mutating stock
-- Development API Worker version `c9ffc5f9-6c18-4e99-8bd1-fae79cb94c31` is deployed with inventory, approvals, purchasing, and receiving APIs
+- Development API Worker version `ca722263-eaaf-48c4-bb41-1557a07ebbf8` is deployed with inventory, approvals, purchasing, receiving, and transfer APIs
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Verify the authenticated Back Office Purchasing workflow with a controlled supplier, PO, and receipt fixture; then continue to transfers and branch replenishment.
+Verify the authenticated Back Office transfer workflow with two locations and a controlled stock fixture; then continue to employees, roles, and registers.
 
 ## Production state
 

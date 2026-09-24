@@ -12,6 +12,12 @@ import {
   purchasingContextSchema,
   supplierCreateRequestSchema,
   supplierCreateResponseSchema,
+  transferContextSchema,
+  transferCreateRequestSchema,
+  transferCreateResponseSchema,
+  transferDispatchResponseSchema,
+  transferReceiveRequestSchema,
+  transferReceiveResponseSchema,
   apiErrorResponseSchema,
   catalogProductCreateRequestSchema,
   catalogProductCreateResponseSchema,
@@ -99,6 +105,16 @@ import {
   type PurchasingLoader,
   type SupplierCreator,
 } from './purchasing-repository'
+import {
+  createTransferInPostgres,
+  dispatchTransferInPostgres,
+  loadTransfersFromPostgres,
+  receiveTransferInPostgres,
+  type TransferCreator,
+  type TransferDispatcher,
+  type TransferLoader,
+  type TransferReceiver,
+} from './transfers-repository'
 
 interface AppDependencies {
   verifyAccessToken: AccessTokenVerifier
@@ -125,6 +141,10 @@ interface AppDependencies {
   createPurchaseOrder: PurchaseOrderCreator
   sendPurchaseOrder: PurchaseOrderSender
   receivePurchaseOrder: PurchaseOrderReceiver
+  loadTransfers: TransferLoader
+  createTransfer: TransferCreator
+  dispatchTransfer: TransferDispatcher
+  receiveTransfer: TransferReceiver
 }
 
 const defaultDependencies: AppDependencies = {
@@ -152,6 +172,10 @@ const defaultDependencies: AppDependencies = {
   createPurchaseOrder: createPurchaseOrderInPostgres,
   sendPurchaseOrder: sendPurchaseOrderInPostgres,
   receivePurchaseOrder: receivePurchaseOrderInPostgres,
+  loadTransfers: loadTransfersFromPostgres,
+  createTransfer: createTransferInPostgres,
+  dispatchTransfer: dispatchTransferInPostgres,
+  receiveTransfer: receiveTransferInPostgres,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -1548,6 +1572,280 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
             error: {
               code: 'PURCHASE_ORDER_NOT_FOUND',
               message: 'The purchase order or line was not found.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          404,
+        )
+      throw error
+    }
+  })
+
+  app.get('/v1/transfers', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'TRANSFER_ACCESS_DENIED',
+            message: 'Sign in and select a business to view transfers.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    try {
+      return context.json(
+        transferContextSchema.parse(await dependencies.loadTransfers(resolved.userId, resolved.tenantId, context.env)),
+      )
+    } catch (error) {
+      if (postgresErrorCode(error) === 'HCS50')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'TRANSFER_ACCESS_DENIED',
+              message: 'You do not have transfer permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      throw error
+    }
+  })
+
+  app.post('/v1/transfers', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    const key = context.req.header('idempotency-key')
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'TRANSFER_ACCESS_DENIED',
+            message: 'Sign in and select a business before creating a transfer.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_REQUIRED',
+            message: 'A valid Idempotency-Key is required.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    const parsed = transferCreateRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_TRANSFER',
+            message: 'Check the transfer locations and items.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      return context.json(
+        transferCreateResponseSchema.parse(
+          await dependencies.createTransfer(
+            resolved.userId,
+            resolved.tenantId,
+            parsed.data,
+            key,
+            await requestHash(parsed.data),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+        201,
+      )
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS50')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'TRANSFER_ACCESS_DENIED',
+              message: 'You do not have transfer permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      if (code === 'HCS52' || code === 'HCS53')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'TRANSFER_REFERENCE_NOT_FOUND',
+              message: 'The location or variant was not found.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          404,
+        )
+      if (code === 'HCS08' || code === 'HCS54')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'TRANSFER_CONFLICT',
+              message: 'The transfer number or idempotency key is already in use.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      throw error
+    }
+  })
+
+  app.post('/v1/transfers/:transferId/dispatch', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    const key = context.req.header('idempotency-key')
+    const id = context.req.param('transferId')
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'TRANSFER_ACCESS_DENIED',
+            message: 'Sign in and select a business before dispatching.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_REQUIRED',
+            message: 'A valid Idempotency-Key is required.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      return context.json(
+        transferDispatchResponseSchema.parse(
+          await dependencies.dispatchTransfer(
+            resolved.userId,
+            resolved.tenantId,
+            id,
+            key,
+            await requestHash({ id }),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+      )
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS57')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INSUFFICIENT_SOURCE_STOCK',
+              message: 'Source stock is insufficient.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      if (code === 'HCS55' || code === 'HCS56')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'TRANSFER_STATE_CONFLICT',
+              message: 'Transfer was not found or is not a draft.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      throw error
+    }
+  })
+
+  app.post('/v1/transfers/:transferId/receive', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    const key = context.req.header('idempotency-key')
+    const id = context.req.param('transferId')
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'TRANSFER_ACCESS_DENIED',
+            message: 'Sign in and select a business before receiving.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_REQUIRED',
+            message: 'A valid Idempotency-Key is required.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    const parsed = transferReceiveRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_TRANSFER_RECEIPT',
+            message: 'Enter at least one positive receiving quantity.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      return context.json(
+        transferReceiveResponseSchema.parse(
+          await dependencies.receiveTransfer(
+            resolved.userId,
+            resolved.tenantId,
+            id,
+            parsed.data,
+            key,
+            await requestHash(parsed.data),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+        201,
+      )
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS59')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'TRANSFER_RECEIPT_EXCEEDS_QUANTITY',
+              message: 'Receipt exceeds the transfer quantity.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      if (code === 'HCS55' || code === 'HCS58')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'TRANSFER_NOT_RECEIVABLE',
+              message: 'Transfer or item was not found or is not ready.',
               requestId: context.get('requestId'),
             },
           }),
