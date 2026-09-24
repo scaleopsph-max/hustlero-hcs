@@ -2,6 +2,7 @@
 
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js'
 import { ArrowRight, Check, Circle, Loader2, Lock, LogOut, Store } from 'lucide-react'
+import Link from 'next/link'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
   onboardingResponseSchema,
@@ -446,6 +447,10 @@ export default function SetupPage() {
               ) : null}
               {onboarding && questionsComplete && featuresComplete && !editingStep ? (
                 <div className="mt-7 flex flex-wrap gap-3">
+                  <Link href="/products" className={buttonClass}>
+                    Add products
+                    <ArrowRight size={17} />
+                  </Link>
                   <button
                     type="button"
                     className="min-h-11 rounded-md border border-ink-900/15 bg-white px-4 text-sm font-semibold"

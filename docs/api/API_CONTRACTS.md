@@ -52,10 +52,12 @@ Current Phase 1 implementation:
 - `PATCH /v1/onboarding` requires the same owner context. `business_questions` stores business type, one or more sales channels, inventory-tracking preference, and product setup method. `feature_selection` can run only afterward and may toggle only the tenant's entitled core modules: inventory, purchasing, customers, employees, and finance.
 - Catalog, sales, and basic reports are required core features and remain enabled. Unavailable paid add-ons cannot be selected or self-entitled through onboarding.
 - Identical step retries return success without adding duplicate audit/outbox records. Changed saved answers create a new audit event and outbox event.
-- Remaining onboarding steps are not implemented yet. The Back Office dashboard and inventory prototype still use sample data.
+- The Products step becomes complete after the tenant has at least one non-archived product. Remaining onboarding steps are not implemented yet. The Back Office dashboard and inventory prototype still use sample data.
 
 ### Catalog and inventory
 
+- `GET /v1/catalog`
+- `POST /v1/catalog/products`
 - `POST/GET/PATCH /v1/products`
 - `POST/GET/PATCH /v1/variants`
 - `GET /v1/catalog/search`
@@ -63,6 +65,15 @@ Current Phase 1 implementation:
 - `GET /v1/inventory/movements`
 - `POST /v1/inventory/adjustments`
 - `POST /v1/inventory/opening-balances`
+
+Current catalog implementation:
+
+- Both endpoints require a Supabase bearer token and a server-resolved tenant membership. `X-Tenant-Id` cannot select a tenant outside that membership.
+- Catalog reads require owner, `catalog.read`, or `catalog.manage` access. Product creation requires owner or `catalog.manage`, plus an active catalog entitlement.
+- `POST /v1/catalog/products` requires a 16-128 character `Idempotency-Key` and creates one product with its initial variant, tenant-unique SKU, optional category, and optional barcode atomically.
+- Product prices cross the TypeScript boundary as integer centavos and are stored as PostgreSQL `numeric(18,2)`. SKU and barcode values are normalized before tenant-scoped uniqueness checks.
+- The command writes one audit event and one outbox event. Identical retries replay the stored response; a changed payload with the same key returns 409.
+- Catalog creation does not create or edit stock. Opening inventory remains a separate ledger-backed onboarding step.
 
 ### Registers and sales
 

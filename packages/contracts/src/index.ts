@@ -1,3 +1,14 @@
+export {
+  catalogCategorySchema,
+  catalogProductCreateRequestSchema,
+  catalogProductCreateResponseSchema,
+  catalogProductSchema,
+  catalogResponseSchema,
+  catalogVariantSchema,
+  type CatalogProductCreateRequest,
+  type CatalogProductCreateResponse,
+  type CatalogResponse,
+} from './catalog'
 export { environmentSchema, healthResponseSchema, type HealthResponse } from './health'
 export {
   businessSetupQuestionsSchema,

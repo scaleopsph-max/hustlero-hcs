@@ -70,12 +70,14 @@ Last updated: 2026-09-24
 
 ## In progress
 
-- Owner completion of the business-question and feature-selection forms
+- Owner completed the business-question and feature-selection forms for `LOCAL RECIPE`
+- Manual catalog/product vertical slice: private Product → Variant → SKU → Barcode schema, tenant-safe/idempotent API command, product list, and manual-entry UI are implemented locally
+- TypeScript checks and 18 API/domain unit tests pass; migration pgTAP, full build, CI, development migration, deployment, and authenticated UI verification remain pending
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Have the owner save the real business answers and desired optional modules in `/setup`. Then begin the catalog/product vertical slice with categories, products, variants, and manual product entry before CSV import.
+Pass CI for the catalog foundation, apply it to development, deploy the development API, and verify manual creation of the first `LOCAL RECIPE` product. Then build opening inventory as ledger movements.
 
 ## Production state
 

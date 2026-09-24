@@ -1,5 +1,8 @@
 import {
   apiErrorResponseSchema,
+  catalogProductCreateRequestSchema,
+  catalogProductCreateResponseSchema,
+  catalogResponseSchema,
   healthResponseSchema,
   onboardingResponseSchema,
   onboardingUpdateRequestSchema,
@@ -13,6 +16,12 @@ import { cors } from 'hono/cors'
 import { requestId } from 'hono/request-id'
 
 import { readBearerToken, verifySupabaseAccessToken, type AccessTokenVerifier } from './auth'
+import {
+  createCatalogProductInPostgres,
+  loadCatalogFromPostgres,
+  type CatalogLoader,
+  type CatalogProductCreator,
+} from './catalog-repository'
 import { type Bindings, readEnvironment } from './env'
 import {
   bootstrapTenantInPostgres,
@@ -30,6 +39,8 @@ interface AppDependencies {
   bootstrapTenant: TenantBootstrapper
   loadOnboarding: OnboardingLoader
   updateOnboarding: OnboardingUpdater
+  loadCatalog: CatalogLoader
+  createCatalogProduct: CatalogProductCreator
 }
 
 const defaultDependencies: AppDependencies = {
@@ -38,6 +49,8 @@ const defaultDependencies: AppDependencies = {
   bootstrapTenant: bootstrapTenantInPostgres,
   loadOnboarding: loadOnboardingFromPostgres,
   updateOnboarding: updateOnboardingInPostgres,
+  loadCatalog: loadCatalogFromPostgres,
+  createCatalogProduct: createCatalogProductInPostgres,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -231,6 +244,235 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
     }
   })
 
+  app.get('/v1/catalog', async (context) => {
+    const accessToken = readBearerToken(context.req.header('authorization'))
+    if (!accessToken) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Sign in to view products.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+
+    const user = await dependencies.verifyAccessToken(accessToken, context.env)
+    if (!user) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_ACCESS_TOKEN',
+            message: 'The access token is invalid or expired.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+
+    const tenants = await dependencies.loadSessionAccess(user.userId, context.env)
+    const requestedTenantId = context.req.header('x-tenant-id')
+    if (!requestedTenantId && tenants.length > 1) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'TENANT_SELECTION_REQUIRED',
+            message: 'Select a business to view its products.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        409,
+      )
+    }
+    const tenant = requestedTenantId ? tenants.find((entry) => entry.tenantId === requestedTenantId) : tenants[0]
+    if (!tenant) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'CATALOG_ACCESS_DENIED',
+            message: 'You do not have access to this business catalog.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    }
+
+    try {
+      return context.json(
+        catalogResponseSchema.parse(await dependencies.loadCatalog(user.userId, tenant.tenantId, context.env)),
+      )
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS09' || code === 'HCS10') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS10' ? 'CATALOG_UNAVAILABLE' : 'CATALOG_ACCESS_DENIED',
+              message: code === 'HCS10' ? 'The catalog module is not enabled.' : 'You do not have catalog permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      }
+      throw error
+    }
+  })
+
+  app.post('/v1/catalog/products', async (context) => {
+    const accessToken = readBearerToken(context.req.header('authorization'))
+    if (!accessToken) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Sign in before adding a product.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+    const user = await dependencies.verifyAccessToken(accessToken, context.env)
+    if (!user) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_ACCESS_TOKEN',
+            message: 'The access token is invalid or expired.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+
+    const idempotencyKey = context.req.header('idempotency-key')
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_REQUIRED',
+            message: 'A valid Idempotency-Key is required.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+
+    const tenants = await dependencies.loadSessionAccess(user.userId, context.env)
+    const requestedTenantId = context.req.header('x-tenant-id')
+    if (!requestedTenantId && tenants.length > 1) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'TENANT_SELECTION_REQUIRED',
+            message: 'Select a business before adding a product.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        409,
+      )
+    }
+    const tenant = requestedTenantId ? tenants.find((entry) => entry.tenantId === requestedTenantId) : tenants[0]
+    if (!tenant) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'CATALOG_ACCESS_DENIED',
+            message: 'You do not have access to this business catalog.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    }
+
+    const body: unknown = await context.req.json().catch(() => null)
+    const parsed = catalogProductCreateRequestSchema.safeParse(body)
+    if (!parsed.success) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_PRODUCT_DETAILS',
+            message: 'Check the product, SKU, barcode, and price details.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+
+    try {
+      const response = await dependencies.createCatalogProduct(
+        user.userId,
+        tenant.tenantId,
+        parsed.data,
+        idempotencyKey,
+        await requestHash(parsed.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(catalogProductCreateResponseSchema.parse(response), 201)
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS08') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'IDEMPOTENCY_KEY_CONFLICT',
+              message: 'This request key was already used for different product details.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      }
+      if (code === '23505') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'DUPLICATE_SKU_OR_BARCODE',
+              message: 'The SKU or barcode is already used by another product.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      }
+      if (code === 'HCS09' || code === 'HCS10') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS10' ? 'CATALOG_UNAVAILABLE' : 'CATALOG_ACCESS_DENIED',
+              message: code === 'HCS10' ? 'The catalog module is not enabled.' : 'You do not have catalog permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      }
+      if (code === 'HCS11') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVALID_PRODUCT_DETAILS',
+              message: 'Check the product, SKU, barcode, and price details.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          400,
+        )
+      }
+      throw error
+    }
+  })
+
   app.get('/v1/onboarding', async (context) => {
     const accessToken = readBearerToken(context.req.header('authorization'))
     if (!accessToken) {
@@ -302,7 +544,7 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
           { code: 'main_location', status: setup.hasMainLocation ? 'complete' : 'pending' },
           { code: 'business_questions', status: setup.businessQuestionsComplete ? 'complete' : 'pending' },
           { code: 'feature_selection', status: setup.featureSelectionComplete ? 'complete' : 'pending' },
-          { code: 'products', status: 'pending' },
+          { code: 'products', status: setup.hasProducts ? 'complete' : 'pending' },
           { code: 'opening_inventory', status: 'pending' },
           { code: 'payment_methods', status: 'pending' },
           { code: 'basic_fund_setup', status: 'pending' },

@@ -15,6 +15,7 @@
 | ADR-009 | Use HUSTLERO (HCS) as the current product name | Supersedes the legacy product heading without changing locked business behavior |
 | ADR-010 | Keep the initial adaptive-onboarding questionnaire small and reversible | Business type, sales channels, inventory tracking, and product setup method are sufficient to tailor early setup without locking the tenant into an irreversible classification |
 | ADR-011 | Enable catalog, sales, and basic reports for every tenant; let owners toggle only entitled core modules during onboarding | Preserves a usable free/core path and prevents tenant owners from self-entitling unavailable paid add-ons |
+| ADR-012 | Start catalog setup with one product and one required initial variant per command; keep opening stock separate | Preserves the Product → Variant → SKU → Barcode model while ensuring product creation never mutates inventory balances outside the ledger |
 
 ## Decisions requiring owner confirmation before affected work
 

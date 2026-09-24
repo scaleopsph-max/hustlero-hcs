@@ -22,6 +22,7 @@ export type TenantBootstrapper = (
 
 export type OnboardingSnapshot = {
   hasMainLocation: boolean
+  hasProducts: boolean
   businessQuestionsComplete: boolean
   featureSelectionComplete: boolean
   businessProfile: OnboardingResponse['businessProfile']
@@ -93,6 +94,7 @@ export const loadOnboardingFromPostgres: OnboardingLoader = async (tenantId, bin
           select 1 from app.locations
           where tenant_id = $1::uuid and is_active
         ) as "hasMainLocation",
+        app.tenant_has_products($1::uuid) as "hasProducts",
         profile.business_questions_completed_at is not null as "businessQuestionsComplete",
         profile.feature_selection_completed_at is not null as "featureSelectionComplete",
         case when profile.business_questions_completed_at is not null then

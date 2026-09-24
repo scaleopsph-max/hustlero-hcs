@@ -1,5 +1,7 @@
 import {
   apiErrorResponseSchema,
+  catalogProductCreateResponseSchema,
+  catalogResponseSchema,
   healthResponseSchema,
   onboardingResponseSchema,
   sessionContextResponseSchema,
@@ -21,6 +23,7 @@ const featureOptions = [
 ]
 const loadOnboarding = vi.fn(async () => ({
   hasMainLocation: true,
+  hasProducts: false,
   businessQuestionsComplete: false,
   featureSelectionComplete: false,
   businessProfile: null,
@@ -30,6 +33,12 @@ const updateOnboarding = vi.fn(async (_userId, _tenantId, request) => ({
   step: request.step,
   status: 'complete' as const,
   ...(request.step === 'feature_selection' ? { enabledFeatures: request.enabledFeatures } : {}),
+}))
+const loadCatalog = vi.fn(async () => ({ categories: [], products: [] }))
+const createCatalogProduct = vi.fn(async () => ({
+  productId: '40000000-0000-4000-8000-000000000001',
+  variantId: '50000000-0000-4000-8000-000000000001',
+  status: 'created' as const,
 }))
 
 const authenticatedApp = createApp({
@@ -53,6 +62,8 @@ const authenticatedApp = createApp({
   bootstrapTenant,
   loadOnboarding,
   updateOnboarding,
+  loadCatalog,
+  createCatalogProduct,
 })
 
 const businessDetails = {
@@ -245,6 +256,8 @@ describe('API', () => {
       bootstrapTenant,
       loadOnboarding,
       updateOnboarding,
+      loadCatalog,
+      createCatalogProduct,
     })
     const response = await multiTenantApp.request(
       '/v1/onboarding',
@@ -275,6 +288,8 @@ describe('API', () => {
       bootstrapTenant,
       loadOnboarding,
       updateOnboarding,
+      loadCatalog,
+      createCatalogProduct,
     })
     const response = await employeeApp.request(
       '/v1/onboarding',
@@ -370,5 +385,88 @@ describe('API', () => {
       status: 'complete',
       enabledFeatures: ['inventory', 'customers'],
     })
+  })
+
+  it('returns a contract-valid catalog for the server-resolved tenant', async () => {
+    loadCatalog.mockClear()
+    const response = await authenticatedApp.request(
+      '/v1/catalog',
+      { headers: { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId } },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(catalogResponseSchema.safeParse(await response.json()).success).toBe(true)
+    expect(loadCatalog).toHaveBeenCalledWith(userId, tenantId, bindings)
+  })
+
+  it('requires valid product details and an idempotency key', async () => {
+    createCatalogProduct.mockClear()
+    const missingKey = await authenticatedApp.request(
+      '/v1/catalog/products',
+      {
+        method: 'POST',
+        headers: { authorization: 'Bearer valid-token', 'content-type': 'application/json', 'x-tenant-id': tenantId },
+        body: JSON.stringify({}),
+      },
+      bindings,
+    )
+    expect(apiErrorResponseSchema.parse(await missingKey.json()).error.code).toBe('IDEMPOTENCY_KEY_REQUIRED')
+
+    const invalid = await authenticatedApp.request(
+      '/v1/catalog/products',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'catalog-request-001',
+        },
+        body: JSON.stringify({ name: 'Coffee', sku: 'bad sku', retailPriceMinor: 12000 }),
+      },
+      bindings,
+    )
+    expect(invalid.status).toBe(400)
+    expect(createCatalogProduct).not.toHaveBeenCalled()
+  })
+
+  it('creates a product using server identity and integer minor-unit money', async () => {
+    createCatalogProduct.mockClear()
+    const request = {
+      name: 'Iced Coffee',
+      description: 'House blend',
+      categoryName: 'Drinks',
+      variantName: 'Regular',
+      sku: 'COF-001',
+      retailPriceMinor: 12_050,
+      unitCostMinor: 5_525,
+      trackInventory: true,
+      barcodes: ['480000000001'],
+    }
+    const response = await authenticatedApp.request(
+      '/v1/catalog/products',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'catalog-request-002',
+        },
+        body: JSON.stringify(request),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(201)
+    expect(catalogProductCreateResponseSchema.safeParse(await response.json()).success).toBe(true)
+    expect(createCatalogProduct).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      request,
+      'catalog-request-002',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
   })
 })
