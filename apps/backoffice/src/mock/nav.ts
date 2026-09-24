@@ -63,7 +63,7 @@ export const navGroups: NavGroup[] = [
     heading: 'Money and control',
     items: [
       { label: 'Finance', href: '/finance', icon: Wallet },
-      { label: 'Approvals', href: '/approvals', icon: CircleCheck, badge: 3 },
+      { label: 'Approvals', href: '/approvals', icon: CircleCheck },
       { label: 'Alerts', href: '/alerts', icon: Bell, badge: 5 },
       { label: 'Reports', href: '/reports', icon: ChartColumn },
       { label: 'Audit and activity', href: '/audit', icon: Activity },

@@ -522,7 +522,7 @@ function AdjustmentForm({
         unitCostMinor: parseOptionalMoney(unitCost),
         reason: reason.trim(),
       }
-      inventoryAdjustmentCreateResponseSchema.parse(
+      const response = inventoryAdjustmentCreateResponseSchema.parse(
         await apiRequest('/v1/inventory/adjustments', token, tenantId, auth ?? undefined, undefined, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
@@ -533,7 +533,7 @@ function AdjustmentForm({
       setUnitCost('')
       setReason('')
       await onRecorded()
-      setNotice('Stock adjustment recorded.')
+      setNotice(response.status === 'recorded' ? 'Stock adjustment recorded.' : 'Adjustment submitted for approval.')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not record this adjustment.')
     } finally {

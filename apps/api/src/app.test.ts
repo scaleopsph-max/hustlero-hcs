@@ -1,4 +1,7 @@
 import {
+  approvalCenterSchema,
+  approvalDecisionResponseSchema,
+  approvalPolicyUpdateResponseSchema,
   apiErrorResponseSchema,
   catalogProductCreateResponseSchema,
   catalogProductUpdateResponseSchema,
@@ -142,6 +145,40 @@ const recordInventoryAdjustment = vi.fn(async () => ({
   onHandMilli: 11_500,
   status: 'recorded' as const,
 }))
+const loadApprovalCenter = vi.fn(async () => ({
+  canManage: false,
+  inventoryAdjustmentThresholdMilli: 10_000,
+  requests: [
+    {
+      id: '70000000-0000-4000-8000-000000000001',
+      subjectType: 'inventory_adjustment' as const,
+      status: 'pending' as const,
+      locationId,
+      locationName: 'Main Store',
+      variantId: '50000000-0000-4000-8000-000000000001',
+      productName: 'Triple Black',
+      variantName: 'Small',
+      sku: 'TSH-BLK-S',
+      quantityMilli: -12_000,
+      unitCostMinor: null,
+      reason: 'Cycle count correction',
+      requestedByLabel: 'Business owner',
+      requestedAt: '2026-09-24T10:00:00.000Z',
+      decidedByLabel: null,
+      decidedAt: null,
+      decisionNote: null,
+    },
+  ],
+}))
+const updateApprovalPolicy = vi.fn(async (_userId, _tenantId, request) => ({
+  inventoryAdjustmentThresholdMilli: request.inventoryAdjustmentThresholdMilli,
+  status: 'updated' as const,
+}))
+const decideApprovalRequest = vi.fn(async (_userId, _tenantId, approvalRequestId, request) => ({
+  approvalRequestId,
+  movementId: request.decision === 'approved' ? '60000000-0000-4000-8000-000000000002' : null,
+  status: request.decision,
+}))
 
 const authenticatedApp = createApp({
   verifyAccessToken: async (token) => (token === 'valid-token' ? { userId } : null),
@@ -175,6 +212,9 @@ const authenticatedApp = createApp({
   recordInventoryAdjustment,
   loadOpeningInventory,
   recordOpeningInventory,
+  loadApprovalCenter,
+  updateApprovalPolicy,
+  decideApprovalRequest,
 })
 
 const businessDetails = {
@@ -378,6 +418,9 @@ describe('API', () => {
       recordInventoryAdjustment,
       loadOpeningInventory,
       recordOpeningInventory,
+      loadApprovalCenter,
+      updateApprovalPolicy,
+      decideApprovalRequest,
     })
     const response = await multiTenantApp.request(
       '/v1/onboarding',
@@ -419,6 +462,9 @@ describe('API', () => {
       recordInventoryAdjustment,
       loadOpeningInventory,
       recordOpeningInventory,
+      loadApprovalCenter,
+      updateApprovalPolicy,
+      decideApprovalRequest,
     })
     const response = await employeeApp.request(
       '/v1/onboarding',
@@ -763,6 +809,80 @@ describe('API', () => {
     expect(response.status).toBe(200)
     expect(inventoryStockContextSchema.safeParse(await response.json()).success).toBe(true)
     expect(loadInventoryStock).toHaveBeenCalledWith(userId, tenantId, locationId, bindings)
+  })
+
+  it('loads the approval center for the server-resolved tenant', async () => {
+    loadApprovalCenter.mockClear()
+    const response = await authenticatedApp.request(
+      '/v1/approvals',
+      { headers: { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId } },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(approvalCenterSchema.parse(await response.json()).canManage).toBe(true)
+    expect(loadApprovalCenter).toHaveBeenCalledWith(userId, tenantId, bindings)
+  })
+
+  it('updates the inventory adjustment approval threshold', async () => {
+    updateApprovalPolicy.mockClear()
+    const request = { inventoryAdjustmentThresholdMilli: 25_000 }
+    const response = await authenticatedApp.request(
+      '/v1/approvals/policy',
+      {
+        method: 'PATCH',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'approval-policy-001',
+        },
+        body: JSON.stringify(request),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(approvalPolicyUpdateResponseSchema.safeParse(await response.json()).success).toBe(true)
+    expect(updateApprovalPolicy).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      request,
+      'approval-policy-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('approves a pending request through an idempotent decision command', async () => {
+    decideApprovalRequest.mockClear()
+    const approvalRequestId = '70000000-0000-4000-8000-000000000001'
+    const request = { decision: 'approved', note: null }
+    const response = await authenticatedApp.request(
+      `/v1/approvals/${approvalRequestId}/decision`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'approval-decision-001',
+        },
+        body: JSON.stringify(request),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(approvalDecisionResponseSchema.safeParse(await response.json()).success).toBe(true)
+    expect(decideApprovalRequest).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      approvalRequestId,
+      request,
+      'approval-decision-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
   })
 
   it('loads movement history with server-validated filters', async () => {

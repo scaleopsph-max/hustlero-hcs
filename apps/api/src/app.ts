@@ -1,4 +1,9 @@
 import {
+  approvalCenterSchema,
+  approvalDecisionRequestSchema,
+  approvalDecisionResponseSchema,
+  approvalPolicyUpdateRequestSchema,
+  approvalPolicyUpdateResponseSchema,
   apiErrorResponseSchema,
   catalogProductCreateRequestSchema,
   catalogProductCreateResponseSchema,
@@ -30,6 +35,14 @@ import { cors } from 'hono/cors'
 import { requestId } from 'hono/request-id'
 
 import { readBearerToken, verifySupabaseAccessToken, type AccessTokenVerifier } from './auth'
+import {
+  decideApprovalRequestInPostgres,
+  loadApprovalCenterFromPostgres,
+  updateApprovalPolicyInPostgres,
+  type ApprovalCenterLoader,
+  type ApprovalPolicyUpdater,
+  type ApprovalRequestDecider,
+} from './approval-repository'
 import {
   createCatalogProductInPostgres,
   createCatalogVariantInPostgres,
@@ -84,6 +97,9 @@ interface AppDependencies {
   recordInventoryAdjustment: InventoryAdjustmentRecorder
   loadOpeningInventory: OpeningInventoryLoader
   recordOpeningInventory: OpeningInventoryRecorder
+  loadApprovalCenter: ApprovalCenterLoader
+  updateApprovalPolicy: ApprovalPolicyUpdater
+  decideApprovalRequest: ApprovalRequestDecider
 }
 
 const defaultDependencies: AppDependencies = {
@@ -103,6 +119,9 @@ const defaultDependencies: AppDependencies = {
   recordInventoryAdjustment: recordInventoryAdjustmentInPostgres,
   loadOpeningInventory: loadOpeningInventoryFromPostgres,
   recordOpeningInventory: recordOpeningInventoryInPostgres,
+  loadApprovalCenter: loadApprovalCenterFromPostgres,
+  updateApprovalPolicy: updateApprovalPolicyInPostgres,
+  decideApprovalRequest: decideApprovalRequestInPostgres,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -1130,6 +1149,341 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
           code === 'HCS12' ? 404 : 400,
         )
       }
+      throw error
+    }
+  })
+
+  app.get('/v1/approvals', async (context) => {
+    const accessToken = readBearerToken(context.req.header('authorization'))
+    if (!accessToken)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Sign in to view approvals.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    const user = await dependencies.verifyAccessToken(accessToken, context.env)
+    if (!user)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_ACCESS_TOKEN',
+            message: 'The access token is invalid or expired.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    const tenants = await dependencies.loadSessionAccess(user.userId, context.env)
+    const requestedTenantId = context.req.header('x-tenant-id')
+    const tenant = requestedTenantId
+      ? tenants.find((entry) => entry.tenantId === requestedTenantId)
+      : tenants.length === 1
+        ? tenants[0]
+        : undefined
+    if (!tenant)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: requestedTenantId ? 'APPROVAL_ACCESS_DENIED' : 'TENANT_SELECTION_REQUIRED',
+            message: requestedTenantId
+              ? 'You do not have access to these approvals.'
+              : 'Select a business to view approvals.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        requestedTenantId ? 403 : 409,
+      )
+    try {
+      const response = await dependencies.loadApprovalCenter(user.userId, tenant.tenantId, context.env)
+      context.header('Cache-Control', 'private, no-store')
+      return context.json(
+        approvalCenterSchema.parse({
+          ...response,
+          canManage: tenant.isOwner || tenant.permissions.includes('approvals.manage'),
+        }),
+      )
+    } catch (error) {
+      if (postgresErrorCode(error) === 'HCS23')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'APPROVAL_ACCESS_DENIED',
+              message: 'You do not have approval permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      throw error
+    }
+  })
+
+  app.patch('/v1/approvals/policy', async (context) => {
+    const accessToken = readBearerToken(context.req.header('authorization'))
+    if (!accessToken)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Sign in before changing an approval policy.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    const user = await dependencies.verifyAccessToken(accessToken, context.env)
+    if (!user)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_ACCESS_TOKEN',
+            message: 'The access token is invalid or expired.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    const idempotencyKey = context.req.header('idempotency-key')
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_REQUIRED',
+            message: 'A valid Idempotency-Key is required.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    const tenants = await dependencies.loadSessionAccess(user.userId, context.env)
+    const requestedTenantId = context.req.header('x-tenant-id')
+    const tenant = requestedTenantId
+      ? tenants.find((entry) => entry.tenantId === requestedTenantId)
+      : tenants.length === 1
+        ? tenants[0]
+        : undefined
+    if (!tenant)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: requestedTenantId ? 'APPROVAL_ACCESS_DENIED' : 'TENANT_SELECTION_REQUIRED',
+            message: requestedTenantId
+              ? 'You do not have access to this approval policy.'
+              : 'Select a business before changing approval policy.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        requestedTenantId ? 403 : 409,
+      )
+    const parsed = approvalPolicyUpdateRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_APPROVAL_POLICY',
+            message: 'Enter a non-negative quantity threshold or disable the threshold.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      const response = await dependencies.updateApprovalPolicy(
+        user.userId,
+        tenant.tenantId,
+        parsed.data,
+        idempotencyKey,
+        await requestHash(parsed.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(approvalPolicyUpdateResponseSchema.parse(response))
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS08')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'IDEMPOTENCY_KEY_CONFLICT',
+              message: 'This request key was already used for another approval policy.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      if (code === 'HCS23')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'APPROVAL_ACCESS_DENIED',
+              message: 'Only an authorized owner can change this approval policy.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      if (code === 'HCS24')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVALID_APPROVAL_POLICY',
+              message: 'Check the inventory adjustment threshold.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          400,
+        )
+      throw error
+    }
+  })
+
+  app.post('/v1/approvals/:approvalRequestId/decision', async (context) => {
+    const accessToken = readBearerToken(context.req.header('authorization'))
+    if (!accessToken)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Sign in before deciding an approval.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    const user = await dependencies.verifyAccessToken(accessToken, context.env)
+    if (!user)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_ACCESS_TOKEN',
+            message: 'The access token is invalid or expired.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    const idempotencyKey = context.req.header('idempotency-key')
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_REQUIRED',
+            message: 'A valid Idempotency-Key is required.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    const approvalRequestId = context.req.param('approvalRequestId')
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(approvalRequestId))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_APPROVAL_DECISION',
+            message: 'The approval request reference is invalid.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    const tenants = await dependencies.loadSessionAccess(user.userId, context.env)
+    const requestedTenantId = context.req.header('x-tenant-id')
+    const tenant = requestedTenantId
+      ? tenants.find((entry) => entry.tenantId === requestedTenantId)
+      : tenants.length === 1
+        ? tenants[0]
+        : undefined
+    if (!tenant)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: requestedTenantId ? 'APPROVAL_ACCESS_DENIED' : 'TENANT_SELECTION_REQUIRED',
+            message: requestedTenantId
+              ? 'You do not have access to this approval request.'
+              : 'Select a business before deciding an approval.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        requestedTenantId ? 403 : 409,
+      )
+    const parsed = approvalDecisionRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_APPROVAL_DECISION',
+            message: 'Choose approve or reject and keep the note within 240 characters.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      const response = await dependencies.decideApprovalRequest(
+        user.userId,
+        tenant.tenantId,
+        approvalRequestId,
+        parsed.data,
+        idempotencyKey,
+        await requestHash(parsed.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(approvalDecisionResponseSchema.parse(response))
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS08' || code === 'HCS26')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS08' ? 'IDEMPOTENCY_KEY_CONFLICT' : 'APPROVAL_ALREADY_DECIDED',
+              message:
+                code === 'HCS08'
+                  ? 'This request key was already used for another approval decision.'
+                  : 'This approval request was already decided.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      if (code === 'HCS23')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'APPROVAL_ACCESS_DENIED',
+              message: 'You do not have permission to decide approvals.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      if (code === 'HCS25')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'APPROVAL_NOT_FOUND',
+              message: 'The approval request was not found.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          404,
+        )
+      if (code === 'HCS22')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVENTORY_STATE_CONFLICT',
+              message: 'The approved adjustment would make available stock negative.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
       throw error
     }
   })

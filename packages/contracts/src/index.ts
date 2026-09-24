@@ -1,4 +1,16 @@
 export {
+  approvalCenterSchema,
+  approvalDecisionRequestSchema,
+  approvalDecisionResponseSchema,
+  approvalPolicyUpdateRequestSchema,
+  approvalPolicyUpdateResponseSchema,
+  type ApprovalCenter,
+  type ApprovalDecisionRequest,
+  type ApprovalDecisionResponse,
+  type ApprovalPolicyUpdateRequest,
+  type ApprovalPolicyUpdateResponse,
+} from './approvals'
+export {
   catalogCategorySchema,
   catalogProductCreateRequestSchema,
   catalogProductCreateResponseSchema,

@@ -52,14 +52,23 @@ export const inventoryAdjustmentCreateRequestSchema = z.strictObject({
   reason: z.string().trim().min(3).max(240),
 })
 
-export const inventoryAdjustmentCreateResponseSchema = z.object({
-  movementId: identifierSchema,
-  locationId: identifierSchema,
-  variantId: identifierSchema,
-  quantityMilli: z.number().int(),
-  onHandMilli: z.number().int(),
-  status: z.literal('recorded'),
-})
+export const inventoryAdjustmentCreateResponseSchema = z.discriminatedUnion('status', [
+  z.object({
+    movementId: identifierSchema,
+    locationId: identifierSchema,
+    variantId: identifierSchema,
+    quantityMilli: z.number().int(),
+    onHandMilli: z.number().int(),
+    status: z.literal('recorded'),
+  }),
+  z.object({
+    approvalRequestId: identifierSchema,
+    locationId: identifierSchema,
+    variantId: identifierSchema,
+    quantityMilli: z.number().int(),
+    status: z.literal('pending_approval'),
+  }),
+])
 
 export const openingInventoryContextSchema = z.object({
   locations: z.array(inventoryLocationSchema),

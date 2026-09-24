@@ -66,6 +66,8 @@ Last updated: 2026-09-24
 - Tenant-safe branch/variant opening inventory is implemented with integer-thousandth quantities, centavo costs, idempotency, append-only enforcement, audit, outbox, and atomic balance projection
 - Inventory stock-visibility migration was applied to development and recorded as version `20260924105145`; branch-authorized stock and movement reads use private functions with pinned search paths and Hyperdrive-only execute grants
 - Inventory adjustment migration was applied to development and recorded as version `20260924111023`; reasoned ADJUSTMENT movements update balances atomically with idempotency, audit, outbox, and negative-available guards
+- Inventory approval migration was applied to development and recorded as version `20260924113821`; tenant owners can configure a quantity threshold, above-threshold adjustments remain pending without changing stock, and approve/reject decisions are tenant-safe, idempotent, audited, and outbox-backed
+- Back Office `/approvals` now provides policy configuration and Pending/Approved/Rejected queues; inventory adjustment feedback distinguishes an immediate ledger entry from a request awaiting approval
 - Live branch stock levels and movement history are implemented through private tenant-authorized database functions, API read contracts, and the Back Office Inventory views; the existing mock explorer has been removed
 
 ## Not started
@@ -84,12 +86,12 @@ Last updated: 2026-09-24
 - Owner completed the business-question and feature-selection forms for `LOCAL RECIPE`
 - Manual catalog/product vertical slice: private Product → Variant → SKU → Barcode schema, tenant-safe/idempotent API commands, product-grain list, editable product detail, and nested add/edit/deactivate variant flow are implemented and verified in development
 - Opening inventory per branch and variant is implemented and connected to the onboarding checklist; the authenticated `/inventory/opening` screen was verified with the saved `LOCAL RECIPE` catalog without mutating stock
-- Development API Worker version `213b1fae-7105-4f83-bc30-ef8c8aca49c1` is deployed with stock reads, movement history, and controlled adjustments
+- Development API Worker version `f677c5f4-575d-45d5-a74d-c3072de7d872` is deployed with stock reads, movement history, controlled adjustments, and the approval API
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-After the owner records real opening quantities, build the approval-request workflow and tenant-configurable adjustment thresholds, then continue to purchasing and receiving.
+Verify the approval workflow in the authenticated Back Office, then continue to purchasing, supplier orders, and receiving.
 
 ## Production state
 
