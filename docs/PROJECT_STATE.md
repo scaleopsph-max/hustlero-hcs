@@ -51,6 +51,11 @@ Last updated: 2026-09-24
 - Onboarding migration applied to the Supabase development database and recorded as version `20260922054750`
 - Development API Worker updated; live `/health` returned 200 and Back Office-origin CORS preflight returned 204
 - Authenticated owner onboarding was completed in the development UI for `LOCAL RECIPE`; the business, one active main location, and one active owner were verified in the development database
+- Business setup questions and feature selection are implemented end to end with private onboarding profiles, core feature catalog/entitlements, owner-only commands, audit/outbox events, shared contracts, and a resumable Back Office wizard
+- GitHub CI run `35943955943` passed all application checks, a fresh database reset, and all 74 pgTAP assertions
+- The business-profile and feature-selection migration was applied to development and recorded as version `20260924014406`
+- Development API Worker version `7de03561-01a5-44ab-9e07-37462f7ee60c` is deployed; live `/health` returned 200
+- The authenticated `LOCAL RECIPE` owner UI was verified on desktop and mobile layouts; Step 3 now presents the persisted business-question workflow
 
 ## Not started
 
@@ -65,13 +70,12 @@ Last updated: 2026-09-24
 
 ## In progress
 
-- Business setup questions and core feature-selection vertical slice
-- Private onboarding profile, core feature catalog/entitlements, owner-only save commands, audit/outbox behavior, shared contracts, and actionable Back Office wizard are implemented locally
-- Local TypeScript and unit tests pass; migration pgTAP, full build, CI, development migration, and deployment remain pending
+- Owner completion of the business-question and feature-selection forms
+- Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Pass CI for the business-question and feature-selection migration, apply it to development, deploy the development API, and verify both steps through the authenticated `LOCAL RECIPE` owner UI. Then begin the catalog/product vertical slice.
+Have the owner save the real business answers and desired optional modules in `/setup`. Then begin the catalog/product vertical slice with categories, products, variants, and manual product entry before CSV import.
 
 ## Production state
 

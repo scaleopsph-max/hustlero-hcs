@@ -1,3 +1,4 @@
+-- Adaptive onboarding business profile and feature-selection foundation.
 begin;
 
 insert into app.features (code, name, platform_available) values
