@@ -20,6 +20,7 @@
 | ADR-014 | Keep the product list at product-master grain and manage variants inside a dedicated product-detail view                                                        | Prevents size/color rows from overwhelming the catalog while preserving variant-level SKU, barcode, price, and stock controls                                                   |
 | ADR-015 | Treat variant removal as deactivation and require every active product to retain at least one active variant                                                            | Preserves sales, inventory, audit, and integration history while maintaining the Product → Variant invariant                                                                    |
 | ADR-016 | Record opening inventory once per branch and variant as immutable movements; represent API quantities as integer thousandths                                                  | Prevents balance overwrites, preserves exact fractional quantities, and establishes a reproducible starting point for every stock position                                       |
+| ADR-017 | Read stock balances only through a branch-authorized inventory service query and derive movement balance-after values from the append-only ledger | Keeps the balance projection and ledger aligned while preventing direct table exposure through Supabase or browser clients |
 
 ## Decisions requiring owner confirmation before affected work
 

@@ -25,9 +25,15 @@ export {
 } from './catalog'
 export { environmentSchema, healthResponseSchema, type HealthResponse } from './health'
 export {
+  inventoryMovementContextSchema,
+  inventoryMovementTypeSchema,
+  inventoryStockContextSchema,
   openingInventoryContextSchema,
   openingInventoryCreateRequestSchema,
   openingInventoryCreateResponseSchema,
+  type InventoryMovementContext,
+  type InventoryMovementType,
+  type InventoryStockContext,
   type OpeningInventoryContext,
   type OpeningInventoryCreateRequest,
   type OpeningInventoryCreateResponse,

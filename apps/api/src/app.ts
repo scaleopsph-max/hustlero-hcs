@@ -11,6 +11,8 @@ import {
   catalogVariantUpdateRequestSchema,
   catalogVariantUpdateResponseSchema,
   healthResponseSchema,
+  inventoryMovementContextSchema,
+  inventoryStockContextSchema,
   openingInventoryContextSchema,
   openingInventoryCreateRequestSchema,
   openingInventoryCreateResponseSchema,
@@ -42,8 +44,12 @@ import {
 } from './catalog-repository'
 import { type Bindings, readEnvironment } from './env'
 import {
+  loadInventoryMovementsFromPostgres,
+  loadInventoryStockFromPostgres,
   loadOpeningInventoryFromPostgres,
   recordOpeningInventoryInPostgres,
+  type InventoryMovementLoader,
+  type InventoryStockLoader,
   type OpeningInventoryLoader,
   type OpeningInventoryRecorder,
 } from './inventory-repository'
@@ -69,6 +75,8 @@ interface AppDependencies {
   updateCatalogProduct: CatalogProductUpdater
   updateCatalogVariant: CatalogVariantUpdater
   deactivateCatalogVariant: CatalogVariantDeactivator
+  loadInventoryStock: InventoryStockLoader
+  loadInventoryMovements: InventoryMovementLoader
   loadOpeningInventory: OpeningInventoryLoader
   recordOpeningInventory: OpeningInventoryRecorder
 }
@@ -85,6 +93,8 @@ const defaultDependencies: AppDependencies = {
   updateCatalogProduct: updateCatalogProductInPostgres,
   updateCatalogVariant: updateCatalogVariantInPostgres,
   deactivateCatalogVariant: deactivateCatalogVariantInPostgres,
+  loadInventoryStock: loadInventoryStockFromPostgres,
+  loadInventoryMovements: loadInventoryMovementsFromPostgres,
   loadOpeningInventory: loadOpeningInventoryFromPostgres,
   recordOpeningInventory: recordOpeningInventoryInPostgres,
 }
@@ -1112,6 +1122,235 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
             },
           }),
           code === 'HCS12' ? 404 : 400,
+        )
+      }
+      throw error
+    }
+  })
+
+  app.get('/v1/inventory/stock', async (context) => {
+    const accessToken = readBearerToken(context.req.header('authorization'))
+    if (!accessToken) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Sign in to view inventory stock.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+    const user = await dependencies.verifyAccessToken(accessToken, context.env)
+    if (!user) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_ACCESS_TOKEN',
+            message: 'The access token is invalid or expired.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+    const tenants = await dependencies.loadSessionAccess(user.userId, context.env)
+    const requestedTenantId = context.req.header('x-tenant-id')
+    if (!requestedTenantId && tenants.length > 1) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'TENANT_SELECTION_REQUIRED',
+            message: 'Select a business to view inventory stock.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        409,
+      )
+    }
+    const tenant = requestedTenantId ? tenants.find((entry) => entry.tenantId === requestedTenantId) : tenants[0]
+    if (!tenant) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVENTORY_ACCESS_DENIED',
+            message: 'You do not have access to this business inventory.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    }
+    const locationId = context.req.query('locationId') ?? null
+    if (
+      locationId !== null &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(locationId)
+    ) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_LOCATION',
+            message: 'The inventory location reference is invalid.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    try {
+      const response = await dependencies.loadInventoryStock(user.userId, tenant.tenantId, locationId, context.env)
+      return context.json(inventoryStockContextSchema.parse(response))
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS17' || code === 'HCS18') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS18' ? 'INVENTORY_UNAVAILABLE' : 'INVENTORY_ACCESS_DENIED',
+              message:
+                code === 'HCS18' ? 'The inventory module is not enabled.' : 'You do not have inventory permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      }
+      if (code === 'HCS19') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'LOCATION_NOT_FOUND',
+              message: 'The inventory location was not found.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          404,
+        )
+      }
+      throw error
+    }
+  })
+
+  app.get('/v1/inventory/movements', async (context) => {
+    const accessToken = readBearerToken(context.req.header('authorization'))
+    if (!accessToken) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Sign in to view inventory movements.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+    const user = await dependencies.verifyAccessToken(accessToken, context.env)
+    if (!user) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_ACCESS_TOKEN',
+            message: 'The access token is invalid or expired.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+    const tenants = await dependencies.loadSessionAccess(user.userId, context.env)
+    const requestedTenantId = context.req.header('x-tenant-id')
+    if (!requestedTenantId && tenants.length > 1) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'TENANT_SELECTION_REQUIRED',
+            message: 'Select a business to view inventory movements.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        409,
+      )
+    }
+    const tenant = requestedTenantId ? tenants.find((entry) => entry.tenantId === requestedTenantId) : tenants[0]
+    if (!tenant) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVENTORY_ACCESS_DENIED',
+            message: 'You do not have access to this business inventory.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    }
+    const locationId = context.req.query('locationId')
+    const variantId = context.req.query('variantId') ?? null
+    const limitText = context.req.query('limit') ?? '100'
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    const limit = Number(limitText)
+    if (!locationId || !uuidPattern.test(locationId) || (variantId !== null && !uuidPattern.test(variantId))) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_INVENTORY_FILTER',
+            message: 'Choose a valid inventory location and variant.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_INVENTORY_FILTER',
+            message: 'Movement limit must be between 1 and 200.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    try {
+      const response = await dependencies.loadInventoryMovements(
+        user.userId,
+        tenant.tenantId,
+        locationId,
+        variantId,
+        limit,
+        context.env,
+      )
+      return context.json(inventoryMovementContextSchema.parse(response))
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS17' || code === 'HCS18') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS18' ? 'INVENTORY_UNAVAILABLE' : 'INVENTORY_ACCESS_DENIED',
+              message:
+                code === 'HCS18' ? 'The inventory module is not enabled.' : 'You do not have inventory permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      }
+      if (code === 'HCS19' || code === 'HCS21') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS19' ? 'LOCATION_NOT_FOUND' : 'VARIANT_NOT_FOUND',
+              message:
+                code === 'HCS19' ? 'The inventory location was not found.' : 'The inventory variant was not found.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          404,
         )
       }
       throw error

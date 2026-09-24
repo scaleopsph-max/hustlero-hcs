@@ -7,6 +7,8 @@ import {
   catalogVariantDeactivateResponseSchema,
   catalogVariantUpdateResponseSchema,
   healthResponseSchema,
+  inventoryMovementContextSchema,
+  inventoryStockContextSchema,
   openingInventoryContextSchema,
   openingInventoryCreateResponseSchema,
   onboardingResponseSchema,
@@ -89,6 +91,48 @@ const recordOpeningInventory = vi.fn(async () => ({
   movementCount: 1,
   status: 'recorded' as const,
 }))
+const loadInventoryStock = vi.fn(async () => ({
+  locations: [{ id: locationId, code: 'MAIN', name: 'Main Store' }],
+  selectedLocationId: locationId,
+  items: [
+    {
+      productId: '40000000-0000-4000-8000-000000000001',
+      productName: 'Triple Black',
+      variantId: '50000000-0000-4000-8000-000000000001',
+      variantName: 'Small',
+      sku: 'TSH-BLK-S',
+      barcodeCount: 1,
+      onHandMilli: 12_500,
+      reservedMilli: 500,
+      availableMilli: 12_000,
+      inTransitMilli: 0,
+      damagedMilli: 0,
+      averageUnitCostMinor: 55_000,
+      hasBalance: true,
+    },
+  ],
+}))
+const loadInventoryMovements = vi.fn(async () => ({
+  locationId,
+  items: [
+    {
+      id: '60000000-0000-4000-8000-000000000001',
+      productId: '40000000-0000-4000-8000-000000000001',
+      productName: 'Triple Black',
+      variantId: '50000000-0000-4000-8000-000000000001',
+      variantName: 'Small',
+      sku: 'TSH-BLK-S',
+      movementType: 'OPENING_BALANCE' as const,
+      quantityMilli: 12_500,
+      unitCostMinor: 55_000,
+      sourceType: 'onboarding_opening_inventory',
+      sourceReference: 'opening-inventory-001',
+      actorLabel: 'Business owner',
+      occurredAt: '2026-09-24T10:00:00.000Z',
+      balanceAfterMilli: 12_500,
+    },
+  ],
+}))
 
 const authenticatedApp = createApp({
   verifyAccessToken: async (token) => (token === 'valid-token' ? { userId } : null),
@@ -117,6 +161,8 @@ const authenticatedApp = createApp({
   updateCatalogProduct,
   updateCatalogVariant,
   deactivateCatalogVariant,
+  loadInventoryStock,
+  loadInventoryMovements,
   loadOpeningInventory,
   recordOpeningInventory,
 })
@@ -317,6 +363,8 @@ describe('API', () => {
       updateCatalogProduct,
       updateCatalogVariant,
       deactivateCatalogVariant,
+      loadInventoryStock,
+      loadInventoryMovements,
       loadOpeningInventory,
       recordOpeningInventory,
     })
@@ -355,6 +403,8 @@ describe('API', () => {
       updateCatalogProduct,
       updateCatalogVariant,
       deactivateCatalogVariant,
+      loadInventoryStock,
+      loadInventoryMovements,
       loadOpeningInventory,
       recordOpeningInventory,
     })
@@ -689,6 +739,42 @@ describe('API', () => {
     )
     expect(response.status).toBe(409)
     expect(apiErrorResponseSchema.parse(await response.json()).error.code).toBe('LAST_ACTIVE_VARIANT')
+  })
+
+  it('loads live stock for the server-resolved tenant and requested location', async () => {
+    loadInventoryStock.mockClear()
+    const response = await authenticatedApp.request(
+      `/v1/inventory/stock?locationId=${locationId}`,
+      { headers: { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId } },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(inventoryStockContextSchema.safeParse(await response.json()).success).toBe(true)
+    expect(loadInventoryStock).toHaveBeenCalledWith(userId, tenantId, locationId, bindings)
+  })
+
+  it('loads movement history with server-validated filters', async () => {
+    loadInventoryMovements.mockClear()
+    const variantId = '50000000-0000-4000-8000-000000000001'
+    const response = await authenticatedApp.request(
+      `/v1/inventory/movements?locationId=${locationId}&variantId=${variantId}&limit=50`,
+      { headers: { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId } },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(inventoryMovementContextSchema.safeParse(await response.json()).success).toBe(true)
+    expect(loadInventoryMovements).toHaveBeenCalledWith(userId, tenantId, locationId, variantId, 50, bindings)
+  })
+
+  it('rejects movement requests without a valid location', async () => {
+    loadInventoryMovements.mockClear()
+    const response = await authenticatedApp.request(
+      '/v1/inventory/movements?locationId=not-a-location',
+      { headers: { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId } },
+      bindings,
+    )
+    expect(response.status).toBe(400)
+    expect(loadInventoryMovements).not.toHaveBeenCalled()
   })
 
   it('loads opening inventory for the server-resolved tenant and requested location', async () => {

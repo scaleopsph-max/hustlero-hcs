@@ -52,7 +52,7 @@ Current Phase 1 implementation:
 - `PATCH /v1/onboarding` requires the same owner context. `business_questions` stores business type, one or more sales channels, inventory-tracking preference, and product setup method. `feature_selection` can run only afterward and may toggle only the tenant's entitled core modules: inventory, purchasing, customers, employees, and finance.
 - Catalog, sales, and basic reports are required core features and remain enabled. Unavailable paid add-ons cannot be selected or self-entitled through onboarding.
 - Identical step retries return success without adding duplicate audit/outbox records. Changed saved answers create a new audit event and outbox event.
-- The Products step becomes complete after the tenant has at least one non-archived product. Opening inventory completes after its first ledger movement. Later onboarding steps are not implemented yet; the general stock-level explorer still uses sample data.
+- The Products step becomes complete after the tenant has at least one non-archived product. Opening inventory completes after its first ledger movement. Later onboarding steps are not implemented yet.
 
 ### Catalog and inventory
 
@@ -70,6 +70,8 @@ Current Phase 1 implementation:
 - `POST /v1/inventory/adjustments`
 - `POST /v1/inventory/opening-balances`
 - `GET /v1/inventory/opening-balances`
+- `GET /v1/inventory/stock`
+- `GET /v1/inventory/movements`
 
 Current catalog implementation:
 
@@ -92,6 +94,12 @@ Current opening-inventory implementation:
 - Opening inventory is one-time per branch and variant and must precede any other movement for that stock position. Corrections use future adjustment or reversal commands.
 - Successful batches create one audit event and one outbox event. Identical retries replay the response; changed retries and duplicate openings return 409.
 - The onboarding opening-inventory step becomes complete after the tenant records its first opening movement.
+
+Current inventory visibility implementation:
+
+- `GET /v1/inventory/stock` returns the live balance projection for active inventory-tracked variants at a server-authorized branch. `available` is computed as `on_hand - reserved`; quantities cross the TypeScript boundary as integer thousandths.
+- `GET /v1/inventory/movements` returns the newest ledger rows for a server-authorized branch, optionally filtered by variant and limited to 1-200 rows. Each row includes movement type, quantity, source reference, actor label, timestamp, and computed balance after.
+- Both read paths use private security-definer functions with pinned search paths and execute permission only for the Hyperdrive role. Direct table reads remain denied.
 
 ### Registers and sales
 

@@ -4,6 +4,24 @@ const identifierSchema = z.uuid()
 const quantityMilliSchema = z.number().int().min(0).max(999_999_999_999)
 const moneyMinorSchema = z.number().int().min(0).max(99_999_999_999)
 
+export const inventoryMovementTypeSchema = z.enum([
+  'OPENING_BALANCE',
+  'SALE',
+  'REFUND',
+  'PURCHASE_RECEIPT',
+  'TRANSFER_OUT',
+  'TRANSFER_IN',
+  'DAMAGE',
+  'ADJUSTMENT',
+  'RETURN_TO_SUPPLIER',
+])
+
+const inventoryLocationSchema = z.object({
+  id: identifierSchema,
+  code: z.string().min(1),
+  name: z.string().min(1),
+})
+
 export const openingInventoryEntrySchema = z.strictObject({
   variantId: identifierSchema,
   quantityMilli: quantityMilliSchema.refine((value) => value > 0),
@@ -22,13 +40,7 @@ export const openingInventoryCreateResponseSchema = z.object({
 })
 
 export const openingInventoryContextSchema = z.object({
-  locations: z.array(
-    z.object({
-      id: identifierSchema,
-      code: z.string().min(1),
-      name: z.string().min(1),
-    }),
-  ),
+  locations: z.array(inventoryLocationSchema),
   selectedLocationId: identifierSchema,
   items: z.array(
     z.object({
@@ -46,6 +58,53 @@ export const openingInventoryContextSchema = z.object({
   ),
 })
 
+export const inventoryStockContextSchema = z.object({
+  locations: z.array(inventoryLocationSchema),
+  selectedLocationId: identifierSchema,
+  items: z.array(
+    z.object({
+      productId: identifierSchema,
+      productName: z.string().min(1),
+      variantId: identifierSchema,
+      variantName: z.string().min(1),
+      sku: z.string().min(1),
+      barcodeCount: z.number().int().min(0),
+      onHandMilli: z.number().int(),
+      reservedMilli: z.number().int().min(0),
+      availableMilli: z.number().int(),
+      inTransitMilli: z.number().int().min(0),
+      damagedMilli: z.number().int().min(0),
+      averageUnitCostMinor: moneyMinorSchema.nullable(),
+      hasBalance: z.boolean(),
+    }),
+  ),
+})
+
+export const inventoryMovementContextSchema = z.object({
+  locationId: identifierSchema,
+  items: z.array(
+    z.object({
+      id: identifierSchema,
+      productId: identifierSchema,
+      productName: z.string().min(1),
+      variantId: identifierSchema,
+      variantName: z.string().min(1),
+      sku: z.string().min(1),
+      movementType: inventoryMovementTypeSchema,
+      quantityMilli: z.number().int(),
+      unitCostMinor: moneyMinorSchema.nullable(),
+      sourceType: z.string().min(1),
+      sourceReference: z.string().min(1),
+      actorLabel: z.string().min(1),
+      occurredAt: z.iso.datetime({ offset: true }),
+      balanceAfterMilli: z.number().int(),
+    }),
+  ),
+})
+
 export type OpeningInventoryCreateRequest = z.infer<typeof openingInventoryCreateRequestSchema>
 export type OpeningInventoryCreateResponse = z.infer<typeof openingInventoryCreateResponseSchema>
 export type OpeningInventoryContext = z.infer<typeof openingInventoryContextSchema>
+export type InventoryStockContext = z.infer<typeof inventoryStockContextSchema>
+export type InventoryMovementContext = z.infer<typeof inventoryMovementContextSchema>
+export type InventoryMovementType = z.infer<typeof inventoryMovementTypeSchema>

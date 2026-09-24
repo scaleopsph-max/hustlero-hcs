@@ -1,6 +1,10 @@
 import {
+  inventoryMovementContextSchema,
+  inventoryStockContextSchema,
   openingInventoryContextSchema,
   openingInventoryCreateResponseSchema,
+  type InventoryMovementContext,
+  type InventoryStockContext,
   type OpeningInventoryContext,
   type OpeningInventoryCreateRequest,
   type OpeningInventoryCreateResponse,
@@ -27,6 +31,22 @@ export type OpeningInventoryRecorder = (
   bindings: Bindings,
 ) => Promise<OpeningInventoryCreateResponse>
 
+export type InventoryStockLoader = (
+  userId: string,
+  tenantId: string,
+  locationId: string | null,
+  bindings: Bindings,
+) => Promise<InventoryStockContext>
+
+export type InventoryMovementLoader = (
+  userId: string,
+  tenantId: string,
+  locationId: string,
+  variantId: string | null,
+  limit: number,
+  bindings: Bindings,
+) => Promise<InventoryMovementContext>
+
 const databaseContextSchema = z.object({
   locations: z.array(z.object({ id: z.uuid(), code: z.string(), name: z.string() })),
   selectedLocationId: z.uuid(),
@@ -42,6 +62,50 @@ const databaseContextSchema = z.object({
       openingQuantity: z.string(),
       onHand: z.string(),
       opened: z.boolean(),
+    }),
+  ),
+})
+
+const databaseStockContextSchema = z.object({
+  locations: z.array(z.object({ id: z.uuid(), code: z.string(), name: z.string() })),
+  selectedLocationId: z.uuid(),
+  items: z.array(
+    z.object({
+      productId: z.uuid(),
+      productName: z.string(),
+      variantId: z.uuid(),
+      variantName: z.string(),
+      sku: z.string(),
+      barcodeCount: z.number().int().min(0),
+      onHand: z.string(),
+      reserved: z.string(),
+      available: z.string(),
+      inTransit: z.string(),
+      damaged: z.string(),
+      averageUnitCost: z.string().nullable(),
+      hasBalance: z.boolean(),
+    }),
+  ),
+})
+
+const databaseMovementContextSchema = z.object({
+  locationId: z.uuid(),
+  items: z.array(
+    z.object({
+      id: z.uuid(),
+      productId: z.uuid(),
+      productName: z.string(),
+      variantId: z.uuid(),
+      variantName: z.string(),
+      sku: z.string(),
+      movementType: z.string(),
+      quantity: z.string(),
+      unitCost: z.string().nullable(),
+      sourceType: z.string(),
+      sourceReference: z.string(),
+      actorLabel: z.string(),
+      occurredAt: z.string(),
+      balanceAfter: z.string(),
     }),
   ),
 })
@@ -118,6 +182,63 @@ export const recordOpeningInventoryInPostgres: OpeningInventoryRecorder = async 
       [userId, tenantId, request.locationId, JSON.stringify(entries), idempotencyKey, requestHash, requestId],
     )
     return openingInventoryCreateResponseSchema.parse(result.rows[0]?.response)
+  } finally {
+    await client.end()
+  }
+}
+
+export const loadInventoryStockFromPostgres: InventoryStockLoader = async (userId, tenantId, locationId, bindings) => {
+  const client = new Client({ connectionString: connectionString(bindings) })
+  try {
+    await client.connect()
+    const result = await client.query('select app.list_inventory_stock($1::uuid, $2::uuid, $3::uuid) as context', [
+      userId,
+      tenantId,
+      locationId,
+    ])
+    const context = databaseStockContextSchema.parse(result.rows[0]?.context)
+    return inventoryStockContextSchema.parse({
+      ...context,
+      items: context.items.map(({ onHand, reserved, available, inTransit, damaged, averageUnitCost, ...item }) => ({
+        ...item,
+        onHandMilli: decimalToScaled(onHand, 3),
+        reservedMilli: decimalToScaled(reserved, 3),
+        availableMilli: decimalToScaled(available, 3),
+        inTransitMilli: decimalToScaled(inTransit, 3),
+        damagedMilli: decimalToScaled(damaged, 3),
+        averageUnitCostMinor: averageUnitCost === null ? null : decimalToScaled(averageUnitCost, 2),
+      })),
+    })
+  } finally {
+    await client.end()
+  }
+}
+
+export const loadInventoryMovementsFromPostgres: InventoryMovementLoader = async (
+  userId,
+  tenantId,
+  locationId,
+  variantId,
+  limit,
+  bindings,
+) => {
+  const client = new Client({ connectionString: connectionString(bindings) })
+  try {
+    await client.connect()
+    const result = await client.query(
+      'select app.list_inventory_movements($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::integer) as context',
+      [userId, tenantId, locationId, variantId, limit],
+    )
+    const context = databaseMovementContextSchema.parse(result.rows[0]?.context)
+    return inventoryMovementContextSchema.parse({
+      ...context,
+      items: context.items.map(({ quantity, unitCost, balanceAfter, ...item }) => ({
+        ...item,
+        quantityMilli: decimalToScaled(quantity, 3),
+        unitCostMinor: unitCost === null ? null : decimalToScaled(unitCost, 2),
+        balanceAfterMilli: decimalToScaled(balanceAfter, 3),
+      })),
+    })
   } finally {
     await client.end()
   }

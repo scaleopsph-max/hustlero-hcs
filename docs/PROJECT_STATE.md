@@ -64,6 +64,8 @@ Last updated: 2026-09-24
 - Variant removal preserves historical rows and blocks removal of the last active variant for a product
 - Opening-inventory migration was applied to development and recorded as version `20260924101416`; private movement and balance tables use RLS and deny direct Worker table access
 - Tenant-safe branch/variant opening inventory is implemented with integer-thousandth quantities, centavo costs, idempotency, append-only enforcement, audit, outbox, and atomic balance projection
+- Inventory stock-visibility migration was applied to development and recorded as version `20260924105145`; branch-authorized stock and movement reads use private functions with pinned search paths and Hyperdrive-only execute grants
+- Live branch stock levels and movement history are implemented through private tenant-authorized database functions, API read contracts, and the Back Office Inventory views; the existing mock explorer has been removed
 
 ## Not started
 
@@ -81,12 +83,12 @@ Last updated: 2026-09-24
 - Owner completed the business-question and feature-selection forms for `LOCAL RECIPE`
 - Manual catalog/product vertical slice: private Product → Variant → SKU → Barcode schema, tenant-safe/idempotent API commands, product-grain list, editable product detail, and nested add/edit/deactivate variant flow are implemented and verified in development
 - Opening inventory per branch and variant is implemented and connected to the onboarding checklist; the authenticated `/inventory/opening` screen was verified with the saved `LOCAL RECIPE` catalog without mutating stock
-- Development API Worker version `9d41cd6a-cd5d-430a-a46a-1f41ca3b1f6c` is deployed
+- Development API Worker version `b2db0952-7f87-4a60-b4ae-9ffe7297b9a2` is deployed with stock and movement reads
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-After the owner records real opening quantities, connect the Inventory stock-level and movement-ledger views to live balances, then implement controlled adjustments.
+After the owner records real opening quantities, implement controlled stock adjustments with approval thresholds and correction audit trails.
 
 ## Production state
 
