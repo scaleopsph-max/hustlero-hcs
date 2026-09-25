@@ -364,10 +364,37 @@ export function RegisterOperationsWorkspace({ focus }: { focus: 'payments' | 'se
                     >
                       {session.status}
                     </Chip>
-                    <div className="mt-2 text-ink-500">
-                      Opening {peso(session.openingCashCentavos)}
-                      {session.countedCashCentavos === null ? '' : ` / Counted ${peso(session.countedCashCentavos)}`}
-                    </div>
+                    <dl className="mt-3 grid grid-cols-2 gap-x-5 gap-y-1 text-xs sm:min-w-64">
+                      <dt className="text-ink-500">Opening</dt>
+                      <dd className="font-medium text-ink-900">{peso(session.openingCashCentavos)}</dd>
+                      {session.expectedCashCentavos !== null ? (
+                        <>
+                          <dt className="text-ink-500">Expected</dt>
+                          <dd className="font-medium text-ink-900">{peso(session.expectedCashCentavos)}</dd>
+                        </>
+                      ) : null}
+                      {session.countedCashCentavos !== null ? (
+                        <>
+                          <dt className="text-ink-500">Counted</dt>
+                          <dd className="font-medium text-ink-900">{peso(session.countedCashCentavos)}</dd>
+                        </>
+                      ) : null}
+                      {session.varianceCentavos !== null ? (
+                        <>
+                          <dt className="text-ink-500">Variance</dt>
+                          <dd
+                            className={
+                              session.varianceCentavos === 0
+                                ? 'font-semibold text-emerald-700'
+                                : 'font-semibold text-red-700'
+                            }
+                          >
+                            {peso(session.varianceCentavos)}
+                            {session.varianceCentavos === 0 ? ' · Balanced' : ''}
+                          </dd>
+                        </>
+                      ) : null}
+                    </dl>
                   </div>
                 </div>
               ))
