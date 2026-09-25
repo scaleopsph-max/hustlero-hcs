@@ -1,7 +1,8 @@
-import { posPinLoginResponseSchema } from '@hcs/contracts'
+import { posCustomerSchema, posPinLoginResponseSchema, type PosCustomer } from '@hcs/contracts'
 
 export const POS_SESSION_KEY = 'hustlero.pos.session'
 export const POS_CART_KEY = 'hustlero.pos.cart'
+export const POS_CUSTOMER_KEY = 'hustlero.pos.customer'
 
 export type PosCartLine = { variantId: string; quantityMilli: number }
 
@@ -37,6 +38,22 @@ export function readPosCart(): PosCartLine[] {
 
 export function writePosCart(lines: PosCartLine[]) {
   sessionStorage.setItem(POS_CART_KEY, JSON.stringify(lines))
+}
+
+export function readPosCustomer(): PosCustomer | null {
+  const raw = sessionStorage.getItem(POS_CUSTOMER_KEY)
+  if (!raw) return null
+  try {
+    return posCustomerSchema.parse(JSON.parse(raw))
+  } catch {
+    sessionStorage.removeItem(POS_CUSTOMER_KEY)
+    return null
+  }
+}
+
+export function writePosCustomer(customer: PosCustomer | null) {
+  if (customer) sessionStorage.setItem(POS_CUSTOMER_KEY, JSON.stringify(customer))
+  else sessionStorage.removeItem(POS_CUSTOMER_KEY)
 }
 
 export function newIdempotencyKey(prefix: string) {

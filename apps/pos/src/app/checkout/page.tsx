@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   posCashSaleCompleteResponseSchema,
   posSalesContextSchema,
+  type PosCustomer,
   type PosCashSaleCompleteResponse,
   type PosSalesContext,
 } from '@hcs/contracts'
@@ -13,9 +14,11 @@ import { Button, Glass, Keypad, Surface, cn, formatPeso, parsePeso } from '@hcs/
 import { SubHeader } from '@/components/SubHeader'
 import {
   POS_CART_KEY,
+  POS_CUSTOMER_KEY,
   newIdempotencyKey,
   posRequest,
   readPosCart,
+  readPosCustomer,
   readPosSession,
   type PosCartLine,
 } from '@/lib/pos-api'
@@ -24,6 +27,7 @@ export default function Checkout() {
   const router = useRouter()
   const [context, setContext] = useState<PosSalesContext | null>(null)
   const [lines, setLines] = useState<PosCartLine[]>([])
+  const [customer, setCustomer] = useState<PosCustomer | null>(null)
   const [received, setReceived] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -35,6 +39,7 @@ export default function Checkout() {
     const cart = readPosCart()
     if (!cart.length) return router.replace('/sell')
     setLines(cart)
+    setCustomer(readPosCustomer())
     void posRequest('/v1/pos/context')
       .then((data) => {
         const loaded = posSalesContextSchema.parse(data)
@@ -70,10 +75,11 @@ export default function Checkout() {
         await posRequest('/v1/pos/sales/complete', {
           method: 'POST',
           headers: { 'Idempotency-Key': idempotencyKey },
-          body: JSON.stringify({ lines, cashReceivedCentavos: receivedCentavos }),
+          body: JSON.stringify({ lines, cashReceivedCentavos: receivedCentavos, customerId: customer?.id ?? null }),
         }),
       )
       sessionStorage.removeItem(POS_CART_KEY)
+      sessionStorage.removeItem(POS_CUSTOMER_KEY)
       setReceipt(completed)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The sale could not be completed.')
@@ -134,6 +140,12 @@ export default function Checkout() {
       <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[380px_minmax(0,1fr)]">
         <Glass variant="strong" as="aside" className="flex flex-col gap-4 rounded-[28px] p-6">
           <h2 className="font-display text-[22px] font-bold text-white">Order summary</h2>
+          {customer ? (
+            <div className="border-y border-white/10 py-3 text-sm">
+              <span className="text-ink-300">Customer</span>
+              <strong className="float-right text-white">{customer.fullName}</strong>
+            </div>
+          ) : null}
           <ul>
             {lines.map((line) => {
               const item = itemById.get(line.variantId)

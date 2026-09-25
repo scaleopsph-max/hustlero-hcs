@@ -73,6 +73,29 @@ export {
 } from './catalog'
 export { environmentSchema, healthResponseSchema, type HealthResponse } from './health'
 export {
+  customerCreateRequestSchema,
+  customerCreateResponseSchema,
+  customerDetailSchema,
+  customerGroupSchema,
+  customerNoteRequestSchema,
+  customerNoteResponseSchema,
+  customerSummarySchema,
+  customerUpdateRequestSchema,
+  customerUpdateResponseSchema,
+  customersContextSchema,
+  posCustomerCreateRequestSchema,
+  posCustomerCreateResponseSchema,
+  posCustomerSchema,
+  posCustomerSearchResponseSchema,
+  type CustomerCreateRequest,
+  type CustomerDetail,
+  type CustomerNoteRequest,
+  type CustomersContext,
+  type CustomerUpdateRequest,
+  type PosCustomer,
+  type PosCustomerCreateRequest,
+} from './customers'
+export {
   inventoryAdjustmentCreateRequestSchema,
   inventoryAdjustmentCreateResponseSchema,
   inventoryMovementContextSchema,

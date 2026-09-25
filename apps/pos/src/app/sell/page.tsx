@@ -3,14 +3,21 @@
 import { Banknote, LogOut, Minus, Plus, ScanLine, ShoppingBag } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { posRegisterOpenResponseSchema, posSalesContextSchema, type PosSalesContext } from '@hcs/contracts'
+import {
+  posRegisterOpenResponseSchema,
+  posSalesContextSchema,
+  type PosCustomer,
+  type PosSalesContext,
+} from '@hcs/contracts'
 import { Button, Chip, Glass, Logo, Surface, buttonClasses, cn, formatPeso, parsePeso } from '@hcs/ui'
 import { SyncPill } from '@/components/SyncPill'
+import { PosCustomerPicker } from '@/components/PosCustomerPicker'
 import {
   POS_SESSION_KEY,
   newIdempotencyKey,
   posRequest,
   readPosCart,
+  readPosCustomer,
   readPosSession,
   writePosCart,
   type PosCartLine,
@@ -20,6 +27,7 @@ export default function SellScreen() {
   const router = useRouter()
   const [context, setContext] = useState<PosSalesContext | null>(null)
   const [lines, setLines] = useState<PosCartLine[]>([])
+  const [customer, setCustomer] = useState<PosCustomer | null>(null)
   const [category, setCategory] = useState('All')
   const [query, setQuery] = useState('')
   const [openingCash, setOpeningCash] = useState('0.00')
@@ -31,6 +39,7 @@ export default function SellScreen() {
     try {
       setContext(posSalesContextSchema.parse(await posRequest('/v1/pos/context')))
       setLines(readPosCart())
+      setCustomer(readPosCustomer())
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not load the register.')
       if (!readPosSession()) router.replace('/')
@@ -235,6 +244,7 @@ export default function SellScreen() {
               <h1 className="font-display text-[22px] font-bold text-white">Current sale</h1>
               <ShoppingBag size={21} className="text-gold-300" />
             </div>
+            <PosCustomerPicker selected={customer} onSelect={setCustomer} />
             <ul className="flex flex-col overflow-y-auto">
               {lines.map((line) => {
                 const item = itemById.get(line.variantId)

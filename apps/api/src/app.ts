@@ -74,6 +74,17 @@ import {
   sessionContextResponseSchema,
   tenantBootstrapRequestSchema,
   tenantBootstrapResponseSchema,
+  customerCreateRequestSchema,
+  customerCreateResponseSchema,
+  customerDetailSchema,
+  customerNoteRequestSchema,
+  customerNoteResponseSchema,
+  customerUpdateRequestSchema,
+  customerUpdateResponseSchema,
+  customersContextSchema,
+  posCustomerCreateRequestSchema,
+  posCustomerCreateResponseSchema,
+  posCustomerSearchResponseSchema,
 } from '@hcs/contracts'
 import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
@@ -129,6 +140,22 @@ import {
   type CatalogProductUpdater,
 } from './catalog-repository'
 import { type Bindings, readEnvironment } from './env'
+import {
+  addCustomerNoteInPostgres,
+  createCustomerInPostgres,
+  createPosCustomerInPostgres,
+  loadCustomerFromPostgres,
+  loadCustomersFromPostgres,
+  searchPosCustomersFromPostgres,
+  updateCustomerInPostgres,
+  type CustomerCreator,
+  type CustomerLoader,
+  type CustomerNoteCreator,
+  type CustomersLoader,
+  type CustomerUpdater,
+  type PosCustomerCreator,
+  type PosCustomersSearcher,
+} from './customer-repository'
 import {
   loadInventoryMovementsFromPostgres,
   loadInventoryStockFromPostgres,
@@ -241,6 +268,13 @@ interface AppDependencies {
   loadSaleReceipt: SaleReceiptLoader
   refundSale: SaleRefunder
   voidSale: SaleVoider
+  loadCustomers: CustomersLoader
+  loadCustomer: CustomerLoader
+  createCustomer: CustomerCreator
+  updateCustomer: CustomerUpdater
+  addCustomerNote: CustomerNoteCreator
+  searchPosCustomers: PosCustomersSearcher
+  createPosCustomer: PosCustomerCreator
 }
 
 const defaultDependencies: AppDependencies = {
@@ -291,6 +325,13 @@ const defaultDependencies: AppDependencies = {
   loadSaleReceipt: loadSaleReceiptFromPostgres,
   refundSale: refundSaleInPostgres,
   voidSale: voidSaleInPostgres,
+  loadCustomers: loadCustomersFromPostgres,
+  loadCustomer: loadCustomerFromPostgres,
+  createCustomer: createCustomerInPostgres,
+  updateCustomer: updateCustomerInPostgres,
+  addCustomerNote: addCustomerNoteInPostgres,
+  searchPosCustomers: searchPosCustomersFromPostgres,
+  createPosCustomer: createPosCustomerInPostgres,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -2663,6 +2704,27 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
         }),
         403,
       )
+    if (code === 'HCSB1')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'CUSTOMER_NOT_FOUND', message: 'The selected customer is unavailable.', requestId },
+        }),
+        404,
+      )
+    if (code === 'HCSB2')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'INVALID_CUSTOMER', message: 'Check the customer name and contact details.', requestId },
+        }),
+        400,
+      )
+    if (code === 'HCSB3')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'CUSTOMER_ALREADY_EXISTS', message: 'That email or phone is already in use.', requestId },
+        }),
+        409,
+      )
     if (code === 'HCS95')
       return context.json(
         apiErrorResponseSchema.parse({
@@ -2721,6 +2783,75 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
       )
     try {
       return context.json(posSalesContextSchema.parse(await dependencies.loadPosSalesContext(sessionHash, context.env)))
+    } catch (error) {
+      return posError(context, error)
+    }
+  })
+
+  app.get('/v1/pos/customers', async (context) => {
+    const sessionHash = await readPosSessionHash(context)
+    if (!sessionHash)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'POS_SESSION_REQUIRED',
+            message: 'Sign in to the POS first.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    try {
+      return context.json(
+        posCustomerSearchResponseSchema.parse(
+          await dependencies.searchPosCustomers(sessionHash, context.req.query('q') ?? '', context.env),
+        ),
+      )
+    } catch (error) {
+      return posError(context, error)
+    }
+  })
+
+  app.post('/v1/pos/customers', async (context) => {
+    const sessionHash = await readPosSessionHash(context)
+    const idempotencyKey = context.req.header('idempotency-key')
+    const parsed = posCustomerCreateRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!sessionHash)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'POS_SESSION_REQUIRED',
+            message: 'Sign in to the POS first.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey) || !parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_CUSTOMER',
+            message: 'Enter a name and at least one contact method.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      return context.json(
+        posCustomerCreateResponseSchema.parse(
+          await dependencies.createPosCustomer(
+            sessionHash,
+            parsed.data,
+            idempotencyKey,
+            await requestHash(parsed.data),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+        201,
+      )
     } catch (error) {
       return posError(context, error)
     }
@@ -2805,6 +2936,289 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
       return context.json(posCashSaleCompleteResponseSchema.parse(response), 201)
     } catch (error) {
       return posError(context, error)
+    }
+  })
+
+  const customerError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
+    const code = postgresErrorCode(error)
+    const requestId = context.get('requestId')
+    if (code === 'HCSB0')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'CUSTOMER_ACCESS_DENIED',
+            message: 'Your role cannot perform this customer action.',
+            requestId,
+          },
+        }),
+        403,
+      )
+    if (code === 'HCSB1')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'CUSTOMER_NOT_FOUND', message: 'The customer was not found.', requestId },
+        }),
+        404,
+      )
+    if (code === 'HCSB2')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_CUSTOMER',
+            message: error instanceof Error ? error.message : 'Check the customer details.',
+            requestId,
+          },
+        }),
+        400,
+      )
+    if (code === 'HCSB3')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'CUSTOMER_ALREADY_EXISTS', message: 'That email or phone is already in use.', requestId },
+        }),
+        409,
+      )
+    if (code === 'HCS08')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_CONFLICT',
+            message: 'This request key was already used for another customer action.',
+            requestId,
+          },
+        }),
+        409,
+      )
+    throw error
+  }
+
+  const customerIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+  app.get('/v1/customers', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'CUSTOMER_ACCESS_DENIED',
+            message: 'Sign in and select a business to view customers.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    try {
+      return context.json(
+        customersContextSchema.parse(
+          await dependencies.loadCustomers(
+            resolved.userId,
+            resolved.tenantId,
+            context.req.query('q') ?? '',
+            context.env,
+          ),
+        ),
+      )
+    } catch (error) {
+      return customerError(context, error)
+    }
+  })
+
+  app.post('/v1/customers', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    const idempotencyKey = context.req.header('idempotency-key')
+    const parsed = customerCreateRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'CUSTOMER_ACCESS_DENIED',
+            message: 'Sign in and select a business.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey) || !parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_CUSTOMER',
+            message: 'Enter a valid customer name and contact method.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      return context.json(
+        customerCreateResponseSchema.parse(
+          await dependencies.createCustomer(
+            resolved.userId,
+            resolved.tenantId,
+            parsed.data,
+            idempotencyKey,
+            await requestHash(parsed.data),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+        201,
+      )
+    } catch (error) {
+      return customerError(context, error)
+    }
+  })
+
+  app.get('/v1/customers/:customerId', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    const customerId = context.req.param('customerId')
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'CUSTOMER_ACCESS_DENIED',
+            message: 'Sign in and select a business.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    if (!customerIdPattern.test(customerId))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'CUSTOMER_NOT_FOUND',
+            message: 'The customer was not found.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        404,
+      )
+    try {
+      return context.json(
+        customerDetailSchema.parse(
+          await dependencies.loadCustomer(resolved.userId, resolved.tenantId, customerId, context.env),
+        ),
+      )
+    } catch (error) {
+      return customerError(context, error)
+    }
+  })
+
+  app.patch('/v1/customers/:customerId', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    const customerId = context.req.param('customerId')
+    const idempotencyKey = context.req.header('idempotency-key')
+    const parsed = customerUpdateRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'CUSTOMER_ACCESS_DENIED',
+            message: 'Sign in and select a business.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    if (!customerIdPattern.test(customerId))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'CUSTOMER_NOT_FOUND',
+            message: 'The customer was not found.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        404,
+      )
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey) || !parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_CUSTOMER',
+            message: 'Check the customer details.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      return context.json(
+        customerUpdateResponseSchema.parse(
+          await dependencies.updateCustomer(
+            resolved.userId,
+            resolved.tenantId,
+            customerId,
+            parsed.data,
+            idempotencyKey,
+            await requestHash(parsed.data),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+      )
+    } catch (error) {
+      return customerError(context, error)
+    }
+  })
+
+  app.post('/v1/customers/:customerId/notes', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    const customerId = context.req.param('customerId')
+    const idempotencyKey = context.req.header('idempotency-key')
+    const parsed = customerNoteRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'CUSTOMER_ACCESS_DENIED',
+            message: 'Sign in and select a business.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    if (!customerIdPattern.test(customerId))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'CUSTOMER_NOT_FOUND',
+            message: 'The customer was not found.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        404,
+      )
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey) || !parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_CUSTOMER_NOTE',
+            message: 'Enter a customer note.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      return context.json(
+        customerNoteResponseSchema.parse(
+          await dependencies.addCustomerNote(
+            resolved.userId,
+            resolved.tenantId,
+            customerId,
+            parsed.data,
+            idempotencyKey,
+            await requestHash(parsed.data),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+        201,
+      )
+    } catch (error) {
+      return customerError(context, error)
     }
   })
 

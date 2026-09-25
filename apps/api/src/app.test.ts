@@ -39,6 +39,13 @@ import {
   workforceContextSchema,
   onboardingResponseSchema,
   sessionContextResponseSchema,
+  customerCreateResponseSchema,
+  customerDetailSchema,
+  customerNoteResponseSchema,
+  customerUpdateResponseSchema,
+  customersContextSchema,
+  posCustomerCreateResponseSchema,
+  posCustomerSearchResponseSchema,
 } from '@hcs/contracts'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -423,6 +430,55 @@ const voidSale = vi.fn(async () => ({
   amountCentavos: 89_900,
   completedAt: '2026-09-25T03:00:00.000Z',
 }))
+const customerId = '17000000-0000-4000-8000-000000000001'
+const customerGroupId = '18000000-0000-4000-8000-000000000001'
+const customerContext = {
+  canManage: true,
+  groups: [
+    { id: customerGroupId, code: 'retail', name: 'Retail customers', kind: 'standard' as const, isActive: true },
+  ],
+  customers: [],
+}
+const loadCustomers = vi.fn(async () => customerContext)
+const customerDetail = {
+  id: customerId,
+  customerNumber: 'CUST-000001',
+  fullName: 'Maria Santos',
+  email: 'maria@example.com',
+  phone: null,
+  customerGroupId,
+  customerType: 'standard' as const,
+  emailMarketingConsent: false,
+  smsMarketingConsent: false,
+  consentUpdatedAt: null,
+  status: 'active' as const,
+  origin: 'backoffice' as const,
+  createdAt: '2026-09-25T04:00:00.000Z',
+  updatedAt: '2026-09-25T04:00:00.000Z',
+  canManage: true,
+  totalSpendCentavos: 0,
+  visitCount: 0,
+  purchases: [],
+  notes: [],
+}
+const loadCustomer = vi.fn(async () => customerDetail)
+const createCustomer = vi.fn(async () => ({ customerId, customerNumber: 'CUST-000001', status: 'created' as const }))
+const updateCustomer = vi.fn(async () => ({ customerId, status: 'updated' as const }))
+const addCustomerNote = vi.fn(async () => ({
+  noteId: '19000000-0000-4000-8000-000000000002',
+  customerId,
+  status: 'created' as const,
+}))
+const searchPosCustomers = vi.fn(async () => ({ customers: [] }))
+const createPosCustomer = vi.fn(async () => ({
+  customerId,
+  customerNumber: 'CUST-000001',
+  fullName: 'Maria Santos',
+  email: 'maria@example.com',
+  phone: null,
+  customerType: 'standard' as const,
+  status: 'created' as const,
+}))
 
 const authenticatedApp = createApp({
   verifyAccessToken: async (token) => (token === 'valid-token' ? { userId } : null),
@@ -487,6 +543,13 @@ const authenticatedApp = createApp({
   loadSaleReceipt,
   refundSale,
   voidSale,
+  loadCustomers,
+  loadCustomer,
+  createCustomer,
+  updateCustomer,
+  addCustomerNote,
+  searchPosCustomers,
+  createPosCustomer,
 })
 
 const businessDetails = {
@@ -721,6 +784,13 @@ describe('API', () => {
       loadSaleReceipt,
       refundSale,
       voidSale,
+      loadCustomers,
+      loadCustomer,
+      createCustomer,
+      updateCustomer,
+      addCustomerNote,
+      searchPosCustomers,
+      createPosCustomer,
     })
     const response = await multiTenantApp.request(
       '/v1/onboarding',
@@ -793,6 +863,13 @@ describe('API', () => {
       loadSaleReceipt,
       refundSale,
       voidSale,
+      loadCustomers,
+      loadCustomer,
+      createCustomer,
+      updateCustomer,
+      addCustomerNote,
+      searchPosCustomers,
+      createPosCustomer,
     })
     const response = await employeeApp.request(
       '/v1/onboarding',
@@ -1889,5 +1966,114 @@ describe('API', () => {
       expect.any(String),
       bindings,
     )
+  })
+
+  it('lists and loads tenant customer profiles', async () => {
+    loadCustomers.mockClear()
+    loadCustomer.mockClear()
+    const list = await authenticatedApp.request(
+      '/v1/customers?q=maria',
+      { headers: { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId } },
+      bindings,
+    )
+    expect(list.status).toBe(200)
+    expect(customersContextSchema.safeParse(await list.json()).success).toBe(true)
+    expect(loadCustomers).toHaveBeenCalledWith(userId, tenantId, 'maria', bindings)
+
+    const detail = await authenticatedApp.request(
+      `/v1/customers/${customerId}`,
+      { headers: { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId } },
+      bindings,
+    )
+    expect(detail.status).toBe(200)
+    expect(customerDetailSchema.safeParse(await detail.json()).success).toBe(true)
+    expect(loadCustomer).toHaveBeenCalledWith(userId, tenantId, customerId, bindings)
+  })
+
+  it('creates, updates, and annotates a customer with idempotent commands', async () => {
+    const createRequest = {
+      fullName: 'Maria Santos',
+      email: 'maria@example.com',
+      phone: null,
+      customerGroupId,
+      customerType: 'standard',
+      emailMarketingConsent: false,
+      smsMarketingConsent: false,
+    }
+    const created = await authenticatedApp.request(
+      '/v1/customers',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'x-tenant-id': tenantId,
+          'content-type': 'application/json',
+          'idempotency-key': 'customer-create-0001',
+        },
+        body: JSON.stringify(createRequest),
+      },
+      bindings,
+    )
+    expect(created.status).toBe(201)
+    expect(customerCreateResponseSchema.safeParse(await created.json()).success).toBe(true)
+
+    const updateRequest = { ...createRequest, customerGroupId, status: 'active' }
+    const updated = await authenticatedApp.request(
+      `/v1/customers/${customerId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'x-tenant-id': tenantId,
+          'content-type': 'application/json',
+          'idempotency-key': 'customer-update-0001',
+        },
+        body: JSON.stringify(updateRequest),
+      },
+      bindings,
+    )
+    expect(updated.status).toBe(200)
+    expect(customerUpdateResponseSchema.safeParse(await updated.json()).success).toBe(true)
+
+    const noted = await authenticatedApp.request(
+      `/v1/customers/${customerId}/notes`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'x-tenant-id': tenantId,
+          'content-type': 'application/json',
+          'idempotency-key': 'customer-note-000001',
+        },
+        body: JSON.stringify({ note: 'Prefers SMS order updates.' }),
+      },
+      bindings,
+    )
+    expect(noted.status).toBe(201)
+    expect(customerNoteResponseSchema.safeParse(await noted.json()).success).toBe(true)
+  })
+
+  it('searches and creates POS-originated customers from the employee session', async () => {
+    const headers = { 'x-pos-session-token': 'e'.repeat(64) }
+    const search = await authenticatedApp.request('/v1/pos/customers?q=maria', { headers }, bindings)
+    expect(search.status).toBe(200)
+    expect(posCustomerSearchResponseSchema.safeParse(await search.json()).success).toBe(true)
+    const created = await authenticatedApp.request(
+      '/v1/pos/customers',
+      {
+        method: 'POST',
+        headers: { ...headers, 'content-type': 'application/json', 'idempotency-key': 'pos-customer-00001' },
+        body: JSON.stringify({
+          fullName: 'Maria Santos',
+          email: 'maria@example.com',
+          phone: null,
+          emailMarketingConsent: false,
+          smsMarketingConsent: false,
+        }),
+      },
+      bindings,
+    )
+    expect(created.status).toBe(201)
+    expect(posCustomerCreateResponseSchema.safeParse(await created.json()).success).toBe(true)
   })
 })

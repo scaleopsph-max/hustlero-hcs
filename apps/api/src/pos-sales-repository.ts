@@ -110,11 +110,12 @@ export const completePosCashSaleInPostgres: PosCashSaleCompleter = async (
     (
       await query(
         bindings,
-        'select app.complete_pos_cash_sale($1::text,$2::jsonb,$3::bigint,$4::text,$5::text,$6::text) response',
+        'select app.complete_pos_cash_sale_with_customer($1::text,$2::jsonb,$3::bigint,$4::uuid,$5::text,$6::text,$7::text) response',
         [
           sessionTokenHash,
           JSON.stringify(request.lines),
           request.cashReceivedCentavos,
+          request.customerId ?? null,
           idempotencyKey,
           requestHash,
           requestId,
@@ -132,7 +133,7 @@ export const loadSalesFromPostgres: SalesLoader = async (userId, tenantId, bindi
 export const loadSaleReceiptFromPostgres: SaleReceiptLoader = async (userId, tenantId, saleId, bindings) =>
   saleReceiptDetailSchema.parse(
     (
-      await query(bindings, 'select app.load_sale_receipt($1::uuid,$2::uuid,$3::uuid) receipt', [
+      await query(bindings, 'select app.load_sale_receipt_with_customer($1::uuid,$2::uuid,$3::uuid) receipt', [
         userId,
         tenantId,
         saleId,

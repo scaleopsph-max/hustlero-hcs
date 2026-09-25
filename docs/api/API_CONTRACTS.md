@@ -156,8 +156,12 @@ Current POS cash-sales implementation:
 
 ### Customers, controls, and reporting
 
-- `POST/GET/PATCH /v1/customers`
-- `GET /v1/customers/{id}/activity`
+- `GET /v1/customers` supports tenant-scoped search by name, customer number, email, or phone and returns customer groups plus server-derived net spend and visit counts.
+- `POST /v1/customers` and `PATCH /v1/customers/{id}` require bearer authentication, server-resolved tenant context, permissions, strict contact/consent fields, and an `Idempotency-Key`.
+- `GET /v1/customers/{id}` returns profile, consent, append-only notes, and linked purchase/refund history. Spend and visits are derived from sale and reversal truth rather than mutable counters.
+- `POST /v1/customers/{id}/notes` appends an attributed note; customer notes cannot be edited or deleted.
+- `GET /v1/pos/customers` searches only active customers in the POS session's tenant. `POST /v1/pos/customers` creates a tenant/branch-attributed profile from the active employee session.
+- `POST /v1/pos/sales/complete` accepts an optional customer ID. PostgreSQL validates that the selected active customer belongs to the POS tenant and links the sale atomically; prices, totals, tenant, branch, register, and employee remain server-authoritative.
 - `GET/POST /v1/approvals`
 - `POST /v1/approvals/{id}/decisions`
 - `GET/PATCH /v1/alerts`

@@ -4,7 +4,7 @@ Last updated: 2026-09-25
 
 ## Phase
 
-`PHASE 3 - REGISTER AND SALES`
+`PHASE 4 - CUSTOMERS, CONTROLS, AND REPORTING`
 
 ## Completed and verified
 
@@ -90,6 +90,9 @@ Last updated: 2026-09-25
 - The owner completed and verified the first live POS cash transaction: receipt `MAIN-20260925-000001` recorded ₱5,994.00 for six XL units, and branch stock moved from 10 to 4 with an immutable `SALE -6` movement
 - Sales reversal migrations `20260925073433` and `20260925075533` are applied to development; refund headers/items and payment reversals are private, RLS-enabled, append-only, indexed for their foreign-key access paths, and inaccessible by direct Worker table reads
 - Back Office sales rows open immutable receipt details with print layout, original payment snapshots, server-computed refundable quantities, partial/item refund controls, void controls, and reversal history
+- Customer migrations `20260925082615` and `20260925142109` are applied to development; customer groups, counters, profiles, consent fields, and append-only notes are private, RLS-enabled, tenant-indexed, and inaccessible through direct Worker table reads
+- Customer APIs support tenant search, create/update, profile activity, append-only notes, POS search/create, and atomic sale linkage with server-derived spend, visit, and refund history
+- Back Office customer directory/detail screens and POS customer selection/quick-create are implemented for final build and manual verification
 
 ## Not started
 
@@ -111,11 +114,12 @@ Last updated: 2026-09-25
 - POS device activation, PIN session, and the first real cash sale were completed and verified by the owner
 - Receipt detail/reprint and cash refund/void implementation is deployed and manually verified with a controlled partial refund: receipt `MAIN-20260925-000001` is partially refunded by PHP 999, net sales are PHP 4,995, and returned XL inventory increased from 4 to 5
 - The first Main Register session was closed and reconciled successfully: PHP 1,000 opening cash, PHP 5,995 expected cash, PHP 5,995 counted cash, and zero variance
+- Phase 4 customer profiles and sale linkage are in final build, deployment, and manual verification
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Begin Phase 4 with the Customers vertical slice: tenant-isolated customer profiles, branch-ready customer search, sale linkage, consent-aware contact fields, API authorization, Back Office UI, tests, and documentation.
+Deploy the updated development Worker, create one customer from POS or Back Office, complete one customer-linked test sale, then verify the customer profile purchase history, net spend, visit count, receipt linkage, and tenant isolation.
 
 ## Production state
 

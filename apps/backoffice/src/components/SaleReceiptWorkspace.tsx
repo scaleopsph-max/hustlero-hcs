@@ -233,6 +233,13 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
               )}
             </div>
             <div className="text-ink-500">Cashier: {receipt.employeeName}</div>
+            {receipt.customerId ? (
+              <Link href={`/customers/${receipt.customerId}`} className="font-medium underline underline-offset-2">
+                Customer: {receipt.customerName} ({receipt.customerNumber})
+              </Link>
+            ) : (
+              <div className="text-ink-500">Customer: Walk-in</div>
+            )}
           </div>
         </div>
         <div className="overflow-x-auto">

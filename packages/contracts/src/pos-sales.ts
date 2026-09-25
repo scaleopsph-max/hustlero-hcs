@@ -57,6 +57,7 @@ export const posCashSaleCompleteRequestSchema = z.object({
     .max(200)
     .refine((lines) => new Set(lines.map((line) => line.variantId)).size === lines.length, 'Duplicate variants'),
   cashReceivedCentavos: z.number().int().nonnegative(),
+  customerId: id.nullable().optional(),
 })
 
 export const posCashSaleCompleteResponseSchema = z.object({
@@ -68,6 +69,8 @@ export const posCashSaleCompleteResponseSchema = z.object({
   cashReceivedCentavos: z.number().int().nonnegative(),
   changeCentavos: z.number().int().nonnegative(),
   completedAt: timestamp,
+  customerId: id.nullable().optional(),
+  customerName: z.string().nullable().optional(),
 })
 
 export const salesContextSchema = z.object({
@@ -95,6 +98,9 @@ export const saleReceiptDetailSchema = z.object({
   locationName: z.string(),
   registerName: z.string(),
   employeeName: z.string(),
+  customerId: id.nullable().optional(),
+  customerName: z.string().nullable().optional(),
+  customerNumber: z.string().nullable().optional(),
   completedAt: timestamp,
   subtotalCentavos: z.number().int().nonnegative(),
   discountCentavos: z.number().int().nonnegative(),
