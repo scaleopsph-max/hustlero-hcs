@@ -22,6 +22,10 @@ import {
   transferContextSchema,
   transferCreateResponseSchema,
   employeeCreateResponseSchema,
+  paymentMethodCreateResponseSchema,
+  registerOperationsContextSchema,
+  registerSessionCloseResponseSchema,
+  registerSessionOpenResponseSchema,
   workforceContextSchema,
   onboardingResponseSchema,
   sessionContextResponseSchema,
@@ -232,6 +236,27 @@ const createRegister = vi.fn(async () => ({
   registerId: 'd0000000-0000-4000-8000-000000000001',
   status: 'created' as const,
 }))
+const loadRegisterOperations = vi.fn(async () => ({
+  paymentMethods: [],
+  employees: [],
+  registers: [],
+  recentSessions: [],
+}))
+const createPaymentMethod = vi.fn(async () => ({
+  paymentMethodId: 'e0000000-0000-4000-8000-000000000001',
+  status: 'created' as const,
+}))
+const openRegisterSession = vi.fn(async () => ({
+  registerSessionId: 'f0000000-0000-4000-8000-000000000001',
+  status: 'open' as const,
+}))
+const closeRegisterSession = vi.fn(async (_userId, _tenantId, sessionId, request) => ({
+  registerSessionId: sessionId,
+  status: 'closed' as const,
+  expectedCashCentavos: request.countedCashCentavos,
+  countedCashCentavos: request.countedCashCentavos,
+  varianceCentavos: 0,
+}))
 
 const authenticatedApp = createApp({
   verifyAccessToken: async (token) => (token === 'valid-token' ? { userId } : null),
@@ -281,6 +306,10 @@ const authenticatedApp = createApp({
   createLocation,
   createEmployee,
   createRegister,
+  loadRegisterOperations,
+  createPaymentMethod,
+  openRegisterSession,
+  closeRegisterSession,
 })
 
 const businessDetails = {
@@ -500,6 +529,10 @@ describe('API', () => {
       createLocation,
       createEmployee,
       createRegister,
+      loadRegisterOperations,
+      createPaymentMethod,
+      openRegisterSession,
+      closeRegisterSession,
     })
     const response = await multiTenantApp.request(
       '/v1/onboarding',
@@ -557,6 +590,10 @@ describe('API', () => {
       createLocation,
       createEmployee,
       createRegister,
+      loadRegisterOperations,
+      createPaymentMethod,
+      openRegisterSession,
+      closeRegisterSession,
     })
     const response = await employeeApp.request(
       '/v1/onboarding',
@@ -1304,5 +1341,91 @@ describe('API', () => {
       expect.any(String),
       bindings,
     )
+  })
+
+  it('loads payment methods and register sessions for the server-resolved tenant', async () => {
+    loadRegisterOperations.mockClear()
+    const response = await authenticatedApp.request(
+      '/v1/register-operations',
+      { headers: { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId } },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(registerOperationsContextSchema.safeParse(await response.json()).success).toBe(true)
+    expect(loadRegisterOperations).toHaveBeenCalledWith(userId, tenantId, bindings)
+  })
+
+  it('creates a payment method with an idempotent command', async () => {
+    createPaymentMethod.mockClear()
+    const request = { code: 'qr_ph', name: 'QR Ph', methodType: 'e_wallet' as const }
+    const response = await authenticatedApp.request(
+      '/v1/payment-methods',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'payment-method-001',
+        },
+        body: JSON.stringify(request),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(201)
+    expect(paymentMethodCreateResponseSchema.safeParse(await response.json()).success).toBe(true)
+    expect(createPaymentMethod).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      request,
+      'payment-method-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('opens and closes a register session using integer centavos', async () => {
+    openRegisterSession.mockClear()
+    closeRegisterSession.mockClear()
+    const sessionId = 'f0000000-0000-4000-8000-000000000001'
+    const openRequest = {
+      registerId: 'd0000000-0000-4000-8000-000000000001',
+      employeeId: 'c0000000-0000-4000-8000-000000000001',
+      openingCashCentavos: 50_000,
+    }
+    const opened = await authenticatedApp.request(
+      '/v1/register-sessions/open',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'register-open-001',
+        },
+        body: JSON.stringify(openRequest),
+      },
+      bindings,
+    )
+    expect(opened.status).toBe(201)
+    expect(registerSessionOpenResponseSchema.safeParse(await opened.json()).success).toBe(true)
+
+    const closed = await authenticatedApp.request(
+      `/v1/register-sessions/${sessionId}/close`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'register-close-001',
+        },
+        body: JSON.stringify({ countedCashCentavos: 50_000 }),
+      },
+      bindings,
+    )
+    expect(closed.status).toBe(200)
+    expect(registerSessionCloseResponseSchema.safeParse(await closed.json()).success).toBe(true)
   })
 })

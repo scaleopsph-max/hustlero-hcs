@@ -1,10 +1,10 @@
 # Project State
 
-Last updated: 2026-09-24
+Last updated: 2026-09-25
 
 ## Phase
 
-`PHASE 2 - CATALOG AND INVENTORY`
+`PHASE 3 - REGISTER AND SALES`
 
 ## Completed and verified
 
@@ -75,11 +75,13 @@ Last updated: 2026-09-24
 - Back Office `/transfers` now provides the first branch transfer workflow for source/destination locations and active catalog variants
 - Workforce migrations `20260924141108`, `20260924141519`, `20260924141803`, and `20260924142056` are applied; default staff roles and permissions, direct employee-role and branch assignments, bcrypt-hashed POS PINs, locations, registers, and idempotent owner commands are implemented for existing and future tenants
 - Back Office `/employees`, `/locations`, and `/registers` are connected to the authenticated workforce API
+- Register/payment migrations `20260924145650` and `20260924145806` are applied; tenant payment methods, one-open-session-per-register enforcement, immutable cash movements, supporting indexes, idempotent open/close commands, audit events, and outbox events are implemented
+- Back Office `/payment-methods` and `/register-sessions` provide payment configuration, assigned-employee register opening, closing cash count, and variance visibility
 
 ## Not started
 
 - Remaining onboarding steps and go-live validation
-- Remaining inventory workflows, register, and sales implementation
+- POS device activation, employee PIN session, and sales implementation
 - Staging and production environments
 
 ## Current blockers/gates
@@ -92,12 +94,12 @@ Last updated: 2026-09-24
 - Owner completed the business-question and feature-selection forms for `LOCAL RECIPE`
 - Manual catalog/product vertical slice: private Product → Variant → SKU → Barcode schema, tenant-safe/idempotent API commands, product-grain list, editable product detail, and nested add/edit/deactivate variant flow are implemented and verified in development
 - Opening inventory per branch and variant is implemented and connected to the onboarding checklist; the authenticated `/inventory/opening` screen was verified with the saved `LOCAL RECIPE` catalog without mutating stock
-- Development API Worker version `29071a0c-59d9-4138-a7e4-d95963e8fddc` is deployed with inventory, purchasing, transfers, and workforce setup APIs
+- Development API Worker version `7214afe5-c8c4-41e6-b1f1-255c1832221c` is deployed with inventory, purchasing, transfers, workforce, payment-method, and register-session APIs
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Verify employee, location, and register creation with controlled development fixtures; then continue to register sessions, payment methods, and the sales/POS engine.
+Create the first development register, verify one open/close session with the existing test employee, then implement POS device activation and employee PIN authentication before the sales engine.
 
 ## Production state
 

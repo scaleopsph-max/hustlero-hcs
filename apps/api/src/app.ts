@@ -25,6 +25,13 @@ import {
   registerCreateRequestSchema,
   registerCreateResponseSchema,
   workforceContextSchema,
+  paymentMethodCreateRequestSchema,
+  paymentMethodCreateResponseSchema,
+  registerOperationsContextSchema,
+  registerSessionCloseRequestSchema,
+  registerSessionCloseResponseSchema,
+  registerSessionOpenRequestSchema,
+  registerSessionOpenResponseSchema,
   apiErrorResponseSchema,
   catalogProductCreateRequestSchema,
   catalogProductCreateResponseSchema,
@@ -101,6 +108,16 @@ import {
 } from './onboarding-repository'
 import { loadSessionAccessFromPostgres, type SessionAccessLoader } from './session-repository'
 import {
+  closeRegisterSessionInPostgres,
+  createPaymentMethodInPostgres,
+  loadRegisterOperationsFromPostgres,
+  openRegisterSessionInPostgres,
+  type PaymentMethodCreator,
+  type RegisterOperationsLoader,
+  type RegisterSessionCloser,
+  type RegisterSessionOpener,
+} from './register-repository'
+import {
   createPurchaseOrderInPostgres,
   createSupplierInPostgres,
   loadPurchasingFromPostgres,
@@ -166,6 +183,10 @@ interface AppDependencies {
   createLocation: LocationCreator
   createEmployee: EmployeeCreator
   createRegister: RegisterCreator
+  loadRegisterOperations: RegisterOperationsLoader
+  createPaymentMethod: PaymentMethodCreator
+  openRegisterSession: RegisterSessionOpener
+  closeRegisterSession: RegisterSessionCloser
 }
 
 const defaultDependencies: AppDependencies = {
@@ -201,6 +222,10 @@ const defaultDependencies: AppDependencies = {
   createLocation: createLocationInPostgres,
   createEmployee: createEmployeeInPostgres,
   createRegister: createRegisterInPostgres,
+  loadRegisterOperations: loadRegisterOperationsFromPostgres,
+  createPaymentMethod: createPaymentMethodInPostgres,
+  openRegisterSession: openRegisterSessionInPostgres,
+  closeRegisterSession: closeRegisterSessionInPostgres,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -2066,6 +2091,262 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
   app.post('/v1/workforce/locations', (context) => workforceCommand(context, 'location'))
   app.post('/v1/workforce/employees', (context) => workforceCommand(context, 'employee'))
   app.post('/v1/workforce/registers', (context) => workforceCommand(context, 'register'))
+
+  app.get('/v1/register-operations', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'REGISTER_ACCESS_DENIED',
+            message: 'Sign in and select a business to view register operations.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    try {
+      return context.json(
+        registerOperationsContextSchema.parse(
+          await dependencies.loadRegisterOperations(resolved.userId, resolved.tenantId, context.env),
+        ),
+      )
+    } catch (error) {
+      if (postgresErrorCode(error) === 'HCS71')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'REGISTER_ACCESS_DENIED',
+              message: 'You do not have register operations permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      throw error
+    }
+  })
+
+  const registerCommandContext = async (context: Context<{ Bindings: Bindings }>) => {
+    const resolved = await resolvePurchasingTenant(context)
+    const key = context.req.header('idempotency-key')
+    if (!resolved)
+      return {
+        error: context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'REGISTER_ACCESS_DENIED',
+              message: 'Sign in and select a business first.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        ),
+      }
+    if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+      return {
+        error: context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'IDEMPOTENCY_KEY_REQUIRED',
+              message: 'A valid Idempotency-Key is required.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          400,
+        ),
+      }
+    return { resolved, key }
+  }
+
+  app.post('/v1/payment-methods', async (context) => {
+    const command = await registerCommandContext(context)
+    if ('error' in command) return command.error
+    const parsed = paymentMethodCreateRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_PAYMENT_METHOD',
+            message: 'Check the payment method details.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      return context.json(
+        paymentMethodCreateResponseSchema.parse(
+          await dependencies.createPaymentMethod(
+            command.resolved.userId,
+            command.resolved.tenantId,
+            parsed.data,
+            command.key,
+            await requestHash(parsed.data),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+        201,
+      )
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS71')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'REGISTER_ACCESS_DENIED',
+              message: 'Owner access is required.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      if (code === 'HCS73')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'PAYMENT_METHOD_CONFLICT',
+              message: 'That payment method code is already in use.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      throw error
+    }
+  })
+
+  app.post('/v1/register-sessions/open', async (context) => {
+    const command = await registerCommandContext(context)
+    if ('error' in command) return command.error
+    const parsed = registerSessionOpenRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_REGISTER_OPEN',
+            message: 'Select a register, assigned employee, and valid opening cash.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      return context.json(
+        registerSessionOpenResponseSchema.parse(
+          await dependencies.openRegisterSession(
+            command.resolved.userId,
+            command.resolved.tenantId,
+            parsed.data,
+            command.key,
+            await requestHash(parsed.data),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+        201,
+      )
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS71')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'REGISTER_ACCESS_DENIED',
+              message: 'Owner access is required.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      if (code === 'HCS77')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'REGISTER_ALREADY_OPEN',
+              message: 'This register already has an open session.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      if (code === 'HCS75' || code === 'HCS76')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'REGISTER_REFERENCE_INVALID',
+              message: 'The register or assigned employee is unavailable.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          404,
+        )
+      throw error
+    }
+  })
+
+  app.post('/v1/register-sessions/:sessionId/close', async (context) => {
+    const command = await registerCommandContext(context)
+    if ('error' in command) return command.error
+    const sessionId = context.req.param('sessionId')
+    const parsed = registerSessionCloseRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sessionId) ||
+      !parsed.success
+    )
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_REGISTER_CLOSE',
+            message: 'Provide a valid session and counted cash.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      return context.json(
+        registerSessionCloseResponseSchema.parse(
+          await dependencies.closeRegisterSession(
+            command.resolved.userId,
+            command.resolved.tenantId,
+            sessionId,
+            parsed.data,
+            command.key,
+            await requestHash({ sessionId, ...parsed.data }),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+      )
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS71')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'REGISTER_ACCESS_DENIED',
+              message: 'Owner access is required.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      if (code === 'HCS78')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'REGISTER_SESSION_NOT_OPEN',
+              message: 'The register session is no longer open.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      throw error
+    }
+  })
 
   app.get('/v1/approvals', async (context) => {
     const accessToken = readBearerToken(context.req.header('authorization'))

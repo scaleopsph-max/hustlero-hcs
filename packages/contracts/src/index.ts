@@ -105,6 +105,20 @@ export {
   type TransferReceiveRequest,
 } from './transfers'
 export {
+  paymentMethodCreateRequestSchema,
+  paymentMethodCreateResponseSchema,
+  paymentMethodTypeSchema,
+  registerOperationsContextSchema,
+  registerSessionCloseRequestSchema,
+  registerSessionCloseResponseSchema,
+  registerSessionOpenRequestSchema,
+  registerSessionOpenResponseSchema,
+  type PaymentMethodCreateRequest,
+  type RegisterOperationsContext,
+  type RegisterSessionCloseRequest,
+  type RegisterSessionOpenRequest,
+} from './registers'
+export {
   employeeCreateRequestSchema,
   employeeCreateResponseSchema,
   locationCreateRequestSchema,

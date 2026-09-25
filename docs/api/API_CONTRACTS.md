@@ -110,6 +110,8 @@ Current inventory visibility implementation:
 
 ### Registers and sales
 
+- `GET /v1/register-operations`
+- `POST /v1/payment-methods`
 - `POST /v1/register-sessions/open`
 - `GET /v1/register-sessions/current`
 - `POST /v1/register-sessions/{id}/cash-movements`
@@ -121,6 +123,14 @@ Current inventory visibility implementation:
 - `GET /v1/receipts`
 - `POST /v1/sales/{id}/refunds`
 - `POST /v1/sales/{id}/void`
+
+Current register foundation:
+
+- `GET /v1/register-operations` returns active payment methods, active employees and branch assignments, registers and their current open session, plus the latest 50 sessions.
+- Every tenant starts with Cash, E-wallet, Bank Transfer, and Card Terminal methods. Additional manual methods are owner-created through an idempotent command; no direct payment-provider charging occurs.
+- `POST /v1/register-sessions/open` accepts a register, an active employee assigned to that register's location, and integer-centavo opening cash. It atomically opens the session and appends the opening cash movement.
+- Only one open session may exist per register. `POST /v1/register-sessions/{id}/close` calculates expected cash from the append-only cash ledger, records counted cash and variance, and marks a non-zero variance as an explicit exception.
+- Open/close commands are currently Back Office owner operations for controlled development. Device activation and employee-PIN POS session authorization must be completed before exposing these operations in the POS application.
 
 ### Customers, controls, and reporting
 
