@@ -43,14 +43,14 @@ select is((select count(*)::integer from app.refunds),1,'idempotent retry create
 select throws_ok($$select app.reverse_sale('19100000-0000-4000-8000-000000000001','29100000-0000-4000-8000-000000000001',(select id from app.sales order by created_at limit 1),'refund',jsonb_build_array(jsonb_build_object('saleLineId',(select id from app.sale_lines order by created_at limit 1),'quantityMilli',4000,'returnToStock',true)),'Excess return','reversal-refund-two','refund-two-hash','refund-two-request')$$,'HCSA5','Refund quantity exceeds the remaining quantity','over-refund is rejected');
 
 select lives_ok($$select app.complete_pos_cash_sale(repeat('d',64),jsonb_build_array(jsonb_build_object('variantId','89100000-0000-4000-8000-000000000001','quantityMilli',2000)),200000,'reversal-sale-two','sale-two-hash','sale-two-request')$$,'second cash sale completes');
-select lives_ok($$select app.reverse_sale('19100000-0000-4000-8000-000000000001','29100000-0000-4000-8000-000000000001',(select id from app.sales order by created_at desc limit 1),'void',null,'Duplicate sale','reversal-void-one','void-hash','void-request')$$,'completed sale is voided');
-select is((select status from app.sales order by created_at desc limit 1),'voided','void updates sale status');
+select lives_ok($$select app.reverse_sale('19100000-0000-4000-8000-000000000001','29100000-0000-4000-8000-000000000001',(select id from app.sales where receipt_number like '%-000002'),'void',null,'Duplicate sale','reversal-void-one','void-hash','void-request')$$,'completed sale is voided');
+select is((select status from app.sales where receipt_number like '%-000002'),'voided','void updates sale status');
 select is((select amount from app.refunds where reversal_type='void'),1798.00::numeric,'void reverses full sale amount');
 select is((select on_hand from app.inventory_balances),7.000::numeric,'void restores all second-sale stock');
 select is((select count(*)::integer from app.payment_reversals),2,'payment reversals are linked to both actions');
 select is((select count(*)::integer from app.cash_movements where movement_type='cash_refund'),2,'refund and void both append cash reversals');
-select is((app.load_sale_receipt('19100000-0000-4000-8000-000000000001','29100000-0000-4000-8000-000000000001',(select id from app.sales order by created_at desc limit 1))->>'status'),'voided','receipt detail exposes final status');
-select is((app.list_sales('19100000-0000-4000-8000-000000000001','29100000-0000-4000-8000-000000000001',100)->'sales'->0->>'netCentavos')::bigint,0::bigint,'sales list exposes zero net for void');
+select is((app.load_sale_receipt('19100000-0000-4000-8000-000000000001','29100000-0000-4000-8000-000000000001',(select id from app.sales where receipt_number like '%-000002'))->>'status'),'voided','receipt detail exposes final status');
+select is((select (entry->>'netCentavos')::bigint from jsonb_array_elements(app.list_sales('19100000-0000-4000-8000-000000000001','29100000-0000-4000-8000-000000000001',100)->'sales') entry where entry->>'receiptNumber' like '%-000002'),0::bigint,'sales list exposes zero net for void');
 
 select * from finish();
 rollback;
