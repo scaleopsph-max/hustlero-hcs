@@ -92,7 +92,10 @@ Last updated: 2026-09-25
 - Back Office sales rows open immutable receipt details with print layout, original payment snapshots, server-computed refundable quantities, partial/item refund controls, void controls, and reversal history
 - Customer migrations `20260925082615` and `20260925142109` are applied to development; customer groups, counters, profiles, consent fields, and append-only notes are private, RLS-enabled, tenant-indexed, and inaccessible through direct Worker table reads
 - Customer APIs support tenant search, create/update, profile activity, append-only notes, POS search/create, and atomic sale linkage with server-derived spend, visit, and refund history
-- Back Office customer directory/detail screens and POS customer selection/quick-create are implemented for final build and manual verification
+- Back Office customer directory/detail screens and POS customer selection/quick-create are implemented and passed the local UI smoke test
+- GitHub CI run `36147352776` passed formatting, lint, strict typecheck, 58 Vitest cases, all application builds, a fresh Supabase reset, and the customer pgTAP suite
+- Development API Worker version `55928a9e-0ead-40e0-b531-27d6bba69922` is deployed with the customer and customer-linked-sale endpoints
+- Post-migration Supabase advisor verification confirmed the five new customer foreign-key index findings are resolved; the private deny-all RLS design continues to produce the expected informational no-policy notices
 
 ## Not started
 
@@ -114,12 +117,12 @@ Last updated: 2026-09-25
 - POS device activation, PIN session, and the first real cash sale were completed and verified by the owner
 - Receipt detail/reprint and cash refund/void implementation is deployed and manually verified with a controlled partial refund: receipt `MAIN-20260925-000001` is partially refunded by PHP 999, net sales are PHP 4,995, and returned XL inventory increased from 4 to 5
 - The first Main Register session was closed and reconciled successfully: PHP 1,000 opening cash, PHP 5,995 expected cash, PHP 5,995 counted cash, and zero variance
-- Phase 4 customer profiles and sale linkage are in final build, deployment, and manual verification
+- Phase 4 customer profiles and sale linkage are deployed and awaiting the owner's controlled customer-linked sale verification
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Deploy the updated development Worker, create one customer from POS or Back Office, complete one customer-linked test sale, then verify the customer profile purchase history, net spend, visit count, receipt linkage, and tenant isolation.
+Create one customer from POS or Back Office, open a new register session, complete one customer-linked test sale, then verify the customer profile purchase history, net spend, visit count, receipt linkage, and tenant isolation.
 
 ## Production state
 
