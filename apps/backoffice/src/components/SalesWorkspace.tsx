@@ -2,6 +2,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { Receipt } from 'lucide-react'
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { salesContextSchema, sessionContextResponseSchema, type SalesContext } from '@hcs/contracts'
 import { Chip, Glass, formatPeso } from '@hcs/ui'
@@ -57,7 +58,7 @@ export function SalesWorkspace() {
     )
   if (error) return <div className="border-l-2 border-red-600 bg-red-50 p-4 text-sm text-red-800">{error}</div>
 
-  const gross = data.sales.reduce((sum, sale) => sum + sale.totalCentavos, 0)
+  const netSales = data.sales.reduce((sum, sale) => sum + sale.netCentavos, 0)
   return (
     <div className="grid gap-5">
       <div className="grid gap-3 sm:grid-cols-2">
@@ -68,8 +69,8 @@ export function SalesWorkspace() {
           </div>
         </div>
         <div className="border border-ink-900/10 bg-white p-5">
-          <div className="text-sm text-ink-500">Recorded sales</div>
-          <div className="mt-1 font-display text-3xl font-bold">{formatPeso(gross)}</div>
+          <div className="text-sm text-ink-500">Net recorded sales</div>
+          <div className="mt-1 font-display text-3xl font-bold">{formatPeso(netSales)}</div>
         </div>
       </div>
       <Glass variant="light" className="overflow-hidden">
@@ -82,14 +83,25 @@ export function SalesWorkspace() {
         </div>
         {data.sales.length ? (
           data.sales.map((sale) => (
-            <div
+            <Link
               key={sale.id}
-              className="grid grid-cols-[1.3fr_1fr_1fr_1fr_0.8fr] items-center gap-3 border-b border-ink-900/10 px-5 py-4 text-sm last:border-0"
+              href={`/sales/${sale.id}`}
+              className="grid grid-cols-[1.3fr_1fr_1fr_1fr_0.8fr] items-center gap-3 border-b border-ink-900/10 px-5 py-4 text-sm transition-colors last:border-0 hover:bg-ink-900/[0.03] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-gold-500"
             >
               <div>
                 <div className="font-semibold">{sale.receiptNumber}</div>
                 <div className="mt-1">
-                  <Chip tone="success">{sale.status}</Chip>
+                  <Chip
+                    tone={
+                      sale.status === 'completed'
+                        ? 'success'
+                        : sale.status === 'partially_refunded'
+                          ? 'warning'
+                          : 'neutral'
+                    }
+                  >
+                    {sale.status.replace('_', ' ')}
+                  </Chip>
                 </div>
               </div>
               <span>
@@ -103,8 +115,13 @@ export function SalesWorkspace() {
                   new Date(sale.completedAt),
                 )}
               </span>
-              <strong className="text-right">{formatPeso(sale.totalCentavos)}</strong>
-            </div>
+              <div className="text-right">
+                <strong>{formatPeso(sale.netCentavos)}</strong>
+                {sale.refundedCentavos > 0 ? (
+                  <div className="mt-1 text-xs text-ink-500">Refunded {formatPeso(sale.refundedCentavos)}</div>
+                ) : null}
+              </div>
+            </Link>
           ))
         ) : (
           <div className="grid place-items-center gap-3 px-5 py-16 text-center">

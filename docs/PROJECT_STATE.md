@@ -87,11 +87,15 @@ Last updated: 2026-09-25
 - A POS employee can open only the activated device's register, with starting cash recorded in the immutable cash ledger
 - Cash checkout is server-priced, atomic, and idempotent: sale, line snapshots, tender/change, inventory balance and `SALE` movement, `cash_sale` movement, audit event, outbox event, and branch daily receipt number commit together
 - Back Office `/sales` lists completed tenant receipts with branch, register, cashier, item count, timestamp, and total
+- The owner completed and verified the first live POS cash transaction: receipt `MAIN-20260925-000001` recorded ₱5,994.00 for six XL units, and branch stock moved from 10 to 4 with an immutable `SALE -6` movement
+- Sales reversal migrations `20260925073433` and `20260925075533` are applied to development; refund headers/items and payment reversals are private, RLS-enabled, append-only, indexed for their foreign-key access paths, and inaccessible by direct Worker table reads
+- Back Office sales rows open immutable receipt details with print layout, original payment snapshots, server-computed refundable quantities, partial/item refund controls, void controls, and reversal history
 
 ## Not started
 
 - Remaining onboarding steps and go-live validation
-- Refund, void, receipt reprint/detail, and non-cash tender implementation
+- Non-cash and split tender implementation
+- Cross-session cash refunds after the original register has closed
 - Staging and production environments
 
 ## Current blockers/gates
@@ -104,12 +108,13 @@ Last updated: 2026-09-25
 - Owner completed the business-question and feature-selection forms for `LOCAL RECIPE`
 - Manual catalog/product vertical slice: private Product → Variant → SKU → Barcode schema, tenant-safe/idempotent API commands, product-grain list, editable product detail, and nested add/edit/deactivate variant flow are implemented and verified in development
 - Opening inventory per branch and variant is implemented and connected to the onboarding checklist; the authenticated `/inventory/opening` screen was verified with the saved `LOCAL RECIPE` catalog without mutating stock
-- POS device activation and PIN session were completed by the owner; the first real cash sale remains a deliberate manual verification step
+- POS device activation, PIN session, and the first real cash sale were completed and verified by the owner
+- Receipt detail/reprint and cash refund/void implementation is in final build, deployment, and manual verification
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Deploy the updated development Worker, open the POS register, complete one guided cash test sale, and verify its receipt, stock deduction, cash movement, and Back Office Sales row before implementing refunds and voids.
+Deploy the updated development Worker, verify the receipt detail/reprint screen, then record one controlled partial refund while the original register session remains open and confirm stock, payment, cash, and status reversals.
 
 ## Production state
 

@@ -31,6 +31,8 @@ import {
   posRegisterOpenResponseSchema,
   posSalesContextSchema,
   salesContextSchema,
+  saleReceiptDetailSchema,
+  saleReversalResponseSchema,
   registerOperationsContextSchema,
   registerSessionCloseResponseSchema,
   registerSessionOpenResponseSchema,
@@ -360,6 +362,67 @@ const completePosCashSale = vi.fn(async () => ({
   completedAt: '2026-09-25T02:05:00.000Z',
 }))
 const loadSales = vi.fn(async () => ({ sales: [] }))
+const saleReceipt = {
+  id: '12000000-0000-4000-8000-000000000001',
+  receiptNumber: 'MAIN-20260925-000001',
+  status: 'completed' as const,
+  locationName: 'Main Store',
+  registerName: 'Register 1',
+  employeeName: 'Cashier One',
+  completedAt: '2026-09-25T02:05:00.000Z',
+  subtotalCentavos: 89_900,
+  discountCentavos: 0,
+  taxCentavos: 0,
+  totalCentavos: 89_900,
+  refundedCentavos: 0,
+  refundableCentavos: 89_900,
+  canReverse: true,
+  reversalBlockedReason: null,
+  lines: [
+    {
+      id: '13000000-0000-4000-8000-000000000001',
+      productName: 'Triple Black',
+      variantName: 'Small',
+      sku: 'TSH-BLK-S',
+      quantityMilli: 1000,
+      refundedQuantityMilli: 0,
+      refundableQuantityMilli: 1000,
+      unitPriceCentavos: 89_900,
+      lineTotalCentavos: 89_900,
+    },
+  ],
+  payments: [
+    {
+      id: '14000000-0000-4000-8000-000000000001',
+      methodName: 'Cash',
+      methodType: 'cash' as const,
+      amountCentavos: 89_900,
+      tenderedCentavos: 100_000,
+      changeCentavos: 10_100,
+      refundedCentavos: 0,
+    },
+  ],
+  reversals: [],
+}
+const loadSaleReceipt = vi.fn(async () => saleReceipt)
+const refundSale = vi.fn(async () => ({
+  reversalId: '15000000-0000-4000-8000-000000000001',
+  saleId: saleReceipt.id,
+  receiptNumber: saleReceipt.receiptNumber,
+  type: 'refund' as const,
+  saleStatus: 'refunded' as const,
+  amountCentavos: 89_900,
+  completedAt: '2026-09-25T03:00:00.000Z',
+}))
+const voidSale = vi.fn(async () => ({
+  reversalId: '16000000-0000-4000-8000-000000000001',
+  saleId: saleReceipt.id,
+  receiptNumber: saleReceipt.receiptNumber,
+  type: 'void' as const,
+  saleStatus: 'voided' as const,
+  amountCentavos: 89_900,
+  completedAt: '2026-09-25T03:00:00.000Z',
+}))
 
 const authenticatedApp = createApp({
   verifyAccessToken: async (token) => (token === 'valid-token' ? { userId } : null),
@@ -421,6 +484,9 @@ const authenticatedApp = createApp({
   openPosRegisterSession,
   completePosCashSale,
   loadSales,
+  loadSaleReceipt,
+  refundSale,
+  voidSale,
 })
 
 const businessDetails = {
@@ -652,6 +718,9 @@ describe('API', () => {
       openPosRegisterSession,
       completePosCashSale,
       loadSales,
+      loadSaleReceipt,
+      refundSale,
+      voidSale,
     })
     const response = await multiTenantApp.request(
       '/v1/onboarding',
@@ -721,6 +790,9 @@ describe('API', () => {
       openPosRegisterSession,
       completePosCashSale,
       loadSales,
+      loadSaleReceipt,
+      refundSale,
+      voidSale,
     })
     const response = await employeeApp.request(
       '/v1/onboarding',
@@ -1740,5 +1812,82 @@ describe('API', () => {
     expect(response.status).toBe(200)
     expect(salesContextSchema.safeParse(await response.json()).success).toBe(true)
     expect(loadSales).toHaveBeenCalledWith(userId, tenantId, bindings)
+  })
+
+  it('loads an immutable receipt detail for an authenticated Back Office user', async () => {
+    loadSaleReceipt.mockClear()
+    const response = await authenticatedApp.request(
+      `/v1/sales/${saleReceipt.id}`,
+      { headers: { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId } },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(saleReceiptDetailSchema.safeParse(await response.json()).success).toBe(true)
+    expect(loadSaleReceipt).toHaveBeenCalledWith(userId, tenantId, saleReceipt.id, bindings)
+  })
+
+  it('submits only line quantities and a reason for a sale refund', async () => {
+    refundSale.mockClear()
+    const request = {
+      reason: 'Customer returned the item',
+      lines: [{ saleLineId: saleReceipt.lines[0]!.id, quantityMilli: 1000, returnToStock: true }],
+    }
+    const response = await authenticatedApp.request(
+      `/v1/sales/${saleReceipt.id}/refunds`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'x-tenant-id': tenantId,
+          'content-type': 'application/json',
+          'idempotency-key': 'sale-refund-000001',
+        },
+        body: JSON.stringify({ ...request, amountCentavos: 1 }),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(201)
+    expect(saleReversalResponseSchema.safeParse(await response.json()).success).toBe(true)
+    expect(refundSale).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      saleReceipt.id,
+      request,
+      'sale-refund-000001',
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('voids a completed sale with an idempotent reason-only command', async () => {
+    voidSale.mockClear()
+    const request = { reason: 'Duplicate transaction' }
+    const response = await authenticatedApp.request(
+      `/v1/sales/${saleReceipt.id}/void`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'x-tenant-id': tenantId,
+          'content-type': 'application/json',
+          'idempotency-key': 'sale-void-0000001',
+        },
+        body: JSON.stringify(request),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(201)
+    expect(saleReversalResponseSchema.safeParse(await response.json()).success).toBe(true)
+    expect(voidSale).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      saleReceipt.id,
+      request,
+      'sale-void-0000001',
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+      expect.any(String),
+      bindings,
+    )
   })
 })

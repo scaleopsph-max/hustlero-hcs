@@ -40,6 +40,10 @@ import {
   posRegisterOpenResponseSchema,
   posSalesContextSchema,
   salesContextSchema,
+  saleReceiptDetailSchema,
+  saleRefundRequestSchema,
+  saleVoidRequestSchema,
+  saleReversalResponseSchema,
   registerOperationsContextSchema,
   registerSessionCloseRequestSchema,
   registerSessionCloseResponseSchema,
@@ -90,11 +94,17 @@ import {
   completePosCashSaleInPostgres,
   loadPosSalesContextFromPostgres,
   loadSalesFromPostgres,
+  loadSaleReceiptFromPostgres,
+  refundSaleInPostgres,
+  voidSaleInPostgres,
   openPosRegisterSessionInPostgres,
   type PosCashSaleCompleter,
   type PosRegisterSessionOpener,
   type PosSalesContextLoader,
   type SalesLoader,
+  type SaleReceiptLoader,
+  type SaleRefunder,
+  type SaleVoider,
 } from './pos-sales-repository'
 import {
   decideApprovalRequestInPostgres,
@@ -228,6 +238,9 @@ interface AppDependencies {
   openPosRegisterSession: PosRegisterSessionOpener
   completePosCashSale: PosCashSaleCompleter
   loadSales: SalesLoader
+  loadSaleReceipt: SaleReceiptLoader
+  refundSale: SaleRefunder
+  voidSale: SaleVoider
 }
 
 const defaultDependencies: AppDependencies = {
@@ -275,6 +288,9 @@ const defaultDependencies: AppDependencies = {
   openPosRegisterSession: openPosRegisterSessionInPostgres,
   completePosCashSale: completePosCashSaleInPostgres,
   loadSales: loadSalesFromPostgres,
+  loadSaleReceipt: loadSaleReceiptFromPostgres,
+  refundSale: refundSaleInPostgres,
+  voidSale: voidSaleInPostgres,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -2822,6 +2838,200 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
           403,
         )
       throw error
+    }
+  })
+
+  const saleReversalError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
+    const code = postgresErrorCode(error)
+    const requestId = context.get('requestId')
+    if (code === 'HCSA0')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'SALES_ACCESS_DENIED', message: 'Your role cannot reverse this sale.', requestId },
+        }),
+        403,
+      )
+    if (code === 'HCSA1' || code === 'HCSA4')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'SALE_NOT_FOUND', message: 'The receipt or sale line was not found.', requestId },
+        }),
+        404,
+      )
+    if (code === 'HCSA2')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'INVALID_SALE_REVERSAL', message: 'Check the reason and refund quantities.', requestId },
+        }),
+        400,
+      )
+    if (code === 'HCS08')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_CONFLICT',
+            message: 'This request key was already used for another reversal.',
+            requestId,
+          },
+        }),
+        409,
+      )
+    if (code && ['HCSA3', 'HCSA5', 'HCSA6', 'HCSA7'].includes(code))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'SALE_REVERSAL_CONFLICT',
+            message: error instanceof Error ? error.message : 'This receipt cannot be reversed.',
+            requestId,
+          },
+        }),
+        409,
+      )
+    throw error
+  }
+
+  app.get('/v1/sales/:saleId', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    const saleId = context.req.param('saleId')
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'SALES_ACCESS_DENIED',
+            message: 'Sign in and select a business to view this receipt.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    if (!uuidPattern.test(saleId))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'SALE_NOT_FOUND', message: 'The receipt was not found.', requestId: context.get('requestId') },
+        }),
+        404,
+      )
+    try {
+      return context.json(
+        saleReceiptDetailSchema.parse(
+          await dependencies.loadSaleReceipt(resolved.userId, resolved.tenantId, saleId, context.env),
+        ),
+      )
+    } catch (error) {
+      return saleReversalError(context, error)
+    }
+  })
+
+  app.post('/v1/sales/:saleId/refunds', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    const saleId = context.req.param('saleId')
+    const key = context.req.header('idempotency-key')
+    const parsed = saleRefundRequestSchema.safeParse(await context.req.json().catch(() => null))
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'SALES_ACCESS_DENIED',
+            message: 'Sign in and select a business before refunding a sale.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    if (!uuidPattern.test(saleId))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'SALE_NOT_FOUND', message: 'The receipt was not found.', requestId: context.get('requestId') },
+        }),
+        404,
+      )
+    if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key) || !parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_SALE_REFUND',
+            message: 'Select a valid quantity and enter a reason.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      return context.json(
+        saleReversalResponseSchema.parse(
+          await dependencies.refundSale(
+            resolved.userId,
+            resolved.tenantId,
+            saleId,
+            parsed.data,
+            key,
+            await requestHash(parsed.data),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+        201,
+      )
+    } catch (error) {
+      return saleReversalError(context, error)
+    }
+  })
+
+  app.post('/v1/sales/:saleId/void', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    const saleId = context.req.param('saleId')
+    const key = context.req.header('idempotency-key')
+    const parsed = saleVoidRequestSchema.safeParse(await context.req.json().catch(() => null))
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'SALES_ACCESS_DENIED',
+            message: 'Sign in and select a business before voiding a sale.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    if (!uuidPattern.test(saleId))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'SALE_NOT_FOUND', message: 'The receipt was not found.', requestId: context.get('requestId') },
+        }),
+        404,
+      )
+    if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key) || !parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_SALE_VOID',
+            message: 'Enter a valid void reason.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      return context.json(
+        saleReversalResponseSchema.parse(
+          await dependencies.voidSale(
+            resolved.userId,
+            resolved.tenantId,
+            saleId,
+            parsed.data,
+            key,
+            await requestHash(parsed.data),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+        201,
+      )
+    } catch (error) {
+      return saleReversalError(context, error)
     }
   })
 

@@ -148,6 +148,11 @@ Current POS cash-sales implementation:
 - PostgreSQL locks the register session, variants, and inventory balances; recalculates retail totals; rejects unavailable stock; and atomically writes the sale, immutable line snapshots, payment tender/change, inventory and cash ledger rows, audit event, outbox event, and branch daily receipt number.
 - Identical retries return the stored receipt. Reusing a key with a different request returns 409. Expired POS sessions return 401; closed registers and insufficient stock return 409.
 - `GET /v1/sales` requires a bearer-authenticated server-resolved tenant with `sales.read` access and returns the latest 100 tenant receipts for Back Office.
+- `GET /v1/sales/{id}` returns immutable receipt, line, payment, and linked reversal snapshots plus server-computed remaining refundable quantities.
+- `POST /v1/sales/{id}/refunds` accepts only sale-line IDs, integer-thousandth quantities, return-to-stock choices, and a reason. PostgreSQL calculates the amount from the original sale snapshots and atomically appends the refund, item, payment, inventory, cash, audit, and outbox records.
+- `POST /v1/sales/{id}/void` accepts only a reason and reverses every remaining line of a completed cash sale. The original receipt is retained and marked `voided`.
+- Cash refunds and voids currently require the original register session to remain open. A closed register is never silently changed after reconciliation; cross-session refund settlement is a later explicit workflow.
+- Back Office receipt reprint uses the immutable receipt detail and a print-specific layout. Printing never edits the original sale.
 
 ### Customers, controls, and reporting
 
