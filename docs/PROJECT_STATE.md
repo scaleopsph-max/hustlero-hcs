@@ -110,11 +110,12 @@ Last updated: 2026-09-25
 - Opening inventory per branch and variant is implemented and connected to the onboarding checklist; the authenticated `/inventory/opening` screen was verified with the saved `LOCAL RECIPE` catalog without mutating stock
 - POS device activation, PIN session, and the first real cash sale were completed and verified by the owner
 - Receipt detail/reprint and cash refund/void implementation is deployed and manually verified with a controlled partial refund: receipt `MAIN-20260925-000001` is partially refunded by PHP 999, net sales are PHP 4,995, and returned XL inventory increased from 4 to 5
+- The first Main Register session was closed and reconciled successfully: PHP 1,000 opening cash, PHP 5,995 expected cash, PHP 5,995 counted cash, and zero variance
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Close and reconcile the active Main Register session with an expected counted cash total of PHP 5,995 (PHP 1,000 opening cash + PHP 5,994 cash sale - PHP 999 cash refund), then verify zero variance and the immutable closing ledger entries.
+Begin Phase 4 with the Customers vertical slice: tenant-isolated customer profiles, branch-ready customer search, sale linkage, consent-aware contact fields, API authorization, Back Office UI, tests, and documentation.
 
 ## Production state
 
