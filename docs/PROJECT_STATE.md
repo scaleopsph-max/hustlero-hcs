@@ -96,6 +96,13 @@ Last updated: 2026-09-25
 - GitHub CI run `36147352776` passed formatting, lint, strict typecheck, 58 Vitest cases, all application builds, a fresh Supabase reset, and the customer pgTAP suite
 - Development API Worker version `55928a9e-0ead-40e0-b531-27d6bba69922` is deployed with the customer and customer-linked-sale endpoints
 - Post-migration Supabase advisor verification confirmed the five new customer foreign-key index findings are resolved; the private deny-all RLS design continues to produce the expected informational no-policy notices
+- The owner verified the customer flow and customer-linked POS transaction result in development
+- Loyalty migration `20260925150330` is applied to development; tenant policies default to disabled with no assumed earning rate, while accounts and transactions remain private, RLS-enabled, and ledger-driven
+- Customer-linked POS sales earn points only when the owner enables a valid policy; retries do not double-earn, and partial/full refunds reverse points proportionally using the original sale-rate snapshot
+- Back Office `/loyalty`, customer profile loyalty balance/activity, POS customer balances, checkout earning feedback, and receipt earned/reversed totals are implemented and visually smoke-tested
+- GitHub CI run `36151218756` passed formatting, lint, strict typecheck, 59 Vitest cases, all application builds, a fresh Supabase reset, and all loyalty pgTAP assertions
+- Development API Worker version `6a3b4501-344a-4ada-af97-c84f1b630f36` is deployed with loyalty policy, earning, balance, activity, and refund-reversal endpoints
+- Post-migration Supabase advisors reported no new unindexed loyalty foreign keys; the expected private-schema no-policy notices and existing leaked-password warning remain tracked for hardening
 
 ## Not started
 
@@ -117,12 +124,13 @@ Last updated: 2026-09-25
 - POS device activation, PIN session, and the first real cash sale were completed and verified by the owner
 - Receipt detail/reprint and cash refund/void implementation is deployed and manually verified with a controlled partial refund: receipt `MAIN-20260925-000001` is partially refunded by PHP 999, net sales are PHP 4,995, and returned XL inventory increased from 4 to 5
 - The first Main Register session was closed and reconciled successfully: PHP 1,000 opening cash, PHP 5,995 expected cash, PHP 5,995 counted cash, and zero variance
-- Phase 4 customer profiles and sale linkage are deployed and awaiting the owner's controlled customer-linked sale verification
+- Phase 4 customer profiles and sale linkage are deployed and owner-verified
+- Loyalty earning and refund reversal are deployed; owner policy configuration and one controlled customer-linked earn/refund verification remain
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Create one customer from POS or Back Office, open a new register session, complete one customer-linked test sale, then verify the customer profile purchase history, net spend, visit count, receipt linkage, and tenant isolation.
+Set an owner-approved spend-per-point amount on `/loyalty`, enable the policy, open a POS register session, complete one customer-linked test sale, verify the earned balance in POS and the customer profile, then issue a controlled partial refund and verify the proportional reversal.
 
 ## Production state
 
