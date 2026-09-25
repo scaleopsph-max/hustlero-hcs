@@ -79,7 +79,13 @@ select is(
   'owner role is created'
 );
 select is(
-  (select count(*)::integer from app.role_permissions where permission_code in ('tenant.manage', 'locations.manage', 'onboarding.manage')),
+  (
+    select count(*)::integer
+    from app.role_permissions rp
+    join app.roles r on r.tenant_id = rp.tenant_id and r.id = rp.role_id
+    where r.code = 'owner'
+      and rp.permission_code in ('tenant.manage', 'locations.manage', 'onboarding.manage')
+  ),
   3,
   'owner role receives the three bootstrap permissions'
 );
