@@ -109,12 +109,12 @@ Last updated: 2026-09-25
 - Manual catalog/product vertical slice: private Product → Variant → SKU → Barcode schema, tenant-safe/idempotent API commands, product-grain list, editable product detail, and nested add/edit/deactivate variant flow are implemented and verified in development
 - Opening inventory per branch and variant is implemented and connected to the onboarding checklist; the authenticated `/inventory/opening` screen was verified with the saved `LOCAL RECIPE` catalog without mutating stock
 - POS device activation, PIN session, and the first real cash sale were completed and verified by the owner
-- Receipt detail/reprint and cash refund/void implementation is in final build, deployment, and manual verification
+- Receipt detail/reprint and cash refund/void implementation is deployed and manually verified with a controlled partial refund: receipt `MAIN-20260925-000001` is partially refunded by PHP 999, net sales are PHP 4,995, and returned XL inventory increased from 4 to 5
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Deploy the updated development Worker, verify the receipt detail/reprint screen, then record one controlled partial refund while the original register session remains open and confirm stock, payment, cash, and status reversals.
+Close and reconcile the active Main Register session with an expected counted cash total of PHP 5,995 (PHP 1,000 opening cash + PHP 5,994 cash sale - PHP 999 cash refund), then verify zero variance and the immutable closing ledger entries.
 
 ## Production state
 
