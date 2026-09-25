@@ -240,6 +240,12 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
             ) : (
               <div className="text-ink-500">Customer: Walk-in</div>
             )}
+            {receipt.loyaltyEarnedPoints > 0 || receipt.loyaltyReversedPoints > 0 ? (
+              <div className="mt-1 text-sm text-ink-500">
+                Loyalty: +{receipt.loyaltyEarnedPoints} earned
+                {receipt.loyaltyReversedPoints ? ` · -${receipt.loyaltyReversedPoints} reversed` : ''}
+              </div>
+            ) : null}
           </div>
         </div>
         <div className="overflow-x-auto">

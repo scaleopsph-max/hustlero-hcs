@@ -85,6 +85,9 @@ import {
   posCustomerCreateRequestSchema,
   posCustomerCreateResponseSchema,
   posCustomerSearchResponseSchema,
+  loyaltyContextSchema,
+  loyaltyPolicyUpdateRequestSchema,
+  loyaltyPolicyUpdateResponseSchema,
 } from '@hcs/contracts'
 import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
@@ -156,6 +159,12 @@ import {
   type PosCustomerCreator,
   type PosCustomersSearcher,
 } from './customer-repository'
+import {
+  loadLoyaltyFromPostgres,
+  updateLoyaltyPolicyInPostgres,
+  type LoyaltyLoader,
+  type LoyaltyPolicyUpdater,
+} from './loyalty-repository'
 import {
   loadInventoryMovementsFromPostgres,
   loadInventoryStockFromPostgres,
@@ -275,6 +284,8 @@ interface AppDependencies {
   addCustomerNote: CustomerNoteCreator
   searchPosCustomers: PosCustomersSearcher
   createPosCustomer: PosCustomerCreator
+  loadLoyalty: LoyaltyLoader
+  updateLoyaltyPolicy: LoyaltyPolicyUpdater
 }
 
 const defaultDependencies: AppDependencies = {
@@ -332,6 +343,8 @@ const defaultDependencies: AppDependencies = {
   addCustomerNote: addCustomerNoteInPostgres,
   searchPosCustomers: searchPosCustomersFromPostgres,
   createPosCustomer: createPosCustomerInPostgres,
+  loadLoyalty: loadLoyaltyFromPostgres,
+  updateLoyaltyPolicy: updateLoyaltyPolicyInPostgres,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -2936,6 +2949,104 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
       return context.json(posCashSaleCompleteResponseSchema.parse(response), 201)
     } catch (error) {
       return posError(context, error)
+    }
+  })
+
+  const loyaltyError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
+    const code = postgresErrorCode(error)
+    const requestId = context.get('requestId')
+    if (code === 'HCSC0')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'LOYALTY_ACCESS_DENIED', message: 'Your role cannot perform this loyalty action.', requestId },
+        }),
+        403,
+      )
+    if (code === 'HCSC2')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'INVALID_LOYALTY_POLICY', message: 'Check the loyalty policy settings.', requestId },
+        }),
+        400,
+      )
+    if (code === 'HCS08')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_CONFLICT',
+            message: 'This request key was already used for another loyalty action.',
+            requestId,
+          },
+        }),
+        409,
+      )
+    throw error
+  }
+
+  app.get('/v1/loyalty', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'LOYALTY_ACCESS_DENIED',
+            message: 'Sign in and select a business to view loyalty.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    try {
+      return context.json(
+        loyaltyContextSchema.parse(await dependencies.loadLoyalty(resolved.userId, resolved.tenantId, context.env)),
+      )
+    } catch (error) {
+      return loyaltyError(context, error)
+    }
+  })
+
+  app.patch('/v1/loyalty/policy', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    const idempotencyKey = context.req.header('idempotency-key')
+    const parsed = loyaltyPolicyUpdateRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'LOYALTY_ACCESS_DENIED',
+            message: 'Sign in and select a business.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey) || !parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_LOYALTY_POLICY',
+            message: 'Set a positive spend amount before enabling loyalty.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      return context.json(
+        loyaltyPolicyUpdateResponseSchema.parse(
+          await dependencies.updateLoyaltyPolicy(
+            resolved.userId,
+            resolved.tenantId,
+            parsed.data,
+            idempotencyKey,
+            await requestHash(parsed.data),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+      )
+    } catch (error) {
+      return loyaltyError(context, error)
     }
   })
 

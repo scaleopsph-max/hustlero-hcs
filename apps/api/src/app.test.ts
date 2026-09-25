@@ -46,6 +46,9 @@ import {
   customersContextSchema,
   posCustomerCreateResponseSchema,
   posCustomerSearchResponseSchema,
+  loyaltyContextSchema,
+  loyaltyPolicyUpdateResponseSchema,
+  type LoyaltyPolicyUpdateRequest,
 } from '@hcs/contracts'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -367,6 +370,8 @@ const completePosCashSale = vi.fn(async () => ({
   cashReceivedCentavos: 100000,
   changeCentavos: 10100,
   completedAt: '2026-09-25T02:05:00.000Z',
+  loyaltyEarnedPoints: 0,
+  loyaltyBalancePoints: null,
 }))
 const loadSales = vi.fn(async () => ({ sales: [] }))
 const saleReceipt = {
@@ -376,6 +381,8 @@ const saleReceipt = {
   locationName: 'Main Store',
   registerName: 'Register 1',
   employeeName: 'Cashier One',
+  loyaltyEarnedPoints: 0,
+  loyaltyReversedPoints: 0,
   completedAt: '2026-09-25T02:05:00.000Z',
   subtotalCentavos: 89_900,
   discountCentavos: 0,
@@ -458,6 +465,13 @@ const customerDetail = {
   canManage: true,
   totalSpendCentavos: 0,
   visitCount: 0,
+  loyalty: {
+    enabled: false,
+    balancePoints: 0,
+    lifetimeEarnedPoints: 0,
+    lifetimeReversedPoints: 0,
+    transactions: [],
+  },
   purchases: [],
   notes: [],
 }
@@ -477,7 +491,21 @@ const createPosCustomer = vi.fn(async () => ({
   email: 'maria@example.com',
   phone: null,
   customerType: 'standard' as const,
+  loyaltyEnabled: false,
+  loyaltyBalancePoints: 0,
   status: 'created' as const,
+}))
+const loyaltyContext = {
+  policy: { enabled: false, spendPerPointCentavos: null, updatedAt: '2026-09-25T04:00:00.000Z' },
+  canManage: true,
+  summary: { memberCount: 0, outstandingPoints: 0, lifetimeEarnedPoints: 0, lifetimeReversedPoints: 0 },
+  recentTransactions: [],
+}
+const loadLoyalty = vi.fn(async () => loyaltyContext)
+const updateLoyaltyPolicy = vi.fn(async (_userId, _tenantId, request: LoyaltyPolicyUpdateRequest) => ({
+  enabled: request.enabled,
+  spendPerPointCentavos: request.spendPerPointCentavos,
+  status: 'updated' as const,
 }))
 
 const authenticatedApp = createApp({
@@ -550,6 +578,8 @@ const authenticatedApp = createApp({
   addCustomerNote,
   searchPosCustomers,
   createPosCustomer,
+  loadLoyalty,
+  updateLoyaltyPolicy,
 })
 
 const businessDetails = {
@@ -791,6 +821,8 @@ describe('API', () => {
       addCustomerNote,
       searchPosCustomers,
       createPosCustomer,
+      loadLoyalty,
+      updateLoyaltyPolicy,
     })
     const response = await multiTenantApp.request(
       '/v1/onboarding',
@@ -870,6 +902,8 @@ describe('API', () => {
       addCustomerNote,
       searchPosCustomers,
       createPosCustomer,
+      loadLoyalty,
+      updateLoyaltyPolicy,
     })
     const response = await employeeApp.request(
       '/v1/onboarding',
@@ -1988,6 +2022,38 @@ describe('API', () => {
     expect(detail.status).toBe(200)
     expect(customerDetailSchema.safeParse(await detail.json()).success).toBe(true)
     expect(loadCustomer).toHaveBeenCalledWith(userId, tenantId, customerId, bindings)
+  })
+
+  it('loads and updates the tenant loyalty policy', async () => {
+    loadLoyalty.mockClear()
+    updateLoyaltyPolicy.mockClear()
+    const headers = { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId }
+    const loaded = await authenticatedApp.request('/v1/loyalty', { headers }, bindings)
+    expect(loaded.status).toBe(200)
+    expect(loyaltyContextSchema.safeParse(await loaded.json()).success).toBe(true)
+    expect(loadLoyalty).toHaveBeenCalledWith(userId, tenantId, bindings)
+
+    const request = { enabled: true, spendPerPointCentavos: 10_000 }
+    const updated = await authenticatedApp.request(
+      '/v1/loyalty/policy',
+      {
+        method: 'PATCH',
+        headers: { ...headers, 'content-type': 'application/json', 'idempotency-key': 'loyalty-policy-0001' },
+        body: JSON.stringify(request),
+      },
+      bindings,
+    )
+    expect(updated.status).toBe(200)
+    expect(loyaltyPolicyUpdateResponseSchema.safeParse(await updated.json()).success).toBe(true)
+    expect(updateLoyaltyPolicy).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      request,
+      'loyalty-policy-0001',
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+      expect.any(String),
+      bindings,
+    )
   })
 
   it('creates, updates, and annotates a customer with idempotent commands', async () => {

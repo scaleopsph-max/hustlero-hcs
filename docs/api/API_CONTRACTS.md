@@ -162,6 +162,10 @@ Current POS cash-sales implementation:
 - `POST /v1/customers/{id}/notes` appends an attributed note; customer notes cannot be edited or deleted.
 - `GET /v1/pos/customers` searches only active customers in the POS session's tenant. `POST /v1/pos/customers` creates a tenant/branch-attributed profile from the active employee session.
 - `POST /v1/pos/sales/complete` accepts an optional customer ID. PostgreSQL validates that the selected active customer belongs to the POS tenant and links the sale atomically; prices, totals, tenant, branch, register, and employee remain server-authoritative.
+- `GET /v1/loyalty` returns the tenant policy, aggregate account totals, and recent immutable point transactions. It requires server-resolved tenant membership and `loyalty.read` permission.
+- `PATCH /v1/loyalty/policy` requires `loyalty.manage`, an `Idempotency-Key`, and a positive integer-centavo spend amount before earning can be enabled. Loyalty is disabled with no arbitrary rate for new tenants.
+- A newly committed customer-linked POS sale earns `floor(total centavos / configured spend per point)` only while the policy is enabled. The transaction stores the rate snapshot and the POS response returns points earned and the resulting balance.
+- Completed refunds append proportional negative point transactions using the original sale's rate snapshot. Policy changes never recalculate prior earnings, and the account balance must equal the sum of its immutable ledger.
 - `GET/POST /v1/approvals`
 - `POST /v1/approvals/{id}/decisions`
 - `GET/PATCH /v1/alerts`

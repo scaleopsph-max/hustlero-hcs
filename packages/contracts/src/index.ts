@@ -114,6 +114,14 @@ export {
   type OpeningInventoryCreateResponse,
 } from './inventory'
 export {
+  loyaltyContextSchema,
+  loyaltyPolicyUpdateRequestSchema,
+  loyaltyPolicyUpdateResponseSchema,
+  loyaltyTransactionSchema,
+  type LoyaltyContext,
+  type LoyaltyPolicyUpdateRequest,
+} from './loyalty'
+export {
   businessSetupQuestionsSchema,
   businessTypeSchema,
   featureSelectionSchema,

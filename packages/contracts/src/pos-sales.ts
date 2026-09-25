@@ -71,6 +71,8 @@ export const posCashSaleCompleteResponseSchema = z.object({
   completedAt: timestamp,
   customerId: id.nullable().optional(),
   customerName: z.string().nullable().optional(),
+  loyaltyEarnedPoints: z.number().int().nonnegative().default(0),
+  loyaltyBalancePoints: z.number().int().nonnegative().nullable().default(null),
 })
 
 export const salesContextSchema = z.object({
@@ -101,6 +103,8 @@ export const saleReceiptDetailSchema = z.object({
   customerId: id.nullable().optional(),
   customerName: z.string().nullable().optional(),
   customerNumber: z.string().nullable().optional(),
+  loyaltyEarnedPoints: z.number().int().nonnegative().default(0),
+  loyaltyReversedPoints: z.number().int().nonnegative().default(0),
   completedAt: timestamp,
   subtotalCentavos: z.number().int().nonnegative(),
   discountCentavos: z.number().int().nonnegative(),

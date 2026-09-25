@@ -1,7 +1,7 @@
 'use client'
 
 import { createClient } from '@supabase/supabase-js'
-import { ArrowLeft, NotebookPen, Save } from 'lucide-react'
+import { ArrowLeft, NotebookPen, Save, Star } from 'lucide-react'
 import Link from 'next/link'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
@@ -185,7 +185,7 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
           <Chip tone={detail.status === 'active' ? 'success' : 'neutral'}>{detail.status}</Chip>
         </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="border border-ink-900/10 bg-white p-5">
           <div className="text-sm text-ink-500">Net spend</div>
           <div className="mt-1 font-display text-3xl font-bold">{formatPeso(detail.totalSpendCentavos)}</div>
@@ -197,6 +197,15 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
         <div className="border border-ink-900/10 bg-white p-5">
           <div className="text-sm text-ink-500">Origin</div>
           <div className="mt-1 font-display text-3xl font-bold capitalize">{detail.origin}</div>
+        </div>
+        <div className="border border-ink-900/10 bg-white p-5">
+          <div className="flex items-center justify-between gap-2 text-sm text-ink-500">
+            Loyalty balance
+            <Chip tone={detail.loyalty.enabled ? 'success' : 'neutral'}>
+              {detail.loyalty.enabled ? 'Active' : 'Off'}
+            </Chip>
+          </div>
+          <div className="mt-1 font-display text-3xl font-bold">{detail.loyalty.balancePoints} pts</div>
         </div>
       </div>
       <div className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
@@ -307,6 +316,41 @@ export function CustomerDetailWorkspace({ customerId }: { customerId: string }) 
               ))
             ) : (
               <p className="p-5 text-sm text-ink-500">No linked purchases yet.</p>
+            )}
+          </Glass>
+          <Glass variant="light" className="overflow-hidden">
+            <div className="flex items-center justify-between gap-3 border-b border-ink-900/10 p-5">
+              <div className="flex items-center gap-3">
+                <Star size={20} />
+                <h2 className="font-display text-xl font-bold">Loyalty activity</h2>
+              </div>
+              <span className="text-xs text-ink-500">
+                Earned {detail.loyalty.lifetimeEarnedPoints} · Reversed {detail.loyalty.lifetimeReversedPoints}
+              </span>
+            </div>
+            {detail.loyalty.transactions.length ? (
+              detail.loyalty.transactions.map((transaction) => (
+                <div
+                  key={transaction.id}
+                  className="grid grid-cols-[1fr_auto] gap-3 border-b border-ink-900/10 px-5 py-4 text-sm last:border-0"
+                >
+                  <div>
+                    <strong>{transaction.type === 'sale_earn' ? 'POS sale earned' : 'Refund reversal'}</strong>
+                    <div className="mt-1 text-xs text-ink-500">
+                      {transaction.receiptNumber} · {new Date(transaction.occurredAt).toLocaleString('en-PH')}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <strong className={transaction.pointsDelta > 0 ? 'text-emerald-700' : 'text-red-700'}>
+                      {transaction.pointsDelta > 0 ? '+' : ''}
+                      {transaction.pointsDelta} pts
+                    </strong>
+                    <div className="text-xs text-ink-500">Balance {transaction.balanceAfterPoints}</div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="p-5 text-sm text-ink-500">No loyalty activity yet.</p>
             )}
           </Glass>
           <Glass variant="light" className="p-5">

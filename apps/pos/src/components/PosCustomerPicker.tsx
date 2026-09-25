@@ -73,6 +73,8 @@ export function PosCustomerPicker({
         email: created.email,
         phone: created.phone,
         customerType: created.customerType,
+        loyaltyEnabled: created.loyaltyEnabled,
+        loyaltyBalancePoints: created.loyaltyBalancePoints,
       })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not create customer.')
@@ -88,6 +90,9 @@ export function PosCustomerPicker({
           <div className="min-w-0">
             <div className="text-xs text-ink-300">Customer</div>
             <div className="truncate font-semibold text-white">{selected.fullName}</div>
+            {selected.loyaltyEnabled ? (
+              <div className="text-xs text-gold-300">{selected.loyaltyBalancePoints} loyalty points</div>
+            ) : null}
           </div>
           <button
             type="button"
@@ -140,6 +145,9 @@ export function PosCustomerPicker({
                     <span>
                       <strong>{customer.fullName}</strong>
                       <span className="block text-xs text-ink-300">{customer.email ?? customer.phone}</span>
+                      {customer.loyaltyEnabled ? (
+                        <span className="block text-xs text-gold-300">{customer.loyaltyBalancePoints} points</span>
+                      ) : null}
                     </span>
                     <span className="text-xs text-ink-300">{customer.customerNumber}</span>
                   </button>

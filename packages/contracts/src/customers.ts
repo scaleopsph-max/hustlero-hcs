@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { loyaltyTransactionSchema } from './loyalty'
 
 const id = z.uuid()
 const timestamp = z.iso.datetime({ offset: true })
@@ -52,6 +53,13 @@ export const customerDetailSchema = z.object({
   canManage: z.boolean(),
   totalSpendCentavos: z.number().int().nonnegative(),
   visitCount: z.number().int().nonnegative(),
+  loyalty: z.object({
+    enabled: z.boolean(),
+    balancePoints: z.number().int().nonnegative(),
+    lifetimeEarnedPoints: z.number().int().nonnegative(),
+    lifetimeReversedPoints: z.number().int().nonnegative(),
+    transactions: z.array(loyaltyTransactionSchema),
+  }),
   purchases: z.array(
     z.object({
       saleId: id,
@@ -98,6 +106,8 @@ export const posCustomerSchema = z.object({
   email: z.string().nullable(),
   phone: z.string().nullable(),
   customerType: z.enum(['standard', 'reseller']),
+  loyaltyEnabled: z.boolean().default(false),
+  loyaltyBalancePoints: z.number().int().nonnegative().default(0),
 })
 export const posCustomerSearchResponseSchema = z.object({ customers: z.array(posCustomerSchema) })
 export const posCustomerCreateRequestSchema = z
@@ -116,6 +126,8 @@ export const posCustomerCreateResponseSchema = z.object({
   email: z.string().nullable(),
   phone: z.string().nullable(),
   customerType: z.enum(['standard', 'reseller']),
+  loyaltyEnabled: z.boolean().default(false),
+  loyaltyBalancePoints: z.number().int().nonnegative().default(0),
   status: z.literal('created'),
 })
 

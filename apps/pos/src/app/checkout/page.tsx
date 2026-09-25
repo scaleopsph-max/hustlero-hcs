@@ -109,6 +109,14 @@ export default function Checkout() {
             <dd className="text-right font-display text-2xl font-bold text-gold-300">
               {formatPeso(receipt.changeCentavos)}
             </dd>
+            {receipt.customerId && receipt.loyaltyEarnedPoints > 0 ? (
+              <>
+                <dt className="text-ink-300">Loyalty earned</dt>
+                <dd className="text-right font-bold text-emerald-300">+{receipt.loyaltyEarnedPoints} pts</dd>
+                <dt className="text-ink-300">Point balance</dt>
+                <dd className="text-right font-bold text-white">{receipt.loyaltyBalancePoints} pts</dd>
+              </>
+            ) : null}
           </dl>
           <Button variant="primary" size="xl" className="w-full" onClick={() => router.replace('/sell')}>
             New sale
@@ -143,7 +151,10 @@ export default function Checkout() {
           {customer ? (
             <div className="border-y border-white/10 py-3 text-sm">
               <span className="text-ink-300">Customer</span>
-              <strong className="float-right text-white">{customer.fullName}</strong>
+              <strong className="float-right text-white">
+                {customer.fullName}
+                {customer.loyaltyEnabled ? ` · ${customer.loyaltyBalancePoints} pts` : ''}
+              </strong>
             </div>
           ) : null}
           <ul>

@@ -6,6 +6,7 @@ import {
   CircleCheck,
   CircleDollarSign,
   LayoutDashboard,
+  Gift,
   LockKeyhole,
   MapPin,
   Monitor,
@@ -61,6 +62,7 @@ export const navGroups: NavGroup[] = [
       { label: 'Purchasing', href: '/purchasing', icon: Truck },
       { label: 'Transfers and restock', href: '/transfers', icon: ArrowLeftRight },
       { label: 'Customers', href: '/customers', icon: Users },
+      { label: 'Loyalty', href: '/loyalty', icon: Gift },
     ],
   },
   {
