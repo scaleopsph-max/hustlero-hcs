@@ -1,4 +1,18 @@
 export {
+  posCashSaleCompleteRequestSchema,
+  posCashSaleCompleteResponseSchema,
+  posRegisterOpenRequestSchema,
+  posRegisterOpenResponseSchema,
+  posSalesContextSchema,
+  salesContextSchema,
+  type PosCashSaleCompleteRequest,
+  type PosCashSaleCompleteResponse,
+  type PosRegisterOpenRequest,
+  type PosRegisterOpenResponse,
+  type PosSalesContext,
+  type SalesContext,
+} from './pos-sales'
+export {
   posDeviceActivateRequestSchema,
   posDeviceActivateResponseSchema,
   posDeviceActivationCreateRequestSchema,

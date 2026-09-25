@@ -34,6 +34,12 @@ import {
   posDeviceContextSchema,
   posPinLoginRequestSchema,
   posPinLoginResponseSchema,
+  posCashSaleCompleteRequestSchema,
+  posCashSaleCompleteResponseSchema,
+  posRegisterOpenRequestSchema,
+  posRegisterOpenResponseSchema,
+  posSalesContextSchema,
+  salesContextSchema,
   registerOperationsContextSchema,
   registerSessionCloseRequestSchema,
   registerSessionCloseResponseSchema,
@@ -80,6 +86,16 @@ import {
   type PosDeviceLoader,
   type PosEmployeePinAuthenticator,
 } from './pos-auth-repository'
+import {
+  completePosCashSaleInPostgres,
+  loadPosSalesContextFromPostgres,
+  loadSalesFromPostgres,
+  openPosRegisterSessionInPostgres,
+  type PosCashSaleCompleter,
+  type PosRegisterSessionOpener,
+  type PosSalesContextLoader,
+  type SalesLoader,
+} from './pos-sales-repository'
 import {
   decideApprovalRequestInPostgres,
   loadApprovalCenterFromPostgres,
@@ -208,6 +224,10 @@ interface AppDependencies {
   createPosDeviceActivation: PosDeviceActivationCreator
   activatePosDevice: PosDeviceActivator
   authenticatePosEmployee: PosEmployeePinAuthenticator
+  loadPosSalesContext: PosSalesContextLoader
+  openPosRegisterSession: PosRegisterSessionOpener
+  completePosCashSale: PosCashSaleCompleter
+  loadSales: SalesLoader
 }
 
 const defaultDependencies: AppDependencies = {
@@ -251,6 +271,10 @@ const defaultDependencies: AppDependencies = {
   createPosDeviceActivation: createPosDeviceActivationInPostgres,
   activatePosDevice: activatePosDeviceInPostgres,
   authenticatePosEmployee: authenticatePosEmployeeInPostgres,
+  loadPosSalesContext: loadPosSalesContextFromPostgres,
+  openPosRegisterSession: openPosRegisterSessionInPostgres,
+  completePosCashSale: completePosCashSaleInPostgres,
+  loadSales: loadSalesFromPostgres,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -288,7 +312,14 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
       origin: (origin, context) =>
         origin === context.env.BACKOFFICE_ORIGIN || origin === context.env.POS_ORIGIN ? origin : '',
       allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key', 'X-Tenant-Id', 'X-POS-Device-Token'],
+      allowHeaders: [
+        'Authorization',
+        'Content-Type',
+        'Idempotency-Key',
+        'X-Tenant-Id',
+        'X-POS-Device-Token',
+        'X-POS-Session-Token',
+      ],
     }),
   )
 
@@ -2570,6 +2601,228 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
         device: record.device,
       }),
     )
+  })
+
+  const readPosSessionHash = async (context: Context<{ Bindings: Bindings }>) => {
+    const token = context.req.header('x-pos-session-token')
+    return token && /^[a-f0-9]{64}$/.test(token) ? sha256(token) : null
+  }
+
+  const posError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
+    const code = postgresErrorCode(error)
+    const requestId = context.get('requestId')
+    if (code === 'HCS90')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'POS_SESSION_INVALID', message: 'Sign in to the POS again.', requestId },
+        }),
+        401,
+      )
+    if (code === 'HCS08')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_CONFLICT',
+            message: 'This request key was already used for a different command.',
+            requestId,
+          },
+        }),
+        409,
+      )
+    if (code === 'HCS92')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'REGISTER_ALREADY_OPEN',
+            message: 'This register is already open by another employee.',
+            requestId,
+          },
+        }),
+        409,
+      )
+    if (code === 'HCS93')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'POS_ACCESS_DENIED', message: 'Your role cannot perform this action.', requestId },
+        }),
+        403,
+      )
+    if (code === 'HCS95')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'REGISTER_NOT_OPEN', message: 'Open this register before completing a sale.', requestId },
+        }),
+        409,
+      )
+    if (code === 'HCS98')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INSUFFICIENT_STOCK',
+            message: 'One or more items no longer have enough available stock.',
+            requestId,
+          },
+        }),
+        409,
+      )
+    if (code && ['HCS91', 'HCS94', 'HCS97', 'HCS99'].includes(code))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_POS_SALE',
+            message: error instanceof Error ? error.message : 'Check the sale details.',
+            requestId,
+          },
+        }),
+        400,
+      )
+    if (code === 'HCS96')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'CASH_PAYMENT_UNAVAILABLE',
+            message: 'Configure an active cash payment method first.',
+            requestId,
+          },
+        }),
+        409,
+      )
+    throw error
+  }
+
+  app.get('/v1/pos/context', async (context) => {
+    const sessionHash = await readPosSessionHash(context)
+    if (!sessionHash)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'POS_SESSION_REQUIRED',
+            message: 'Sign in to the POS first.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    try {
+      return context.json(posSalesContextSchema.parse(await dependencies.loadPosSalesContext(sessionHash, context.env)))
+    } catch (error) {
+      return posError(context, error)
+    }
+  })
+
+  app.post('/v1/pos/register-sessions/open', async (context) => {
+    const sessionHash = await readPosSessionHash(context)
+    const idempotencyKey = context.req.header('idempotency-key')
+    const parsed = posRegisterOpenRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!sessionHash)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'POS_SESSION_REQUIRED',
+            message: 'Sign in to the POS first.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey) || !parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_REGISTER_OPEN',
+            message: 'Enter valid starting cash and retry.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      const response = await dependencies.openPosRegisterSession(
+        sessionHash,
+        parsed.data,
+        idempotencyKey,
+        await requestHash(parsed.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(posRegisterOpenResponseSchema.parse(response), 201)
+    } catch (error) {
+      return posError(context, error)
+    }
+  })
+
+  app.post('/v1/pos/sales/complete', async (context) => {
+    const sessionHash = await readPosSessionHash(context)
+    const idempotencyKey = context.req.header('idempotency-key')
+    const parsed = posCashSaleCompleteRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!sessionHash)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'POS_SESSION_REQUIRED',
+            message: 'Sign in to the POS first.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey) || !parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_POS_SALE',
+            message: 'Check the cart and cash received.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      const response = await dependencies.completePosCashSale(
+        sessionHash,
+        parsed.data,
+        idempotencyKey,
+        await requestHash(parsed.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(posCashSaleCompleteResponseSchema.parse(response), 201)
+    } catch (error) {
+      return posError(context, error)
+    }
+  })
+
+  app.get('/v1/sales', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'SALES_ACCESS_DENIED',
+            message: 'Sign in and select a business to view sales.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    try {
+      return context.json(
+        salesContextSchema.parse(await dependencies.loadSales(resolved.userId, resolved.tenantId, context.env)),
+      )
+    } catch (error) {
+      if (postgresErrorCode(error) === 'HCSA0')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'SALES_ACCESS_DENIED',
+              message: 'You do not have permission to view sales.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      throw error
+    }
   })
 
   app.get('/v1/approvals', async (context) => {

@@ -27,6 +27,10 @@ import {
   posDeviceActivationCreateResponseSchema,
   posDeviceContextSchema,
   posPinLoginResponseSchema,
+  posCashSaleCompleteResponseSchema,
+  posRegisterOpenResponseSchema,
+  posSalesContextSchema,
+  salesContextSchema,
   registerOperationsContextSchema,
   registerSessionCloseResponseSchema,
   registerSessionOpenResponseSchema,
@@ -309,6 +313,53 @@ const authenticatePosEmployee = vi.fn(async () => ({
     registerName: 'Register 1',
   },
 }))
+const posContext = {
+  employee: { id: employeeId, employeeCode: 'EMP-001', displayName: 'Cashier One' },
+  device: {
+    id: deviceId,
+    name: 'Front counter POS',
+    tenantId,
+    tenantName: 'Sample Store',
+    locationId,
+    locationName: 'Main Store',
+    registerId,
+    registerName: 'Register 1',
+  },
+  registerSession: null,
+  categories: ['Shirts'],
+  items: [
+    {
+      variantId: '50000000-0000-4000-8000-000000000001',
+      productName: 'Triple Black',
+      variantName: 'Small',
+      sku: 'TSH-BLK-S',
+      barcode: '12345',
+      category: 'Shirts',
+      retailPriceCentavos: 89900,
+      availableMilli: 10000,
+      trackInventory: true,
+    },
+  ],
+  paymentMethods: [{ id: 'e0000000-0000-4000-8000-000000000001', code: 'cash', name: 'Cash', type: 'cash' as const }],
+}
+const loadPosSalesContext = vi.fn(async (_sessionTokenHash: string, _bindings: unknown) => posContext)
+const openPosRegisterSession = vi.fn(async () => ({
+  registerSessionId: 'f0000000-0000-4000-8000-000000000001',
+  status: 'open' as const,
+  openedAt: '2026-09-25T02:00:00.000Z',
+  openingCashCentavos: 100000,
+}))
+const completePosCashSale = vi.fn(async () => ({
+  saleId: '12000000-0000-4000-8000-000000000001',
+  receiptNumber: 'MAIN-20260925-000001',
+  status: 'completed' as const,
+  subtotalCentavos: 89900,
+  totalCentavos: 89900,
+  cashReceivedCentavos: 100000,
+  changeCentavos: 10100,
+  completedAt: '2026-09-25T02:05:00.000Z',
+}))
+const loadSales = vi.fn(async () => ({ sales: [] }))
 
 const authenticatedApp = createApp({
   verifyAccessToken: async (token) => (token === 'valid-token' ? { userId } : null),
@@ -366,6 +417,10 @@ const authenticatedApp = createApp({
   createPosDeviceActivation,
   activatePosDevice,
   authenticatePosEmployee,
+  loadPosSalesContext,
+  openPosRegisterSession,
+  completePosCashSale,
+  loadSales,
 })
 
 const businessDetails = {
@@ -593,6 +648,10 @@ describe('API', () => {
       createPosDeviceActivation,
       activatePosDevice,
       authenticatePosEmployee,
+      loadPosSalesContext,
+      openPosRegisterSession,
+      completePosCashSale,
+      loadSales,
     })
     const response = await multiTenantApp.request(
       '/v1/onboarding',
@@ -658,6 +717,10 @@ describe('API', () => {
       createPosDeviceActivation,
       activatePosDevice,
       authenticatePosEmployee,
+      loadPosSalesContext,
+      openPosRegisterSession,
+      completePosCashSale,
+      loadSales,
     })
     const response = await employeeApp.request(
       '/v1/onboarding',
@@ -1589,5 +1652,93 @@ describe('API', () => {
       expect.any(String),
       bindings,
     )
+  })
+
+  it('requires a POS employee session before loading the live catalog', async () => {
+    loadPosSalesContext.mockClear()
+    const missing = await authenticatedApp.request('/v1/pos/context', {}, bindings)
+    expect(missing.status).toBe(401)
+    expect(loadPosSalesContext).not.toHaveBeenCalled()
+
+    const sessionToken = 'b'.repeat(64)
+    const response = await authenticatedApp.request(
+      '/v1/pos/context',
+      { headers: { 'x-pos-session-token': sessionToken } },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(posSalesContextSchema.safeParse(await response.json()).success).toBe(true)
+    expect(loadPosSalesContext).toHaveBeenCalledWith(expect.stringMatching(/^[a-f0-9]{64}$/), bindings)
+    expect(loadPosSalesContext.mock.calls.at(-1)?.[0]).not.toBe(sessionToken)
+  })
+
+  it('opens the device register with an idempotent POS command', async () => {
+    openPosRegisterSession.mockClear()
+    const response = await authenticatedApp.request(
+      '/v1/pos/register-sessions/open',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-pos-session-token': 'c'.repeat(64),
+          'idempotency-key': 'pos-register-open-001',
+        },
+        body: JSON.stringify({ openingCashCentavos: 100_000 }),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(201)
+    expect(posRegisterOpenResponseSchema.safeParse(await response.json()).success).toBe(true)
+    expect(openPosRegisterSession).toHaveBeenCalledWith(
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+      { openingCashCentavos: 100_000 },
+      'pos-register-open-001',
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('completes a cash sale without accepting client prices or totals', async () => {
+    completePosCashSale.mockClear()
+    const request = {
+      lines: [{ variantId: '50000000-0000-4000-8000-000000000001', quantityMilli: 1000 }],
+      cashReceivedCentavos: 100_000,
+    }
+    const response = await authenticatedApp.request(
+      '/v1/pos/sales/complete',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-pos-session-token': 'd'.repeat(64),
+          'idempotency-key': 'pos-cash-sale-0001',
+        },
+        body: JSON.stringify({ ...request, totalCentavos: 1, unitPriceCentavos: 1 }),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(201)
+    expect(posCashSaleCompleteResponseSchema.safeParse(await response.json()).success).toBe(true)
+    expect(completePosCashSale).toHaveBeenCalledWith(
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+      request,
+      'pos-cash-sale-0001',
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('lists tenant sales for an authenticated Back Office user', async () => {
+    loadSales.mockClear()
+    const response = await authenticatedApp.request(
+      '/v1/sales',
+      { headers: { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId } },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(salesContextSchema.safeParse(await response.json()).success).toBe(true)
+    expect(loadSales).toHaveBeenCalledWith(userId, tenantId, bindings)
   })
 })

@@ -140,6 +140,15 @@ Current POS identity foundation:
 - `POST /v1/pos/sessions/pin-login` requires the device token in `X-POS-Device-Token`, an active employee code assigned to that device branch, and a valid 4-6 digit PIN. Five failed PIN attempts lock that employee credential for 15 minutes.
 - A successful PIN login revokes the device's previous employee session and returns a new opaque 12-hour session token. Only its hash is stored. Future sales commands derive tenant, branch, register, and employee from this session instead of accepting those identifiers from the POS client.
 
+Current POS cash-sales implementation:
+
+- `GET /v1/pos/context` requires `X-POS-Session-Token` and returns only the server-resolved employee, activated device, branch, register, current register session, active branch catalog, availability, and configured payment methods.
+- `POST /v1/pos/register-sessions/open` requires the POS session and `Idempotency-Key`; the request contains only integer-centavo opening cash. The employee, register, location, and tenant come from the POS session.
+- `POST /v1/pos/sales/complete` currently accepts cash sales with unique lines containing only `variantId` and positive integer-thousandth `quantityMilli`, plus integer-centavo `cashReceivedCentavos`. Client prices and totals are ignored by the strict contract.
+- PostgreSQL locks the register session, variants, and inventory balances; recalculates retail totals; rejects unavailable stock; and atomically writes the sale, immutable line snapshots, payment tender/change, inventory and cash ledger rows, audit event, outbox event, and branch daily receipt number.
+- Identical retries return the stored receipt. Reusing a key with a different request returns 409. Expired POS sessions return 401; closed registers and insufficient stock return 409.
+- `GET /v1/sales` requires a bearer-authenticated server-resolved tenant with `sales.read` access and returns the latest 100 tenant receipts for Back Office.
+
 ### Customers, controls, and reporting
 
 - `POST/GET/PATCH /v1/customers`

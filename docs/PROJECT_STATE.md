@@ -81,11 +81,17 @@ Last updated: 2026-09-25
 - Back Office `/devices` creates 15-minute one-time activation codes for an active branch register and shows device activation/last-seen status
 - POS `:3002` now requires device activation before employee sign-in; PIN authentication is branch-assignment aware, verifies the existing bcrypt credential, locks after five failed attempts for 15 minutes, and issues a 12-hour opaque employee session
 - Development API Worker version `ec468fce-cec3-48bd-acbd-33c3b454d91c` is deployed with Back Office and POS local-origin CORS support
+- Development API Worker version `5a415247-02aa-4bd2-baf9-1c9d49cbfe9b` is deployed with the live POS context, register-open, cash-sale, and Back Office sales endpoints
+- POS cash-sales migrations `20260925022636` and `20260925022732` are applied; private sales, line, payment, and branch receipt-counter tables use RLS, deny direct Worker table access, and have supporting foreign-key indexes
+- The live POS selling flow now loads its trusted employee/device/branch context, active catalog variants, branch availability, and payment methods from the API instead of mock data
+- A POS employee can open only the activated device's register, with starting cash recorded in the immutable cash ledger
+- Cash checkout is server-priced, atomic, and idempotent: sale, line snapshots, tender/change, inventory balance and `SALE` movement, `cash_sale` movement, audit event, outbox event, and branch daily receipt number commit together
+- Back Office `/sales` lists completed tenant receipts with branch, register, cashier, item count, timestamp, and total
 
 ## Not started
 
 - Remaining onboarding steps and go-live validation
-- Sales transaction, payment tender, receipt, refund, and void implementation
+- Refund, void, receipt reprint/detail, and non-cash tender implementation
 - Staging and production environments
 
 ## Current blockers/gates
@@ -98,12 +104,12 @@ Last updated: 2026-09-25
 - Owner completed the business-question and feature-selection forms for `LOCAL RECIPE`
 - Manual catalog/product vertical slice: private Product → Variant → SKU → Barcode schema, tenant-safe/idempotent API commands, product-grain list, editable product detail, and nested add/edit/deactivate variant flow are implemented and verified in development
 - Opening inventory per branch and variant is implemented and connected to the onboarding checklist; the authenticated `/inventory/opening` screen was verified with the saved `LOCAL RECIPE` catalog without mutating stock
-- POS device activation and PIN-session foundation is implemented; a real register must be created before the owner can run the first end-to-end device activation
+- POS device activation and PIN session were completed by the owner; the first real cash sale remains a deliberate manual verification step
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Create the first development register, generate a device activation from `/devices`, activate the POS at `http://localhost:3002`, verify employee PIN sign-in, then implement the atomic sales/checkout engine.
+Deploy the updated development Worker, open the POS register, complete one guided cash test sale, and verify its receipt, stock deduction, cash movement, and Back Office Sales row before implementing refunds and voids.
 
 ## Production state
 
