@@ -184,9 +184,9 @@ begin
     v_earn.spend_per_point_centavos, new.sale_id, new.id, new.completed_by, new.completed_at
   );
   insert into audit.audit_events (
-    tenant_id, actor_type, actor_id, action, entity_type, entity_id, location_id, metadata
+    tenant_id, request_id, actor_type, actor_id, action, entity_type, entity_id, location_id, metadata
   ) values (
-    new.tenant_id, 'tenant_user', new.completed_by, 'loyalty.points_reversed', 'loyalty_transaction',
+    new.tenant_id, 'loyalty-refund-' || new.id::text, 'tenant_user', new.completed_by, 'loyalty.points_reversed', 'loyalty_transaction',
     v_transaction_id, v_sale.location_id,
     jsonb_build_object('saleId', new.sale_id, 'refundId', new.id, 'customerId', v_sale.customer_id, 'points', v_reverse_points)
   );
