@@ -27,6 +27,13 @@ import {
   workforceContextSchema,
   paymentMethodCreateRequestSchema,
   paymentMethodCreateResponseSchema,
+  posDeviceActivateRequestSchema,
+  posDeviceActivateResponseSchema,
+  posDeviceActivationCreateRequestSchema,
+  posDeviceActivationCreateResponseSchema,
+  posDeviceContextSchema,
+  posPinLoginRequestSchema,
+  posPinLoginResponseSchema,
   registerOperationsContextSchema,
   registerSessionCloseRequestSchema,
   registerSessionCloseResponseSchema,
@@ -63,6 +70,16 @@ import { cors } from 'hono/cors'
 import { requestId } from 'hono/request-id'
 
 import { readBearerToken, verifySupabaseAccessToken, type AccessTokenVerifier } from './auth'
+import {
+  activatePosDeviceInPostgres,
+  authenticatePosEmployeeInPostgres,
+  createPosDeviceActivationInPostgres,
+  loadPosDevicesFromPostgres,
+  type PosDeviceActivator,
+  type PosDeviceActivationCreator,
+  type PosDeviceLoader,
+  type PosEmployeePinAuthenticator,
+} from './pos-auth-repository'
 import {
   decideApprovalRequestInPostgres,
   loadApprovalCenterFromPostgres,
@@ -187,6 +204,10 @@ interface AppDependencies {
   createPaymentMethod: PaymentMethodCreator
   openRegisterSession: RegisterSessionOpener
   closeRegisterSession: RegisterSessionCloser
+  loadPosDevices: PosDeviceLoader
+  createPosDeviceActivation: PosDeviceActivationCreator
+  activatePosDevice: PosDeviceActivator
+  authenticatePosEmployee: PosEmployeePinAuthenticator
 }
 
 const defaultDependencies: AppDependencies = {
@@ -226,6 +247,10 @@ const defaultDependencies: AppDependencies = {
   createPaymentMethod: createPaymentMethodInPostgres,
   openRegisterSession: openRegisterSessionInPostgres,
   closeRegisterSession: closeRegisterSessionInPostgres,
+  loadPosDevices: loadPosDevicesFromPostgres,
+  createPosDeviceActivation: createPosDeviceActivationInPostgres,
+  activatePosDevice: activatePosDeviceInPostgres,
+  authenticatePosEmployee: authenticatePosEmployeeInPostgres,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -242,6 +267,17 @@ async function requestHash(value: unknown): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
+function randomHex(bytes: number): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (byte) => byte.toString(16).padStart(2, '0')).join(
+    '',
+  )
+}
+
+async function sha256(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
 export function createApp(dependencies: AppDependencies = defaultDependencies) {
   const app = new Hono<{ Bindings: Bindings }>()
 
@@ -249,9 +285,10 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
   app.use(
     '/v1/*',
     cors({
-      origin: (origin, context) => (origin === context.env.BACKOFFICE_ORIGIN ? origin : ''),
+      origin: (origin, context) =>
+        origin === context.env.BACKOFFICE_ORIGIN || origin === context.env.POS_ORIGIN ? origin : '',
       allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key', 'X-Tenant-Id'],
+      allowHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key', 'X-Tenant-Id', 'X-POS-Device-Token'],
     }),
   )
 
@@ -2346,6 +2383,193 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
         )
       throw error
     }
+  })
+
+  app.get('/v1/pos/devices', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'POS_DEVICE_ACCESS_DENIED',
+            message: 'Sign in and select a business to view POS devices.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    try {
+      return context.json(
+        posDeviceContextSchema.parse(
+          await dependencies.loadPosDevices(resolved.userId, resolved.tenantId, context.env),
+        ),
+      )
+    } catch (error) {
+      if (postgresErrorCode(error) === 'HCS80')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'POS_DEVICE_ACCESS_DENIED',
+              message: 'You do not have POS device permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      throw error
+    }
+  })
+
+  app.post('/v1/pos/devices/activation-codes', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'POS_DEVICE_ACCESS_DENIED',
+            message: 'Sign in and select a business before creating a device activation.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    const parsed = posDeviceActivationCreateRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_POS_DEVICE',
+            message: 'Select an active register and enter a device name.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    const activationCode = randomHex(6).toUpperCase()
+    try {
+      const record = await dependencies.createPosDeviceActivation(
+        resolved.userId,
+        resolved.tenantId,
+        parsed.data,
+        await sha256(activationCode),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(posDeviceActivationCreateResponseSchema.parse({ ...record, activationCode }), 201)
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS80')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'POS_DEVICE_ACCESS_DENIED',
+              message: 'Owner access is required.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      if (code === 'HCS82')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'REGISTER_UNAVAILABLE',
+              message: 'The selected register is unavailable.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          404,
+        )
+      throw error
+    }
+  })
+
+  app.post('/v1/pos/devices/activate', async (context) => {
+    const parsed = posDeviceActivateRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'DEVICE_ACTIVATION_INVALID',
+            message: 'Enter a valid 12-character activation code.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    const deviceToken = randomHex(32)
+    const record = await dependencies.activatePosDevice(
+      await sha256(parsed.data.activationCode),
+      await sha256(deviceToken),
+      context.get('requestId'),
+      context.env,
+    )
+    if (record.status === 'invalid')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'DEVICE_ACTIVATION_INVALID',
+            message: 'This activation code is invalid, expired, or already used.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    return context.json(posDeviceActivateResponseSchema.parse({ deviceToken, device: record.device }))
+  })
+
+  app.post('/v1/pos/sessions/pin-login', async (context) => {
+    const deviceToken = context.req.header('x-pos-device-token')
+    const parsed = posPinLoginRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!deviceToken || !/^[a-f0-9]{64}$/.test(deviceToken) || !parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'POS_LOGIN_INVALID',
+            message: 'Check the employee code and PIN.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    const sessionToken = randomHex(32)
+    const record = await dependencies.authenticatePosEmployee(
+      await sha256(deviceToken),
+      parsed.data,
+      await sha256(sessionToken),
+      context.get('requestId'),
+      context.env,
+    )
+    if (record.status === 'locked')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'POS_LOGIN_LOCKED',
+            message: `Too many failed attempts. Try again after ${new Date(record.lockedUntil).toLocaleTimeString('en-PH')}.`,
+            requestId: context.get('requestId'),
+          },
+        }),
+        429,
+      )
+    if (record.status === 'invalid')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'POS_LOGIN_INVALID',
+            message: 'Check the employee code and PIN.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    return context.json(
+      posPinLoginResponseSchema.parse({
+        sessionToken,
+        expiresAt: record.expiresAt,
+        employee: record.employee,
+        device: record.device,
+      }),
+    )
   })
 
   app.get('/v1/approvals', async (context) => {

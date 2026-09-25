@@ -1,4 +1,18 @@
 export {
+  posDeviceActivateRequestSchema,
+  posDeviceActivateResponseSchema,
+  posDeviceActivationCreateRequestSchema,
+  posDeviceActivationCreateResponseSchema,
+  posDeviceContextSchema,
+  posDeviceStatusSchema,
+  posPinLoginRequestSchema,
+  posPinLoginResponseSchema,
+  type PosDeviceActivateRequest,
+  type PosDeviceActivationCreateRequest,
+  type PosDeviceContext,
+  type PosPinLoginRequest,
+} from './pos-auth'
+export {
   approvalCenterSchema,
   approvalDecisionRequestSchema,
   approvalDecisionResponseSchema,

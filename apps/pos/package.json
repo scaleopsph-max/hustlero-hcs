@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@hcs/config": "*",
+    "@hcs/contracts": "*",
     "@hcs/ui": "*",
     "@vinext/cloudflare": "1.0.0-beta.8",
     "lucide-react": "0.544.0",

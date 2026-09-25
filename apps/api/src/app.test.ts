@@ -23,6 +23,10 @@ import {
   transferCreateResponseSchema,
   employeeCreateResponseSchema,
   paymentMethodCreateResponseSchema,
+  posDeviceActivateResponseSchema,
+  posDeviceActivationCreateResponseSchema,
+  posDeviceContextSchema,
+  posPinLoginResponseSchema,
   registerOperationsContextSchema,
   registerSessionCloseResponseSchema,
   registerSessionOpenResponseSchema,
@@ -257,6 +261,54 @@ const closeRegisterSession = vi.fn(async (_userId, _tenantId, sessionId, request
   countedCashCentavos: request.countedCashCentavos,
   varianceCentavos: 0,
 }))
+const deviceId = '11000000-0000-4000-8000-000000000001'
+const registerId = 'd0000000-0000-4000-8000-000000000001'
+const employeeId = 'c0000000-0000-4000-8000-000000000001'
+const loadPosDevices = vi.fn(async () => ({
+  registers: [
+    {
+      id: registerId,
+      code: 'REG-1',
+      name: 'Register 1',
+      locationId,
+      locationName: 'Main Store',
+      status: 'active' as const,
+    },
+  ],
+  devices: [],
+}))
+const createPosDeviceActivation = vi.fn(async () => ({
+  deviceId,
+  activationExpiresAt: '2026-09-25T01:15:00.000Z',
+  status: 'pending' as const,
+}))
+const activatePosDevice = vi.fn(async () => ({
+  status: 'active' as const,
+  device: {
+    id: deviceId,
+    name: 'Front counter POS',
+    tenantName: 'Sample Store',
+    locationId,
+    locationName: 'Main Store',
+    registerId,
+    registerName: 'Register 1',
+  },
+}))
+const authenticatePosEmployee = vi.fn(async () => ({
+  status: 'authenticated' as const,
+  expiresAt: '2026-09-25T13:00:00.000Z',
+  employee: { id: employeeId, employeeCode: 'EMP-001', displayName: 'Cashier One' },
+  device: {
+    id: deviceId,
+    name: 'Front counter POS',
+    tenantId,
+    tenantName: 'Sample Store',
+    locationId,
+    locationName: 'Main Store',
+    registerId,
+    registerName: 'Register 1',
+  },
+}))
 
 const authenticatedApp = createApp({
   verifyAccessToken: async (token) => (token === 'valid-token' ? { userId } : null),
@@ -310,6 +362,10 @@ const authenticatedApp = createApp({
   createPaymentMethod,
   openRegisterSession,
   closeRegisterSession,
+  loadPosDevices,
+  createPosDeviceActivation,
+  activatePosDevice,
+  authenticatePosEmployee,
 })
 
 const businessDetails = {
@@ -533,6 +589,10 @@ describe('API', () => {
       createPaymentMethod,
       openRegisterSession,
       closeRegisterSession,
+      loadPosDevices,
+      createPosDeviceActivation,
+      activatePosDevice,
+      authenticatePosEmployee,
     })
     const response = await multiTenantApp.request(
       '/v1/onboarding',
@@ -594,6 +654,10 @@ describe('API', () => {
       createPaymentMethod,
       openRegisterSession,
       closeRegisterSession,
+      loadPosDevices,
+      createPosDeviceActivation,
+      activatePosDevice,
+      authenticatePosEmployee,
     })
     const response = await employeeApp.request(
       '/v1/onboarding',
@@ -1427,5 +1491,103 @@ describe('API', () => {
     )
     expect(closed.status).toBe(200)
     expect(registerSessionCloseResponseSchema.safeParse(await closed.json()).success).toBe(true)
+  })
+
+  it('lists POS devices only for the server-resolved tenant', async () => {
+    loadPosDevices.mockClear()
+    const response = await authenticatedApp.request(
+      '/v1/pos/devices',
+      { headers: { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId } },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(posDeviceContextSchema.safeParse(await response.json()).success).toBe(true)
+    expect(loadPosDevices).toHaveBeenCalledWith(userId, tenantId, bindings)
+  })
+
+  it('creates a one-time POS activation code without sending the raw code to Postgres', async () => {
+    createPosDeviceActivation.mockClear()
+    const response = await authenticatedApp.request(
+      '/v1/pos/devices/activation-codes',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+        },
+        body: JSON.stringify({ registerId, name: 'Front counter POS' }),
+      },
+      bindings,
+    )
+    const payload = posDeviceActivationCreateResponseSchema.parse(await response.json())
+    expect(response.status).toBe(201)
+    expect(payload.activationCode).toMatch(/^[A-F0-9]{12}$/)
+    expect(createPosDeviceActivation).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      { registerId, name: 'Front counter POS' },
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('activates a POS device and returns an opaque device token', async () => {
+    activatePosDevice.mockClear()
+    const response = await authenticatedApp.request(
+      '/v1/pos/devices/activate',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ activationCode: 'ABCDEF123456' }),
+      },
+      bindings,
+    )
+    const payload = posDeviceActivateResponseSchema.parse(await response.json())
+    expect(response.status).toBe(200)
+    expect(payload.deviceToken).toMatch(/^[a-f0-9]{64}$/)
+    expect(activatePosDevice).toHaveBeenCalledWith(
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('requires a registered device token and hashes it before PIN authentication', async () => {
+    authenticatePosEmployee.mockClear()
+    const missingDevice = await authenticatedApp.request(
+      '/v1/pos/sessions/pin-login',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ employeeCode: 'EMP-001', pin: '1234' }),
+      },
+      bindings,
+    )
+    expect(missingDevice.status).toBe(401)
+    expect(authenticatePosEmployee).not.toHaveBeenCalled()
+
+    const deviceToken = 'a'.repeat(64)
+    const response = await authenticatedApp.request(
+      '/v1/pos/sessions/pin-login',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-pos-device-token': deviceToken },
+        body: JSON.stringify({ employeeCode: 'EMP-001', pin: '1234' }),
+      },
+      bindings,
+    )
+    const payload = posPinLoginResponseSchema.parse(await response.json())
+    expect(response.status).toBe(200)
+    expect(payload.sessionToken).toMatch(/^[a-f0-9]{64}$/)
+    expect(authenticatePosEmployee).toHaveBeenCalledWith(
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+      { employeeCode: 'EMP-001', pin: '1234' },
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+      expect.any(String),
+      bindings,
+    )
   })
 })

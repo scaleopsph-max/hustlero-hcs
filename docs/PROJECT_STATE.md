@@ -77,11 +77,15 @@ Last updated: 2026-09-25
 - Back Office `/employees`, `/locations`, and `/registers` are connected to the authenticated workforce API
 - Register/payment migrations `20260924145650` and `20260924145806` are applied; tenant payment methods, one-open-session-per-register enforcement, immutable cash movements, supporting indexes, idempotent open/close commands, audit events, and outbox events are implemented
 - Back Office `/payment-methods` and `/register-sessions` provide payment configuration, assigned-employee register opening, closing cash count, and variance visibility
+- POS device migrations `20260925010256` and `20260925010400` are applied; device activation codes, device tokens, and employee session tokens are stored only as SHA-256 hashes, with private RLS-enabled tables and supporting indexes
+- Back Office `/devices` creates 15-minute one-time activation codes for an active branch register and shows device activation/last-seen status
+- POS `:3002` now requires device activation before employee sign-in; PIN authentication is branch-assignment aware, verifies the existing bcrypt credential, locks after five failed attempts for 15 minutes, and issues a 12-hour opaque employee session
+- Development API Worker version `ec468fce-cec3-48bd-acbd-33c3b454d91c` is deployed with Back Office and POS local-origin CORS support
 
 ## Not started
 
 - Remaining onboarding steps and go-live validation
-- POS device activation, employee PIN session, and sales implementation
+- Sales transaction, payment tender, receipt, refund, and void implementation
 - Staging and production environments
 
 ## Current blockers/gates
@@ -94,12 +98,12 @@ Last updated: 2026-09-25
 - Owner completed the business-question and feature-selection forms for `LOCAL RECIPE`
 - Manual catalog/product vertical slice: private Product → Variant → SKU → Barcode schema, tenant-safe/idempotent API commands, product-grain list, editable product detail, and nested add/edit/deactivate variant flow are implemented and verified in development
 - Opening inventory per branch and variant is implemented and connected to the onboarding checklist; the authenticated `/inventory/opening` screen was verified with the saved `LOCAL RECIPE` catalog without mutating stock
-- Development API Worker version `7214afe5-c8c4-41e6-b1f1-255c1832221c` is deployed with inventory, purchasing, transfers, workforce, payment-method, and register-session APIs
+- POS device activation and PIN-session foundation is implemented; a real register must be created before the owner can run the first end-to-end device activation
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Create the first development register, verify one open/close session with the existing test employee, then implement POS device activation and employee PIN authentication before the sales engine.
+Create the first development register, generate a device activation from `/devices`, activate the POS at `http://localhost:3002`, verify employee PIN sign-in, then implement the atomic sales/checkout engine.
 
 ## Production state
 

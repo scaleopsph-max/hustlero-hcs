@@ -130,7 +130,15 @@ Current register foundation:
 - Every tenant starts with Cash, E-wallet, Bank Transfer, and Card Terminal methods. Additional manual methods are owner-created through an idempotent command; no direct payment-provider charging occurs.
 - `POST /v1/register-sessions/open` accepts a register, an active employee assigned to that register's location, and integer-centavo opening cash. It atomically opens the session and appends the opening cash movement.
 - Only one open session may exist per register. `POST /v1/register-sessions/{id}/close` calculates expected cash from the append-only cash ledger, records counted cash and variance, and marks a non-zero variance as an explicit exception.
-- Open/close commands are currently Back Office owner operations for controlled development. Device activation and employee-PIN POS session authorization must be completed before exposing these operations in the POS application.
+- Open/close commands are currently Back Office owner operations for controlled development. The new device and employee session identity will authorize their POS-native equivalents in the sales slice.
+
+Current POS identity foundation:
+
+- `GET /v1/pos/devices` returns only registers and devices belonging to the authenticated server-resolved tenant.
+- `POST /v1/pos/devices/activation-codes` is owner-only and creates a 12-character one-time code that expires after 15 minutes. The API returns the raw code once; PostgreSQL stores only its SHA-256 hash.
+- `POST /v1/pos/devices/activate` consumes the one-time code and returns an opaque 256-bit device token. The token binds the device to its tenant, branch, and register; only the token hash is stored.
+- `POST /v1/pos/sessions/pin-login` requires the device token in `X-POS-Device-Token`, an active employee code assigned to that device branch, and a valid 4-6 digit PIN. Five failed PIN attempts lock that employee credential for 15 minutes.
+- A successful PIN login revokes the device's previous employee session and returns a new opaque 12-hour session token. Only its hash is stored. Future sales commands derive tenant, branch, register, and employee from this session instead of accepting those identifiers from the POS client.
 
 ### Customers, controls, and reporting
 
