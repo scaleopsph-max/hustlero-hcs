@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Building2, Check, KeyRound, LogOut, RefreshCw, Search, ShieldCheck, SlidersHorizontal } from 'lucide-react'
 import { FormEvent, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Button, Chip, Glass, Logo, Surface, cn } from '@hcs/ui'
+import { SupportAccessPanel } from './SupportAccessPanel'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? ''
@@ -44,6 +45,12 @@ export function PlatformConsole() {
   const [operation, setOperation] = useState<Operation | null>(null)
   const [reason, setReason] = useState('')
   const [endsAt, setEndsAt] = useState('')
+  const [section, setSection] = useState<'tenants' | 'support'>('tenants')
+
+  const getAccessToken = useCallback(async () => {
+    const { data } = (await auth?.auth.getSession()) ?? { data: { session: null } }
+    return data.session?.access_token ?? null
+  }, [auth])
 
   const prepareMfa = useCallback(async () => {
     if (!auth) return
@@ -287,7 +294,27 @@ export function PlatformConsole() {
             </Button>
           </div>
         </header>
-        <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <nav className="flex gap-1 border-b border-white/10" aria-label="Platform sections">
+          <button
+            className={cn(
+              'border-b-2 px-4 py-3 text-sm font-semibold',
+              section === 'tenants' ? 'border-gold-400 text-gold-200' : 'border-transparent text-ink-300',
+            )}
+            onClick={() => setSection('tenants')}
+          >
+            Tenant controls
+          </button>
+          <button
+            className={cn(
+              'border-b-2 px-4 py-3 text-sm font-semibold',
+              section === 'support' ? 'border-gold-400 text-gold-200' : 'border-transparent text-ink-300',
+            )}
+            onClick={() => setSection('support')}
+          >
+            Support access
+          </button>
+        </nav>
+        <section className={cn('grid grid-cols-2 gap-3 lg:grid-cols-4', section !== 'tenants' && 'hidden')}>
           <Metric label="Tenants" value={context?.metrics.tenantCount ?? 0} />
           <Metric label="Active" value={context?.metrics.activeTenantCount ?? 0} tone="text-signal-dark-success-fg" />
           <Metric
@@ -302,7 +329,12 @@ export function PlatformConsole() {
             {message}
           </div>
         ) : null}
-        <div className="grid min-h-[580px] gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
+        <div
+          className={cn(
+            'min-h-[580px] gap-4 lg:grid-cols-[360px_minmax(0,1fr)]',
+            section === 'tenants' ? 'grid' : 'hidden',
+          )}
+        >
           <section className="border-r-0 border-white/10 lg:border-r lg:pr-4">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="font-display text-lg font-bold">Tenants</h2>
@@ -444,6 +476,13 @@ export function PlatformConsole() {
             )}
           </section>
         </div>
+        {section === 'support' && context ? (
+          <SupportAccessPanel
+            tenants={context.tenants}
+            canGrant={context.admin.canManage}
+            getAccessToken={getAccessToken}
+          />
+        ) : null}
       </div>
       {operation ? (
         <OperationDialog

@@ -104,6 +104,11 @@ import {
   platformEntitlementUpdateResponseSchema,
   platformTenantStatusUpdateRequestSchema,
   platformTenantStatusUpdateResponseSchema,
+  supportAccessContextSchema,
+  supportAccessCreateRequestSchema,
+  supportAccessGrantSchema,
+  supportAccessOverviewSchema,
+  supportAccessRevokeRequestSchema,
 } from '@hcs/contracts'
 import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
@@ -207,11 +212,19 @@ import {
 } from './notifications-repository'
 import {
   loadPlatformContextFromPostgres,
+  createSupportAccessInPostgres,
+  loadSupportAccessFromPostgres,
+  loadSupportOverviewFromPostgres,
+  revokeSupportAccessInPostgres,
   updatePlatformEntitlementInPostgres,
   updatePlatformTenantStatusInPostgres,
   type PlatformContextLoader,
   type PlatformEntitlementUpdater,
   type PlatformTenantStatusUpdater,
+  type SupportAccessCreator,
+  type SupportAccessLoader,
+  type SupportAccessRevoker,
+  type SupportOverviewLoader,
 } from './platform-repository'
 import {
   loadInventoryMovementsFromPostgres,
@@ -346,6 +359,10 @@ interface AppDependencies {
   loadPlatformContext: PlatformContextLoader
   updatePlatformEntitlement: PlatformEntitlementUpdater
   updatePlatformTenantStatus: PlatformTenantStatusUpdater
+  loadSupportAccess: SupportAccessLoader
+  createSupportAccess: SupportAccessCreator
+  revokeSupportAccess: SupportAccessRevoker
+  loadSupportOverview: SupportOverviewLoader
 }
 
 const defaultDependencies: AppDependencies = {
@@ -417,6 +434,10 @@ const defaultDependencies: AppDependencies = {
   loadPlatformContext: loadPlatformContextFromPostgres,
   updatePlatformEntitlement: updatePlatformEntitlementInPostgres,
   updatePlatformTenantStatus: updatePlatformTenantStatusInPostgres,
+  loadSupportAccess: loadSupportAccessFromPostgres,
+  createSupportAccess: createSupportAccessInPostgres,
+  revokeSupportAccess: revokeSupportAccessInPostgres,
+  loadSupportOverview: loadSupportOverviewFromPostgres,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -537,13 +558,25 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
                 code: 'PLATFORM_RECORD_NOT_FOUND',
                 message: 'The tenant or feature was not found.',
               }
-            : code === 'HCS08'
+            : code === 'HCSP3'
               ? {
                   status: 409 as const,
-                  code: 'IDEMPOTENCY_KEY_CONFLICT',
-                  message: 'This request key was already used for a different platform operation.',
+                  code: 'ACTIVE_SUPPORT_ACCESS_EXISTS',
+                  message: 'This operator already has active support access to the tenant.',
                 }
-              : null
+              : code === 'HCSP4'
+                ? {
+                    status: 403 as const,
+                    code: 'SUPPORT_ACCESS_INACTIVE',
+                    message: 'This support access grant is expired or revoked.',
+                  }
+                : code === 'HCS08'
+                  ? {
+                      status: 409 as const,
+                      code: 'IDEMPOTENCY_KEY_CONFLICT',
+                      message: 'This request key was already used for a different platform operation.',
+                    }
+                  : null
     if (!mapped) return null
     return context.json(
       apiErrorResponseSchema.parse({
@@ -654,6 +687,124 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
         context.env,
       )
       return context.json(platformTenantStatusUpdateResponseSchema.parse(response))
+    } catch (error) {
+      const response = platformError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
+  app.get('/v1/platform/support-access', async (context) => {
+    const user = await requirePlatformUser(context)
+    if (user instanceof Response) return user
+    try {
+      return context.json(
+        supportAccessContextSchema.parse(await dependencies.loadSupportAccess(user.userId, context.env)),
+      )
+    } catch (error) {
+      const response = platformError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
+  app.post('/v1/platform/support-access', async (context) => {
+    const user = await requirePlatformUser(context)
+    if (user instanceof Response) return user
+    const idempotencyKey = context.req.header('idempotency-key')
+    const parsed = supportAccessCreateRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey) || !parsed.success) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_PLATFORM_REQUEST',
+            message: 'Check the support access details and Idempotency-Key.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    try {
+      const response = await dependencies.createSupportAccess(
+        user.userId,
+        parsed.data,
+        idempotencyKey,
+        await requestHash(parsed.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(supportAccessGrantSchema.parse(response), 201)
+    } catch (error) {
+      const response = platformError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
+  app.patch('/v1/platform/support-access/:grantId/revoke', async (context) => {
+    const user = await requirePlatformUser(context)
+    if (user instanceof Response) return user
+    const grantId = context.req.param('grantId')
+    const idempotencyKey = context.req.header('idempotency-key')
+    const parsed = supportAccessRevokeRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(grantId) ||
+      !idempotencyKey ||
+      !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey) ||
+      !parsed.success
+    ) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_PLATFORM_REQUEST',
+            message: 'Check the support access revocation and Idempotency-Key.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    try {
+      const response = await dependencies.revokeSupportAccess(
+        user.userId,
+        grantId,
+        parsed.data,
+        idempotencyKey,
+        await requestHash({ grantId, ...parsed.data }),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(supportAccessGrantSchema.parse(response))
+    } catch (error) {
+      const response = platformError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
+  app.get('/v1/platform/support-access/:grantId/overview', async (context) => {
+    const user = await requirePlatformUser(context)
+    if (user instanceof Response) return user
+    const grantId = context.req.param('grantId')
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(grantId)) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_PLATFORM_REQUEST',
+            message: 'Check the support access grant identifier.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    try {
+      return context.json(
+        supportAccessOverviewSchema.parse(
+          await dependencies.loadSupportOverview(user.userId, grantId, context.get('requestId'), context.env),
+        ),
+      )
     } catch (error) {
       const response = platformError(context, error)
       if (response) return response

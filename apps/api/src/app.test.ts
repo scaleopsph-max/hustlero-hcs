@@ -60,6 +60,9 @@ import {
   platformContextSchema,
   platformEntitlementUpdateResponseSchema,
   platformTenantStatusUpdateResponseSchema,
+  supportAccessContextSchema,
+  supportAccessGrantSchema,
+  supportAccessOverviewSchema,
   type AlertStatusUpdateRequest,
   type LoyaltyPolicyUpdateRequest,
 } from '@hcs/contracts'
@@ -716,6 +719,54 @@ const updatePlatformTenantStatus = vi.fn(async (_userId, nextTenantId, request) 
   tenantId: nextTenantId,
   status: request.status,
 }))
+const supportGrantId = 'f1000000-0000-4000-8000-000000000001'
+const supportGrant = {
+  id: supportGrantId,
+  tenantId,
+  tenantName: 'Sample Store',
+  adminUserId: userId,
+  ticketReference: 'SUP-1042',
+  reason: 'Investigate inventory totals',
+  accessLevel: 'read_only' as const,
+  scope: ['tenant_overview' as const],
+  startsAt: '2026-09-26T05:00:00.000Z',
+  expiresAt: '2026-09-26T05:30:00.000Z',
+  revokedAt: null,
+  revocationReason: null,
+  createdAt: '2026-09-26T05:00:00.000Z',
+}
+const supportContext = { canGrant: true, grants: [supportGrant] }
+const supportOverview = {
+  access: supportGrant,
+  tenant: {
+    id: tenantId,
+    slug: 'sample-store',
+    name: 'Sample Store',
+    status: 'active' as const,
+    baseCurrency: 'PHP',
+    timezone: 'Asia/Manila',
+  },
+  metrics: {
+    locationCount: 1,
+    activeMemberCount: 1,
+    activeEmployeeCount: 2,
+    activeProductCount: 3,
+    activeVariantCount: 5,
+    inventoryPositionCount: 5,
+    registerCount: 1,
+    openRegisterSessionCount: 0,
+    completedSaleCount: 4,
+  },
+  locations: [{ id: locationId, code: 'MAIN', name: 'Main Store', kind: 'store', isActive: true }],
+}
+const loadSupportAccess = vi.fn(async () => supportContext)
+const createSupportAccess = vi.fn(async () => supportGrant)
+const revokeSupportAccess = vi.fn(async () => ({
+  ...supportGrant,
+  revokedAt: '2026-09-26T05:10:00.000Z',
+  revocationReason: 'Investigation completed',
+}))
+const loadSupportOverview = vi.fn(async () => supportOverview)
 
 const authenticatedApp = createApp({
   verifyAccessToken: async (token) =>
@@ -802,6 +853,10 @@ const authenticatedApp = createApp({
   loadPlatformContext,
   updatePlatformEntitlement,
   updatePlatformTenantStatus,
+  loadSupportAccess,
+  createSupportAccess,
+  revokeSupportAccess,
+  loadSupportOverview,
 })
 
 const businessDetails = {
@@ -950,6 +1005,77 @@ describe('API', () => {
 
     expect(response.status).toBe(200)
     expect(platformTenantStatusUpdateResponseSchema.parse(payload).status).toBe('suspended')
+  })
+
+  it('loads the operator support-access history', async () => {
+    const response = await authenticatedApp.request(
+      '/v1/platform/support-access',
+      { headers: { authorization: 'Bearer valid-token' } },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(supportAccessContextSchema.parse(await response.json())).toEqual(supportContext)
+  })
+
+  it('creates time-boxed read-only support access with an idempotency key', async () => {
+    const request = {
+      tenantId,
+      ticketReference: 'SUP-1042',
+      reason: 'Investigate inventory totals',
+      durationMinutes: 30,
+    }
+    const response = await authenticatedApp.request(
+      '/v1/platform/support-access',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'idempotency-key': 'support-access-create-001',
+        },
+        body: JSON.stringify(request),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(201)
+    expect(supportAccessGrantSchema.parse(await response.json())).toEqual(supportGrant)
+    expect(createSupportAccess).toHaveBeenCalledWith(
+      userId,
+      request,
+      'support-access-create-001',
+      expect.any(String),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('loads only the audited support overview for an active grant', async () => {
+    const response = await authenticatedApp.request(
+      `/v1/platform/support-access/${supportGrantId}/overview`,
+      { headers: { authorization: 'Bearer valid-token' } },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(supportAccessOverviewSchema.parse(await response.json())).toEqual(supportOverview)
+    expect(loadSupportOverview).toHaveBeenCalledWith(userId, supportGrantId, expect.any(String), bindings)
+  })
+
+  it('revokes support access with an audited reason', async () => {
+    const response = await authenticatedApp.request(
+      `/v1/platform/support-access/${supportGrantId}/revoke`,
+      {
+        method: 'PATCH',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'idempotency-key': 'support-access-revoke-001',
+        },
+        body: JSON.stringify({ reason: 'Investigation completed' }),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(supportAccessGrantSchema.parse(await response.json()).revokedAt).toBeTruthy()
   })
 
   it('returns only server-resolved tenant and branch access', async () => {
@@ -1133,6 +1259,10 @@ describe('API', () => {
       loadPlatformContext,
       updatePlatformEntitlement,
       updatePlatformTenantStatus,
+      loadSupportAccess,
+      createSupportAccess,
+      revokeSupportAccess,
+      loadSupportOverview,
     })
     const response = await multiTenantApp.request(
       '/v1/onboarding',
@@ -1226,6 +1356,10 @@ describe('API', () => {
       loadPlatformContext,
       updatePlatformEntitlement,
       updatePlatformTenantStatus,
+      loadSupportAccess,
+      createSupportAccess,
+      revokeSupportAccess,
+      loadSupportOverview,
     })
     const response = await employeeApp.request(
       '/v1/onboarding',
