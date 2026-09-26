@@ -88,6 +88,7 @@ import {
   loyaltyContextSchema,
   loyaltyPolicyUpdateRequestSchema,
   loyaltyPolicyUpdateResponseSchema,
+  reportingFilterSchema,
 } from '@hcs/contracts'
 import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
@@ -165,6 +166,14 @@ import {
   type LoyaltyLoader,
   type LoyaltyPolicyUpdater,
 } from './loyalty-repository'
+import {
+  loadDashboardFromPostgres,
+  loadInventoryReportFromPostgres,
+  loadSalesReportFromPostgres,
+  type DashboardLoader,
+  type InventoryReportLoader,
+  type SalesReportLoader,
+} from './reporting-repository'
 import {
   loadInventoryMovementsFromPostgres,
   loadInventoryStockFromPostgres,
@@ -286,6 +295,9 @@ interface AppDependencies {
   createPosCustomer: PosCustomerCreator
   loadLoyalty: LoyaltyLoader
   updateLoyaltyPolicy: LoyaltyPolicyUpdater
+  loadDashboard: DashboardLoader
+  loadSalesReport: SalesReportLoader
+  loadInventoryReport: InventoryReportLoader
 }
 
 const defaultDependencies: AppDependencies = {
@@ -345,6 +357,9 @@ const defaultDependencies: AppDependencies = {
   createPosCustomer: createPosCustomerInPostgres,
   loadLoyalty: loadLoyaltyFromPostgres,
   updateLoyaltyPolicy: updateLoyaltyPolicyInPostgres,
+  loadDashboard: loadDashboardFromPostgres,
+  loadSalesReport: loadSalesReportFromPostgres,
+  loadInventoryReport: loadInventoryReportFromPostgres,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -3049,6 +3064,85 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
       return loyaltyError(context, error)
     }
   })
+
+  const reportingError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
+    const code = postgresErrorCode(error)
+    const requestId = context.get('requestId')
+    if (code === 'HCSD0')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'REPORTING_ACCESS_DENIED', message: 'Your role cannot view these reports.', requestId },
+        }),
+        403,
+      )
+    if (code === 'HCSD1')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_REPORT_FILTERS',
+            message: 'Check the report date, location, and channel.',
+            requestId,
+          },
+        }),
+        400,
+      )
+    if (code === 'HCSD2')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'REPORT_LOCATION_NOT_FOUND',
+            message: 'The selected reporting location was not found.',
+            requestId,
+          },
+        }),
+        404,
+      )
+    throw error
+  }
+
+  const loadReport = async (
+    context: Context<{ Bindings: Bindings }>,
+    loader: DashboardLoader | SalesReportLoader | InventoryReportLoader,
+  ) => {
+    const resolved = await resolvePurchasingTenant(context)
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'REPORTING_ACCESS_DENIED',
+            message: 'Sign in and select a business to view reports.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    const parsed = reportingFilterSchema.safeParse({
+      from: context.req.query('from'),
+      to: context.req.query('to'),
+      locationId: context.req.query('locationId') || null,
+      channel: context.req.query('channel') || 'all',
+    })
+    if (!parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_REPORT_FILTERS',
+            message: 'Choose a valid report date range, location, and channel.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      return context.json(await loader(resolved.userId, resolved.tenantId, parsed.data, context.env))
+    } catch (error) {
+      return reportingError(context, error)
+    }
+  }
+
+  app.get('/v1/dashboard', (context) => loadReport(context, dependencies.loadDashboard))
+  app.get('/v1/reports/sales', (context) => loadReport(context, dependencies.loadSalesReport))
+  app.get('/v1/reports/inventory', (context) => loadReport(context, dependencies.loadInventoryReport))
 
   const customerError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
     const code = postgresErrorCode(error)

@@ -173,6 +173,10 @@ Current POS cash-sales implementation:
 - `GET /v1/dashboard`
 - `GET /v1/reports/sales`
 - `GET /v1/reports/inventory`
+- The three reporting reads require `from` and `to` ISO business dates, accept an optional tenant-owned `locationId`, and currently accept `channel=all|pos`. Date ranges are inclusive and limited to 367 business days.
+- Dashboard and sales-report totals share one PostgreSQL projection. Gross sales use sale commit dates; refunds use reversal commit dates; net COGS reverses the original line-cost snapshot on the refund date; gross profit is net sales less net COGS.
+- Inventory reporting is a current balance snapshot. Stock valuation is on-hand quantity multiplied by the current average unit cost. Out-of-stock is available quantity less than or equal to zero; low-stock remains unclassified until the tenant configures an explicit reorder point.
+- Basic CSV downloads serialize the validated sales and inventory report payload already shown to the user. The asynchronous `POST /v1/exports` contract remains reserved for large, scheduled, or custom exports.
 - `POST /v1/exports`
 
 ## Command safety

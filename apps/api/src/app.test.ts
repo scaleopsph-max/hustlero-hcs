@@ -48,6 +48,9 @@ import {
   posCustomerSearchResponseSchema,
   loyaltyContextSchema,
   loyaltyPolicyUpdateResponseSchema,
+  dashboardContextSchema,
+  inventoryReportContextSchema,
+  salesReportContextSchema,
   type LoyaltyPolicyUpdateRequest,
 } from '@hcs/contracts'
 import { describe, expect, it, vi } from 'vitest'
@@ -507,6 +510,74 @@ const updateLoyaltyPolicy = vi.fn(async (_userId, _tenantId, request: LoyaltyPol
   spendPerPointCentavos: request.spendPerPointCentavos,
   status: 'updated' as const,
 }))
+const reportScope = {
+  from: '2026-09-01',
+  to: '2026-09-25',
+  locationId: null,
+  channel: 'all' as const,
+  timezone: 'Asia/Manila',
+  generatedAt: '2026-09-25T05:00:00.000Z',
+}
+const reportSummary = {
+  grossSalesCentavos: 100_000,
+  refundsCentavos: 10_000,
+  netSalesCentavos: 90_000,
+  cogsCentavos: 40_000,
+  grossProfitCentavos: 50_000,
+  transactionCount: 2,
+  discountCentavos: 0,
+  taxCentavos: 0,
+}
+const reportLocations = [{ id: locationId, code: 'MAIN', name: 'Main Store' }]
+const dashboardContext = {
+  scope: reportScope,
+  locations: reportLocations,
+  summary: reportSummary,
+  salesTrend: [{ date: '2026-09-25', netSalesCentavos: 90_000, transactionCount: 2 }],
+  branches: [
+    {
+      locationId,
+      locationName: 'Main Store',
+      netSalesCentavos: 90_000,
+      grossProfitCentavos: 50_000,
+      transactionCount: 2,
+    },
+  ],
+  inventory: {
+    skuCount: 1,
+    onHandMilli: 10_000,
+    availableMilli: 10_000,
+    outOfStockCount: 0,
+    valuationCentavos: 40_000,
+  },
+  registers: { openCount: 1, totalCount: 1 },
+}
+const salesReportContext = {
+  scope: reportScope,
+  locations: reportLocations,
+  summary: reportSummary,
+  byItem: [],
+  byCategory: [],
+  byEmployee: [],
+  byPaymentType: [],
+}
+const inventoryReportContext = {
+  scope: reportScope,
+  locations: reportLocations,
+  summary: {
+    skuCount: 1,
+    onHandMilli: 10_000,
+    reservedMilli: 0,
+    availableMilli: 10_000,
+    inTransitMilli: 0,
+    outOfStockCount: 0,
+    valuationCentavos: 40_000,
+  },
+  items: [],
+}
+const loadDashboard = vi.fn(async () => dashboardContext)
+const loadSalesReport = vi.fn(async () => salesReportContext)
+const loadInventoryReport = vi.fn(async () => inventoryReportContext)
 
 const authenticatedApp = createApp({
   verifyAccessToken: async (token) => (token === 'valid-token' ? { userId } : null),
@@ -580,6 +651,9 @@ const authenticatedApp = createApp({
   createPosCustomer,
   loadLoyalty,
   updateLoyaltyPolicy,
+  loadDashboard,
+  loadSalesReport,
+  loadInventoryReport,
 })
 
 const businessDetails = {
@@ -823,6 +897,9 @@ describe('API', () => {
       createPosCustomer,
       loadLoyalty,
       updateLoyaltyPolicy,
+      loadDashboard,
+      loadSalesReport,
+      loadInventoryReport,
     })
     const response = await multiTenantApp.request(
       '/v1/onboarding',
@@ -904,6 +981,9 @@ describe('API', () => {
       createPosCustomer,
       loadLoyalty,
       updateLoyaltyPolicy,
+      loadDashboard,
+      loadSalesReport,
+      loadInventoryReport,
     })
     const response = await employeeApp.request(
       '/v1/onboarding',
@@ -2054,6 +2134,37 @@ describe('API', () => {
       expect.any(String),
       bindings,
     )
+  })
+
+  it('loads reconciled dashboard, sales, and inventory reports with server-resolved tenancy', async () => {
+    const query = '?from=2026-09-01&to=2026-09-25&channel=all'
+    const headers = { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId }
+    const dashboard = await authenticatedApp.request(`/v1/dashboard${query}`, { headers }, bindings)
+    const sales = await authenticatedApp.request(`/v1/reports/sales${query}`, { headers }, bindings)
+    const inventory = await authenticatedApp.request(`/v1/reports/inventory${query}`, { headers }, bindings)
+
+    expect(dashboard.status).toBe(200)
+    expect(sales.status).toBe(200)
+    expect(inventory.status).toBe(200)
+    expect(dashboardContextSchema.safeParse(await dashboard.json()).success).toBe(true)
+    expect(salesReportContextSchema.safeParse(await sales.json()).success).toBe(true)
+    expect(inventoryReportContextSchema.safeParse(await inventory.json()).success).toBe(true)
+    const filter = { from: '2026-09-01', to: '2026-09-25', locationId: null, channel: 'all' }
+    expect(loadDashboard).toHaveBeenCalledWith(userId, tenantId, filter, bindings)
+    expect(loadSalesReport).toHaveBeenCalledWith(userId, tenantId, filter, bindings)
+    expect(loadInventoryReport).toHaveBeenCalledWith(userId, tenantId, filter, bindings)
+  })
+
+  it('rejects invalid reporting filters before querying the database', async () => {
+    loadDashboard.mockClear()
+    const response = await authenticatedApp.request(
+      '/v1/dashboard?from=invalid&to=2026-09-25&channel=all',
+      { headers: { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId } },
+      bindings,
+    )
+    expect(response.status).toBe(400)
+    expect(apiErrorResponseSchema.parse(await response.json()).error.code).toBe('INVALID_REPORT_FILTERS')
+    expect(loadDashboard).not.toHaveBeenCalled()
   })
 
   it('creates, updates, and annotates a customer with idempotent commands', async () => {

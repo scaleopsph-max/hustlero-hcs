@@ -122,6 +122,16 @@ export {
   type LoyaltyPolicyUpdateRequest,
 } from './loyalty'
 export {
+  dashboardContextSchema,
+  inventoryReportContextSchema,
+  reportingFilterSchema,
+  salesReportContextSchema,
+  type DashboardContext,
+  type InventoryReportContext,
+  type ReportingFilter,
+  type SalesReportContext,
+} from './reporting'
+export {
   businessSetupQuestionsSchema,
   businessTypeSchema,
   featureSelectionSchema,
