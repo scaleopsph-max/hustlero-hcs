@@ -165,6 +165,21 @@ export {
   type NotificationsReadAllResponse,
 } from './notifications'
 export {
+  platformAdminRoleSchema,
+  platformContextSchema,
+  platformEntitlementSchema,
+  platformEntitlementUpdateRequestSchema,
+  platformEntitlementUpdateResponseSchema,
+  platformTenantStatusUpdateRequestSchema,
+  platformTenantStatusUpdateResponseSchema,
+  tenantStatusSchema,
+  type PlatformContext,
+  type PlatformEntitlementUpdateRequest,
+  type PlatformEntitlementUpdateResponse,
+  type PlatformTenantStatusUpdateRequest,
+  type PlatformTenantStatusUpdateResponse,
+} from './platform'
+export {
   businessSetupQuestionsSchema,
   businessTypeSchema,
   featureSelectionSchema,

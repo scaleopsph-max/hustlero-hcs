@@ -5,6 +5,7 @@ export interface Bindings {
   SUPABASE_URL?: string
   BACKOFFICE_ORIGIN?: string
   POS_ORIGIN?: string
+  ADMIN_ORIGIN?: string
   HYPERDRIVE?: {
     connectionString: string
   }

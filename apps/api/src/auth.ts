@@ -4,6 +4,7 @@ import { type Bindings, readSupabaseUrl } from './env'
 
 export interface AuthenticatedUser {
   userId: string
+  assuranceLevel?: 'aal1' | 'aal2'
 }
 
 export type AccessTokenVerifier = (accessToken: string, bindings: Bindings) => Promise<AuthenticatedUser | null>
@@ -33,7 +34,11 @@ export const verifySupabaseAccessToken: AccessTokenVerifier = async (accessToken
       issuer: new URL('/auth/v1', supabaseUrl).toString(),
     })
 
-    return payload.sub ? { userId: payload.sub } : null
+    if (!payload.sub) return null
+    return {
+      userId: payload.sub,
+      assuranceLevel: payload.aal === 'aal2' ? 'aal2' : 'aal1',
+    }
   } catch (error) {
     if (error instanceof errors.JOSEError) {
       return null

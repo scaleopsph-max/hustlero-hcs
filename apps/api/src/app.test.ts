@@ -57,6 +57,9 @@ import {
   notificationCenterSchema,
   notificationReadResponseSchema,
   notificationsReadAllResponseSchema,
+  platformContextSchema,
+  platformEntitlementUpdateResponseSchema,
+  platformTenantStatusUpdateResponseSchema,
   type AlertStatusUpdateRequest,
   type LoyaltyPolicyUpdateRequest,
 } from '@hcs/contracts'
@@ -671,9 +674,52 @@ const updateNotificationReadState = vi.fn(async (_userId, _tenantId, nextNotific
   unreadCount: read ? 0 : 1,
 }))
 const markAllNotificationsRead = vi.fn(async () => ({ markedCount: 1, unreadCount: 0 }))
+const platformContext = {
+  admin: { userId, displayName: 'Platform Owner', role: 'super_admin' as const, canManage: true },
+  metrics: { tenantCount: 1, activeTenantCount: 1, suspendedTenantCount: 0, availableFeatureCount: 1 },
+  features: [{ code: 'inventory', name: 'Inventory', platformAvailable: true }],
+  tenants: [
+    {
+      id: tenantId,
+      slug: 'sample-store',
+      name: 'Sample Store',
+      status: 'active' as const,
+      baseCurrency: 'PHP',
+      timezone: 'Asia/Manila',
+      createdAt: '2026-09-25T05:00:00.000Z',
+      locationCount: 1,
+      memberCount: 1,
+      entitlements: [
+        {
+          featureCode: 'inventory',
+          featureName: 'Inventory',
+          platformAvailable: true,
+          entitled: true,
+          enabled: true,
+          startsAt: '2026-09-25T05:00:00.000Z',
+          endsAt: null,
+        },
+      ],
+    },
+  ],
+}
+const loadPlatformContext = vi.fn(async () => platformContext)
+const updatePlatformEntitlement = vi.fn(async (_userId, nextTenantId, featureCode, request) => ({
+  tenantId: nextTenantId,
+  featureCode,
+  entitled: request.entitled,
+  enabled: request.entitled,
+  startsAt: '2026-09-25T05:00:00.000Z',
+  endsAt: request.endsAt,
+}))
+const updatePlatformTenantStatus = vi.fn(async (_userId, nextTenantId, request) => ({
+  tenantId: nextTenantId,
+  status: request.status,
+}))
 
 const authenticatedApp = createApp({
-  verifyAccessToken: async (token) => (token === 'valid-token' ? { userId } : null),
+  verifyAccessToken: async (token) =>
+    token === 'valid-token' ? { userId, assuranceLevel: 'aal2' } : token === 'aal1-token' ? { userId } : null,
   loadSessionAccess: async (requestedUserId) => {
     expect(requestedUserId).toBe(userId)
 
@@ -753,6 +799,9 @@ const authenticatedApp = createApp({
   loadNotificationCenter,
   updateNotificationReadState,
   markAllNotificationsRead,
+  loadPlatformContext,
+  updatePlatformEntitlement,
+  updatePlatformTenantStatus,
 })
 
 const businessDetails = {
@@ -825,6 +874,82 @@ describe('API', () => {
 
     expect(response.status).toBe(401)
     expect(apiErrorResponseSchema.parse(payload).error.code).toBe('INVALID_ACCESS_TOKEN')
+  })
+
+  it('requires MFA before loading the platform console', async () => {
+    const response = await authenticatedApp.request(
+      '/v1/platform/context',
+      { headers: { authorization: 'Bearer aal1-token' } },
+      bindings,
+    )
+    const payload: unknown = await response.json()
+
+    expect(response.status).toBe(403)
+    expect(apiErrorResponseSchema.parse(payload).error.code).toBe('MFA_REQUIRED')
+    expect(loadPlatformContext).not.toHaveBeenCalled()
+  })
+
+  it('loads the platform context for an MFA-verified operator', async () => {
+    const response = await authenticatedApp.request(
+      '/v1/platform/context',
+      { headers: { authorization: 'Bearer valid-token' } },
+      bindings,
+    )
+    const payload: unknown = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(platformContextSchema.parse(payload)).toEqual(platformContext)
+    expect(loadPlatformContext).toHaveBeenCalledWith(userId, bindings)
+  })
+
+  it('updates a tenant entitlement through an idempotent platform command', async () => {
+    const response = await authenticatedApp.request(
+      `/v1/platform/tenants/${tenantId}/entitlements/inventory`,
+      {
+        method: 'PATCH',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'idempotency-key': 'platform-entitlement-001',
+        },
+        body: JSON.stringify({ entitled: false, endsAt: null, reason: 'Subscription ended' }),
+      },
+      bindings,
+    )
+    const payload: unknown = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(platformEntitlementUpdateResponseSchema.parse(payload).entitled).toBe(false)
+    expect(updatePlatformEntitlement).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      'inventory',
+      { entitled: false, endsAt: null, reason: 'Subscription ended' },
+      'platform-entitlement-001',
+      expect.any(String),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('suspends a tenant through a super-admin command', async () => {
+    const response = await authenticatedApp.request(
+      `/v1/platform/tenants/${tenantId}/status`,
+      {
+        method: 'PATCH',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'idempotency-key': 'platform-tenant-status-001',
+        },
+        body: JSON.stringify({ status: 'suspended', reason: 'Owner requested temporary suspension' }),
+      },
+      bindings,
+    )
+    const payload: unknown = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(platformTenantStatusUpdateResponseSchema.parse(payload).status).toBe('suspended')
   })
 
   it('returns only server-resolved tenant and branch access', async () => {
@@ -1005,6 +1130,9 @@ describe('API', () => {
       loadNotificationCenter,
       updateNotificationReadState,
       markAllNotificationsRead,
+      loadPlatformContext,
+      updatePlatformEntitlement,
+      updatePlatformTenantStatus,
     })
     const response = await multiTenantApp.request(
       '/v1/onboarding',
@@ -1095,6 +1223,9 @@ describe('API', () => {
       loadNotificationCenter,
       updateNotificationReadState,
       markAllNotificationsRead,
+      loadPlatformContext,
+      updatePlatformEntitlement,
+      updatePlatformTenantStatus,
     })
     const response = await employeeApp.request(
       '/v1/onboarding',

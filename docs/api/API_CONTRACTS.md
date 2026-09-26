@@ -184,6 +184,14 @@ Current POS cash-sales implementation:
 - Basic CSV downloads serialize the validated sales and inventory report payload already shown to the user. The asynchronous `POST /v1/exports` contract remains reserved for large, scheduled, or custom exports.
 - `POST /v1/exports`
 
+### Platform administration
+
+- `GET /v1/platform/context` requires a valid Supabase bearer token with `aal2` and an active row in the private platform-admin allowlist. It returns the operator role, aggregate tenant counts, read-only platform feature availability, and the real active/suspended tenant directory with effective entitlement state.
+- `PATCH /v1/platform/tenants/{tenantId}/entitlements/{featureCode}` requires an `Idempotency-Key`, a human reason, the desired entitled state, and an optional future expiry. Super Admin and Operations may grant or revoke; revocation forces tenant enablement off but never deletes historical module data.
+- `PATCH /v1/platform/tenants/{tenantId}/status` requires an `Idempotency-Key`, a human reason, and `active` or `suspended`. Only Super Admin may change tenant status. Suspension blocks tenant access while preserving all business records.
+- Platform feature availability is read-only in this slice. Automated subscription billing, plan catalogs, support impersonation, and production provisioning remain deferred.
+- Platform commands use a separate actor-scoped idempotency ledger and append `platform_admin` audit events. The restricted Worker database role may execute the platform functions but cannot read the allowlist or idempotency tables directly.
+
 ## Command safety
 
 - The API derives tenant, actor, employee, location, and device context from trusted authentication/device state.

@@ -99,6 +99,11 @@ import {
   notificationReadRequestSchema,
   notificationReadResponseSchema,
   notificationsReadAllResponseSchema,
+  platformContextSchema,
+  platformEntitlementUpdateRequestSchema,
+  platformEntitlementUpdateResponseSchema,
+  platformTenantStatusUpdateRequestSchema,
+  platformTenantStatusUpdateResponseSchema,
 } from '@hcs/contracts'
 import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
@@ -200,6 +205,14 @@ import {
   type NotificationReadStateUpdater,
   type NotificationsReadAllMarker,
 } from './notifications-repository'
+import {
+  loadPlatformContextFromPostgres,
+  updatePlatformEntitlementInPostgres,
+  updatePlatformTenantStatusInPostgres,
+  type PlatformContextLoader,
+  type PlatformEntitlementUpdater,
+  type PlatformTenantStatusUpdater,
+} from './platform-repository'
 import {
   loadInventoryMovementsFromPostgres,
   loadInventoryStockFromPostgres,
@@ -330,6 +343,9 @@ interface AppDependencies {
   loadNotificationCenter: NotificationCenterLoader
   updateNotificationReadState: NotificationReadStateUpdater
   markAllNotificationsRead: NotificationsReadAllMarker
+  loadPlatformContext: PlatformContextLoader
+  updatePlatformEntitlement: PlatformEntitlementUpdater
+  updatePlatformTenantStatus: PlatformTenantStatusUpdater
 }
 
 const defaultDependencies: AppDependencies = {
@@ -398,6 +414,9 @@ const defaultDependencies: AppDependencies = {
   loadNotificationCenter: loadNotificationCenterFromPostgres,
   updateNotificationReadState: updateNotificationReadStateInPostgres,
   markAllNotificationsRead: markAllNotificationsReadInPostgres,
+  loadPlatformContext: loadPlatformContextFromPostgres,
+  updatePlatformEntitlement: updatePlatformEntitlementInPostgres,
+  updatePlatformTenantStatus: updatePlatformTenantStatusInPostgres,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -433,7 +452,11 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
     '/v1/*',
     cors({
       origin: (origin, context) =>
-        origin === context.env.BACKOFFICE_ORIGIN || origin === context.env.POS_ORIGIN ? origin : '',
+        origin === context.env.BACKOFFICE_ORIGIN ||
+        origin === context.env.POS_ORIGIN ||
+        origin === context.env.ADMIN_ORIGIN
+          ? origin
+          : '',
       allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
       allowHeaders: [
         'Authorization',
@@ -456,6 +479,186 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
     })
 
     return context.json(payload)
+  })
+
+  async function requirePlatformUser(context: Context<{ Bindings: Bindings }>) {
+    const accessToken = readBearerToken(context.req.header('authorization'))
+    if (!accessToken) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Sign in to the platform console.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+
+    const user = await dependencies.verifyAccessToken(accessToken, context.env)
+    if (!user) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_ACCESS_TOKEN',
+            message: 'The access token is invalid or expired.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+    if (user.assuranceLevel !== 'aal2') {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'MFA_REQUIRED',
+            message: 'Complete multi-factor authentication to use the platform console.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    }
+    return user
+  }
+
+  function platformError(context: Context<{ Bindings: Bindings }>, error: unknown) {
+    const code = postgresErrorCode(error)
+    const mapped =
+      code === 'HCSP0'
+        ? { status: 403 as const, code: 'PLATFORM_ACCESS_DENIED', message: 'This account is not a platform operator.' }
+        : code === 'HCSP1'
+          ? { status: 400 as const, code: 'INVALID_PLATFORM_REQUEST', message: 'Check the platform operation details.' }
+          : code === 'HCSP2'
+            ? {
+                status: 404 as const,
+                code: 'PLATFORM_RECORD_NOT_FOUND',
+                message: 'The tenant or feature was not found.',
+              }
+            : code === 'HCS08'
+              ? {
+                  status: 409 as const,
+                  code: 'IDEMPOTENCY_KEY_CONFLICT',
+                  message: 'This request key was already used for a different platform operation.',
+                }
+              : null
+    if (!mapped) return null
+    return context.json(
+      apiErrorResponseSchema.parse({
+        error: { code: mapped.code, message: mapped.message, requestId: context.get('requestId') },
+      }),
+      mapped.status,
+    )
+  }
+
+  app.get('/v1/platform/context', async (context) => {
+    const user = await requirePlatformUser(context)
+    if (user instanceof Response) return user
+    try {
+      return context.json(platformContextSchema.parse(await dependencies.loadPlatformContext(user.userId, context.env)))
+    } catch (error) {
+      const response = platformError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
+  app.patch('/v1/platform/tenants/:tenantId/entitlements/:featureCode', async (context) => {
+    const user = await requirePlatformUser(context)
+    if (user instanceof Response) return user
+    const tenantId = context.req.param('tenantId')
+    const featureCode = context.req.param('featureCode')
+    const idempotencyKey = context.req.header('idempotency-key')
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantId) ||
+      !/^[a-z][a-z0-9_]{0,63}$/.test(featureCode) ||
+      !idempotencyKey ||
+      !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)
+    ) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_PLATFORM_REQUEST',
+            message: 'Check the tenant, feature, and Idempotency-Key.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    const parsed = platformEntitlementUpdateRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_PLATFORM_REQUEST',
+            message: 'Check the entitlement operation details.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    try {
+      const response = await dependencies.updatePlatformEntitlement(
+        user.userId,
+        tenantId,
+        featureCode,
+        parsed.data,
+        idempotencyKey,
+        await requestHash({ tenantId, featureCode, ...parsed.data }),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(platformEntitlementUpdateResponseSchema.parse(response))
+    } catch (error) {
+      const response = platformError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
+  app.patch('/v1/platform/tenants/:tenantId/status', async (context) => {
+    const user = await requirePlatformUser(context)
+    if (user instanceof Response) return user
+    const tenantId = context.req.param('tenantId')
+    const idempotencyKey = context.req.header('idempotency-key')
+    const parsed = platformTenantStatusUpdateRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantId) ||
+      !idempotencyKey ||
+      !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey) ||
+      !parsed.success
+    ) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_PLATFORM_REQUEST',
+            message: 'Check the tenant status operation and Idempotency-Key.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    try {
+      const response = await dependencies.updatePlatformTenantStatus(
+        user.userId,
+        tenantId,
+        parsed.data,
+        idempotencyKey,
+        await requestHash({ tenantId, ...parsed.data }),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(platformTenantStatusUpdateResponseSchema.parse(response))
+    } catch (error) {
+      const response = platformError(context, error)
+      if (response) return response
+      throw error
+    }
   })
 
   app.get('/v1/me', async (context) => {
