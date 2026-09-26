@@ -54,6 +54,9 @@ import {
   alertCenterSchema,
   alertStatusUpdateResponseSchema,
   auditActivityContextSchema,
+  notificationCenterSchema,
+  notificationReadResponseSchema,
+  notificationsReadAllResponseSchema,
   type AlertStatusUpdateRequest,
   type LoyaltyPolicyUpdateRequest,
 } from '@hcs/contracts'
@@ -636,6 +639,38 @@ const updateAlertStatus = vi.fn(async (_userId, _tenantId, nextAlertId, request:
   status: request.status,
 }))
 const loadAuditActivity = vi.fn(async () => auditActivity)
+const notificationId = 'e2000000-0000-4000-8000-000000000001'
+const notificationCenter = {
+  unreadCount: 1,
+  total: 1,
+  hasMore: false,
+  items: [
+    {
+      id: notificationId,
+      category: 'alert' as const,
+      severity: 'warning' as const,
+      title: 'Out of stock',
+      message: 'Triple Black / XL is out of stock at Main Store.',
+      linkedEntityType: 'risk_alert',
+      linkedEntityId: alertId,
+      locationId,
+      locationName: 'Main Store',
+      href: '/alerts',
+      groupKey: 'alert:inventory',
+      delivery: { inApp: 'delivered' as const, email: 'not_configured' as const },
+      readAt: null,
+      metadata: { alertStatus: 'open' },
+      createdAt: '2026-09-25T05:00:00.000Z',
+    },
+  ],
+}
+const loadNotificationCenter = vi.fn(async () => notificationCenter)
+const updateNotificationReadState = vi.fn(async (_userId, _tenantId, nextNotificationId, read: boolean) => ({
+  notificationId: nextNotificationId,
+  read,
+  unreadCount: read ? 0 : 1,
+}))
+const markAllNotificationsRead = vi.fn(async () => ({ markedCount: 1, unreadCount: 0 }))
 
 const authenticatedApp = createApp({
   verifyAccessToken: async (token) => (token === 'valid-token' ? { userId } : null),
@@ -715,6 +750,9 @@ const authenticatedApp = createApp({
   loadAlertCenter,
   updateAlertStatus,
   loadAuditActivity,
+  loadNotificationCenter,
+  updateNotificationReadState,
+  markAllNotificationsRead,
 })
 
 const businessDetails = {
@@ -964,6 +1002,9 @@ describe('API', () => {
       loadAlertCenter,
       updateAlertStatus,
       loadAuditActivity,
+      loadNotificationCenter,
+      updateNotificationReadState,
+      markAllNotificationsRead,
     })
     const response = await multiTenantApp.request(
       '/v1/onboarding',
@@ -1051,6 +1092,9 @@ describe('API', () => {
       loadAlertCenter,
       updateAlertStatus,
       loadAuditActivity,
+      loadNotificationCenter,
+      updateNotificationReadState,
+      markAllNotificationsRead,
     })
     const response = await employeeApp.request(
       '/v1/onboarding',
@@ -2291,6 +2335,50 @@ describe('API', () => {
     expect(invalid.status).toBe(400)
     expect(apiErrorResponseSchema.parse(await invalid.json()).error.code).toBe('INVALID_AUDIT_FILTERS')
     expect(loadAuditActivity).not.toHaveBeenCalled()
+  })
+
+  it('loads personal notifications and updates read state independently', async () => {
+    const headers = { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId }
+    const loaded = await authenticatedApp.request(
+      '/v1/notifications?unreadOnly=true&limit=20&offset=0',
+      { headers },
+      bindings,
+    )
+    expect(loaded.status).toBe(200)
+    expect(notificationCenterSchema.safeParse(await loaded.json()).success).toBe(true)
+    expect(loadNotificationCenter).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      { unreadOnly: true, limit: 20, offset: 0 },
+      bindings,
+    )
+
+    const updated = await authenticatedApp.request(
+      `/v1/notifications/${notificationId}`,
+      {
+        method: 'PATCH',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ read: true }),
+      },
+      bindings,
+    )
+    expect(updated.status).toBe(200)
+    expect(notificationReadResponseSchema.safeParse(await updated.json()).success).toBe(true)
+    expect(updateNotificationReadState).toHaveBeenCalledWith(userId, tenantId, notificationId, true, bindings)
+  })
+
+  it('marks every personal notification as read', async () => {
+    const response = await authenticatedApp.request(
+      '/v1/notifications/read-all',
+      {
+        method: 'PATCH',
+        headers: { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId },
+      },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(notificationsReadAllResponseSchema.safeParse(await response.json()).success).toBe(true)
+    expect(markAllNotificationsRead).toHaveBeenCalledWith(userId, tenantId, bindings)
   })
 
   it('creates, updates, and annotates a customer with idempotent commands', async () => {

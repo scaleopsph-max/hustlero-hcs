@@ -1,6 +1,7 @@
-import { Bell, Calendar, ChevronDown, Layers, MapPin, type LucideIcon } from 'lucide-react'
+import { Calendar, ChevronDown, Layers, MapPin, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Glass } from '@hcs/ui'
+import { NotificationBell } from './NotificationBell'
 
 const filters: { label: string; Icon: LucideIcon }[] = [
   { label: 'Today', Icon: Calendar },
@@ -47,9 +48,7 @@ export function Topbar({
             ))
           : null}
         {actions}
-        <button type="button" aria-label="Notifications" className={`${ghost} w-11 justify-center px-0`}>
-          <Bell size={20} strokeWidth={1.75} />
-        </button>
+        <NotificationBell />
         <div className="ml-0.5 flex items-center gap-2.5 sm:ml-1.5">
           <span className="flex size-10 items-center justify-center rounded-full bg-ink-900 text-sm font-bold text-gold-300">
             AR

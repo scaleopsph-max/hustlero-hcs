@@ -94,6 +94,11 @@ import {
   alertStatusUpdateResponseSchema,
   auditActivityContextSchema,
   auditActivityFilterSchema,
+  notificationCenterSchema,
+  notificationFilterSchema,
+  notificationReadRequestSchema,
+  notificationReadResponseSchema,
+  notificationsReadAllResponseSchema,
 } from '@hcs/contracts'
 import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
@@ -187,6 +192,14 @@ import {
   type AlertStatusUpdater,
   type AuditActivityLoader,
 } from './controls-repository'
+import {
+  loadNotificationCenterFromPostgres,
+  markAllNotificationsReadInPostgres,
+  updateNotificationReadStateInPostgres,
+  type NotificationCenterLoader,
+  type NotificationReadStateUpdater,
+  type NotificationsReadAllMarker,
+} from './notifications-repository'
 import {
   loadInventoryMovementsFromPostgres,
   loadInventoryStockFromPostgres,
@@ -314,6 +327,9 @@ interface AppDependencies {
   loadAlertCenter: AlertCenterLoader
   updateAlertStatus: AlertStatusUpdater
   loadAuditActivity: AuditActivityLoader
+  loadNotificationCenter: NotificationCenterLoader
+  updateNotificationReadState: NotificationReadStateUpdater
+  markAllNotificationsRead: NotificationsReadAllMarker
 }
 
 const defaultDependencies: AppDependencies = {
@@ -379,6 +395,9 @@ const defaultDependencies: AppDependencies = {
   loadAlertCenter: loadAlertCenterFromPostgres,
   updateAlertStatus: updateAlertStatusInPostgres,
   loadAuditActivity: loadAuditActivityFromPostgres,
+  loadNotificationCenter: loadNotificationCenterFromPostgres,
+  updateNotificationReadState: updateNotificationReadStateInPostgres,
+  markAllNotificationsRead: markAllNotificationsReadInPostgres,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -3301,6 +3320,124 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
       )
     } catch (error) {
       return controlError(context, error)
+    }
+  })
+
+  const notificationError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
+    const code = postgresErrorCode(error)
+    const requestId = context.get('requestId')
+    if (code === 'HCSN0')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'NOTIFICATION_ACCESS_DENIED', message: 'Notification access is not allowed.', requestId },
+        }),
+        403,
+      )
+    if (code === 'HCSN1')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'INVALID_NOTIFICATION_REQUEST', message: 'Choose valid notification filters.', requestId },
+        }),
+        400,
+      )
+    if (code === 'HCSN2')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'NOTIFICATION_NOT_FOUND', message: 'The notification was not found.', requestId },
+        }),
+        404,
+      )
+    throw error
+  }
+
+  app.get('/v1/notifications', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'NOTIFICATION_ACCESS_DENIED',
+            message: 'Sign in and select a business to view notifications.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    const parsed = notificationFilterSchema.safeParse({
+      unreadOnly: context.req.query('unreadOnly') === 'true',
+      limit: Number(context.req.query('limit') || 50),
+      offset: Number(context.req.query('offset') || 0),
+    })
+    if (!parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_NOTIFICATION_REQUEST',
+            message: 'Choose valid notification filters.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      context.header('Cache-Control', 'private, no-store')
+      return context.json(
+        notificationCenterSchema.parse(
+          await dependencies.loadNotificationCenter(resolved.userId, resolved.tenantId, parsed.data, context.env),
+        ),
+      )
+    } catch (error) {
+      return notificationError(context, error)
+    }
+  })
+
+  app.patch('/v1/notifications/read-all', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    if (!resolved) return notificationError(context, { code: 'HCSN0' })
+    try {
+      return context.json(
+        notificationsReadAllResponseSchema.parse(
+          await dependencies.markAllNotificationsRead(resolved.userId, resolved.tenantId, context.env),
+        ),
+      )
+    } catch (error) {
+      return notificationError(context, error)
+    }
+  })
+
+  app.patch('/v1/notifications/:notificationId', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    if (!resolved) return notificationError(context, { code: 'HCSN0' })
+    const notificationId = context.req.param('notificationId')
+    const parsed = notificationReadRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(notificationId) ||
+      !parsed.success
+    )
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_NOTIFICATION_REQUEST',
+            message: 'Choose a valid notification and read state.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      return context.json(
+        notificationReadResponseSchema.parse(
+          await dependencies.updateNotificationReadState(
+            resolved.userId,
+            resolved.tenantId,
+            notificationId,
+            parsed.data.read,
+            context.env,
+          ),
+        ),
+      )
+    } catch (error) {
+      return notificationError(context, error)
     }
   })
 

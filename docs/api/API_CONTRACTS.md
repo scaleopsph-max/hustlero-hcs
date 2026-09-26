@@ -172,7 +172,9 @@ Current POS cash-sales implementation:
 - The first rule set opens warning alerts for active tracked variants with zero or negative branch availability and attention alerts for closed register sessions with a non-zero cash variance. Out-of-stock alerts resolve automatically after availability becomes positive; no low-stock rule exists until an explicit reorder point is configured.
 - `PATCH /v1/alerts/{id}` requires `alerts.manage` and accepts `acknowledged`, `resolved`, or `dismissed` plus an optional note. Setting the same state is naturally idempotent; actual transitions append an audit event and alert records cannot be deleted.
 - `GET /v1/audit-activity` requires `audit.read`, inclusive ISO business dates, and accepts optional location, actor type, action, entity type, search, limit, and offset filters. It reads append-only business audit events only; technical request logs remain separate.
-- `GET/PATCH /v1/notifications`
+- `GET /v1/notifications` returns only the authenticated tenant member's recipient-specific history, unread count, linked record, location, and per-channel delivery status. `unreadOnly`, `limit`, and `offset` are validated server-side.
+- `PATCH /v1/notifications/{id}` sets that recipient's read/unread state. Reading a notification never acknowledges or resolves its linked alert or approval.
+- `PATCH /v1/notifications/read-all` marks the current member's unread notifications as read. Alert and pending-approval notifications are materialized idempotently from server-owned records and routed by role capability; email remains `not_configured` until a provider is selected.
 - `GET /v1/dashboard`
 - `GET /v1/reports/sales`
 - `GET /v1/reports/inventory`
