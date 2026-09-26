@@ -30,13 +30,13 @@ export function Topbar({
     <Glass
       variant="light"
       as="header"
-      className="flex h-16 flex-none items-center justify-between gap-6 rounded-[20px] px-5"
+      className="flex min-h-16 flex-none items-center justify-between gap-3 rounded-[20px] px-4 py-2 sm:px-5"
     >
-      <div className="flex flex-col">
-        <h1 className="font-display text-2xl font-bold leading-7 text-ink-900">{title}</h1>
-        {subtitle ? <span className="text-xs text-ink-500">{subtitle}</span> : null}
+      <div className="flex min-w-0 flex-col">
+        <h1 className="truncate font-display text-xl font-bold leading-7 text-ink-900 sm:text-2xl">{title}</h1>
+        {subtitle ? <span className="hidden text-xs text-ink-500 sm:block">{subtitle}</span> : null}
       </div>
-      <div className="flex items-center gap-2.5">
+      <div className="flex flex-none items-center gap-2 sm:gap-2.5">
         {showFilters
           ? filters.map(({ label, Icon }) => (
               <button key={label} type="button" className={ghost}>
@@ -50,11 +50,11 @@ export function Topbar({
         <button type="button" aria-label="Notifications" className={`${ghost} w-11 justify-center px-0`}>
           <Bell size={20} strokeWidth={1.75} />
         </button>
-        <div className="ml-1.5 flex items-center gap-2.5">
+        <div className="ml-0.5 flex items-center gap-2.5 sm:ml-1.5">
           <span className="flex size-10 items-center justify-center rounded-full bg-ink-900 text-sm font-bold text-gold-300">
             AR
           </span>
-          <div className="flex flex-col">
+          <div className="hidden flex-col xl:flex">
             <span className="text-sm font-semibold">Ana Reyes</span>
             <span className="text-xs text-ink-500">Owner</span>
           </div>

@@ -110,6 +110,13 @@ Last updated: 2026-09-25
 - Development API Worker version `e6ee76e1-d000-4a3b-a658-2d5a4feec12d` is deployed with dashboard, sales-report, and inventory-report endpoints; live `/health` returned 200
 - Authenticated Dashboard and Reports screens loaded reconciled development data successfully and passed desktop visual smoke testing with date, location, and channel filters available
 - Post-reporting Supabase advisors found no reporting-specific table or index regression; expected private-schema no-policy notices, existing supporting-index follow-ups, and leaked-password protection remain tracked for hardening
+- Alerts and Audit Activity migrations `20260926060528` and `20260926060944` are applied to development; alert records are private, RLS-enabled, non-deletable, and reachable only through tenant-authorized Hyperdrive functions
+- Deterministic alert detection now covers out-of-stock tracked variants and closed register sessions with non-zero cash variance; low-stock remains intentionally unavailable until reorder points are configured
+- Back Office `/alerts` provides Open/Acknowledged/Resolved/Dismissed queues and audited lifecycle actions; `/audit` provides date, branch, actor, and text filtering over append-only business events
+- GitHub CI runs `36210806738` and `36222748443` passed full application checks, fresh Supabase resets, and the alert/audit pgTAP suite including supporting-index assertions
+- Development API Worker version `877104a2-5e65-4840-8d14-93bd8100ab07` is deployed with alert and audit endpoints; live `/health` returned 200 and unauthenticated alert access returned 403
+- Authenticated desktop smoke testing showed one genuine `LR-0001` out-of-stock alert and 29 tenant audit records; mobile testing at 390x844 verified the new compact header and dismissible navigation drawer
+- Post-migration advisors confirmed all three new alert actor foreign-key index findings are resolved; expected private-schema no-policy notices, prior supporting-index follow-ups, and leaked-password protection remain tracked
 
 ## Not started
 
@@ -134,11 +141,12 @@ Last updated: 2026-09-25
 - Phase 4 customer profiles and sale linkage are deployed and owner-verified
 - Loyalty earning and proportional refund reversal are deployed and owner-verified with a controlled customer-linked transaction
 - Owner validation of reporting date/location/channel filters and both CSV exports remains
+- Alerts and Audit Activity are deployed and visually verified; one controlled owner lifecycle action remains for end-to-end audit confirmation
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-On `/reports`, verify one custom date range, the Main Store and POS filters, then download and inspect the Sales by item and Inventory valuation CSV exports against the visible totals.
+On `/alerts`, acknowledge the genuine `LR-0001` out-of-stock alert, then confirm the new `alert / acknowledged` event appears in `/audit`. This is a controlled status change only and does not mutate stock.
 
 ## Production state
 

@@ -7,7 +7,7 @@ import { Glass, Logo, cn } from '@hcs/ui'
 import { NAV_CONTEXT, navGroups, resolveNav } from '@/mock/nav'
 
 /** Floating black-glass sidebar. Adaptive: see mock/nav.ts. */
-export function Sidebar() {
+export function Sidebar({ className, onNavigate }: { className?: string; onNavigate?: () => void }) {
   const pathname = usePathname()
   const groups = resolveNav(navGroups, NAV_CONTEXT)
   const lockedCount = groups.flatMap((g) => g.items).filter((i) => i.locked).length
@@ -16,7 +16,7 @@ export function Sidebar() {
     <Glass
       variant="dark"
       as="aside"
-      className="flex w-[248px] flex-none flex-col gap-4 rounded-[24px] px-3.5 py-5 text-ink-200"
+      className={cn('flex w-[248px] flex-none flex-col gap-4 rounded-[24px] px-3.5 py-5 text-ink-200', className)}
     >
       <div className="flex h-11 items-center gap-3 px-1.5">
         <Logo size={36} />
@@ -44,6 +44,7 @@ export function Sidebar() {
                 <Link
                   key={href}
                   href={href}
+                  {...(onNavigate ? { onClick: onNavigate } : {})}
                   aria-current={active ? 'page' : undefined}
                   className={cn(
                     'flex h-10 items-center gap-3 rounded-control px-3 text-sm font-medium',
