@@ -85,13 +85,13 @@ begin
         - coalesce((select sum(ri.quantity * coalesce(sl.unit_cost, 0)) from app.refund_items ri join scoped_refunds rf on rf.id = ri.refund_id and rf.tenant_id = ri.tenant_id join app.sale_lines sl on sl.tenant_id = ri.tenant_id and sl.id = ri.sale_line_id), 0) cogs,
       (select count(*) from scoped_sales) transactions
   ),
-  trend_days as (select generate_series(p_from, p_to, interval '1 day')::date day),
+  trend_days as (select generate_series(p_from, p_to, interval '1 day')::date business_date),
   trend_sales as (
-    select (s.completed_at at time zone v_timezone)::date day, sum(s.total) gross, count(*) transactions
+    select (s.completed_at at time zone v_timezone)::date business_date, sum(s.total) gross, count(*) transactions
     from scoped_sales s group by 1
   ),
   trend_refunds as (
-    select (rf.completed_at at time zone v_timezone)::date day, sum(rf.amount) refunds
+    select (rf.completed_at at time zone v_timezone)::date business_date, sum(rf.amount) refunds
     from scoped_refunds rf group by 1
   ),
   branch_sales as (select location_id, sum(total) gross, count(*) transactions from scoped_sales group by location_id),
@@ -169,7 +169,7 @@ begin
     'scope', jsonb_build_object('from',p_from,'to',p_to,'locationId',p_location_id,'channel',p_channel,'timezone',v_timezone,'generatedAt',now()),
     'locations', coalesce((select jsonb_agg(jsonb_build_object('id',l.id,'code',l.code::text,'name',l.name) order by l.name) from app.locations l where l.tenant_id=p_tenant_id and l.is_active),'[]'::jsonb),
     'summary', (select jsonb_build_object('grossSalesCentavos',round(gross_sales*100)::bigint,'refundsCentavos',round(refunds*100)::bigint,'netSalesCentavos',round((gross_sales-refunds)*100)::bigint,'cogsCentavos',round(cogs*100)::bigint,'grossProfitCentavos',round((gross_sales-refunds-cogs)*100)::bigint,'transactionCount',transactions::integer,'discountCentavos',round(discounts*100)::bigint,'taxCentavos',round(taxes*100)::bigint) from summary),
-    'salesTrend', coalesce((select jsonb_agg(jsonb_build_object('date',d.day,'netSalesCentavos',round((coalesce(s.gross,0)-coalesce(r.refunds,0))*100)::bigint,'transactionCount',coalesce(s.transactions,0)::integer) order by d.day) from trend_days d left join trend_sales s on s.day=d.day left join trend_refunds r on r.day=d.day),'[]'::jsonb),
+    'salesTrend', coalesce((select jsonb_agg(jsonb_build_object('date',d.business_date,'netSalesCentavos',round((coalesce(s.gross,0)-coalesce(r.refunds,0))*100)::bigint,'transactionCount',coalesce(s.transactions,0)::integer) order by d.business_date) from trend_days d left join trend_sales s on s.business_date=d.business_date left join trend_refunds r on r.business_date=d.business_date),'[]'::jsonb),
     'branches', coalesce((select jsonb_agg(jsonb_build_object('locationId',l.id,'locationName',l.name,'netSalesCentavos',round((coalesce(bs.gross,0)-coalesce(br.refunds,0))*100)::bigint,'grossProfitCentavos',round((coalesce(bs.gross,0)-coalesce(br.refunds,0)-coalesce(bc.cogs,0)+coalesce(brc.cogs,0))*100)::bigint,'transactionCount',coalesce(bs.transactions,0)::integer) order by l.name) from app.locations l left join branch_sales bs on bs.location_id=l.id left join branch_refunds br on br.location_id=l.id left join branch_cogs bc on bc.location_id=l.id left join branch_refund_cogs brc on brc.location_id=l.id where l.tenant_id=p_tenant_id and l.is_active and (p_location_id is null or l.id=p_location_id)),'[]'::jsonb),
     'inventory', jsonb_build_object('skuCount',(select count(*)::integer from inventory_rows),'onHandMilli',(select coalesce(round(sum(on_hand)*1000),0)::bigint from inventory_rows),'reservedMilli',(select coalesce(round(sum(reserved)*1000),0)::bigint from inventory_rows),'availableMilli',(select coalesce(round(sum(available)*1000),0)::bigint from inventory_rows),'inTransitMilli',(select coalesce(round(sum(in_transit)*1000),0)::bigint from inventory_rows),'outOfStockCount',(select count(*)::integer from inventory_rows where available<=0),'valuationCentavos',(select coalesce(round(sum(on_hand*coalesce(average_unit_cost,0))*100),0)::bigint from inventory_rows)),
     'registers', jsonb_build_object('openCount',(select count(*)::integer from app.register_sessions rs join app.registers r on r.tenant_id=rs.tenant_id and r.id=rs.register_id where rs.tenant_id=p_tenant_id and rs.status='open' and (p_location_id is null or r.location_id=p_location_id)),'totalCount',(select count(*)::integer from app.registers r where r.tenant_id=p_tenant_id and r.status='active' and (p_location_id is null or r.location_id=p_location_id))),
