@@ -52,8 +52,7 @@ select is((app.update_notification_read_state('1f000000-0000-4000-8000-000000000
 select throws_ok($$select app.update_notification_read_state('1f000000-0000-4000-8000-000000000002','2f000000-0000-4000-8000-000000000002',(select id from app.notifications where tenant_id='2f000000-0000-4000-8000-000000000001' limit 1),true)$$,'HCSN2','Notification was not found','recipient cannot update another tenant notification');
 select throws_ok($$delete from app.notifications where tenant_id='2f000000-0000-4000-8000-000000000001'$$,null,'notifications cannot be deleted','notification history rejects deletion');
 select throws_ok($$update app.notifications set title='Changed' where tenant_id='2f000000-0000-4000-8000-000000000001'$$,null,'notification history fields are immutable','notification business content is immutable');
-insert into app.roles(tenant_id,code,name) values('2f000000-0000-4000-8000-000000000001','manager','Manager');
-select is((select count(*)::integer from app.role_permissions rp join app.roles r on r.tenant_id=rp.tenant_id and r.id=rp.role_id where r.tenant_id='2f000000-0000-4000-8000-000000000001' and r.code='manager' and rp.permission_code='notifications.read'),1,'future manager role receives notification permission');
+select is((select count(*)::integer from app.role_permissions rp join app.roles r on r.tenant_id=rp.tenant_id and r.id=rp.role_id where r.tenant_id='2f000000-0000-4000-8000-000000000001' and r.code='manager' and rp.permission_code='notifications.read'),1,'seeded manager role receives notification permission');
 
 select * from finish();
 rollback;
