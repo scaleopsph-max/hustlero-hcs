@@ -157,12 +157,13 @@ Last updated: 2026-09-26
 - Owner validation of reporting date/location/channel filters and both CSV exports remains
 - Alerts and Audit Activity are deployed and visually verified; the owner acknowledgement is reflected in the live alert queue and its notification remains independently unread
 - Basic Notifications are deployed and visually verified; email delivery awaits an owner-selected provider and remains truthfully marked `not_configured`
-- Entitlements and the Basic Super Admin console are deployed to development; no account has been silently provisioned as a platform admin, so authenticated AAL2 operator validation remains pending owner confirmation of the exact account
+- Entitlements and the Basic Super Admin console are deployed to development; platform access remains limited to explicitly owner-confirmed allowlist entries
+- The owner-confirmed first platform account is provisioned as an active Super Admin; its account identifier remains outside the public repository, and TOTP enrollment plus authenticated console validation are pending
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Confirm the exact Supabase account that should become the first `super_admin`, provision only that user in the private allowlist, enroll TOTP MFA through `http://localhost:3003`, and validate tenant/entitlement reads without changing live tenant access. Automated billing and support impersonation remain deferred.
+Enroll TOTP MFA through `http://localhost:3003` with the provisioned Super Admin account, then validate tenant/entitlement reads without changing live tenant access. Automated billing and support impersonation remain deferred.
 
 ## Production state
 
