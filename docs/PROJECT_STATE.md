@@ -117,6 +117,13 @@ Last updated: 2026-09-25
 - Development API Worker version `877104a2-5e65-4840-8d14-93bd8100ab07` is deployed with alert and audit endpoints; live `/health` returned 200 and unauthenticated alert access returned 403
 - Authenticated desktop smoke testing showed one genuine `LR-0001` out-of-stock alert and 29 tenant audit records; mobile testing at 390x844 verified the new compact header and dismissible navigation drawer
 - Post-migration advisors confirmed all three new alert actor foreign-key index findings are resolved; expected private-schema no-policy notices, prior supporting-index follow-ups, and leaked-password protection remain tracked
+- Basic Notifications migration `20260926064117` is applied to development; recipient-specific notification history is private, RLS-enabled, non-deletable, tenant-isolated, and reachable only through restricted Hyperdrive functions
+- Alert and approval notifications are routed from server-owned records, deduplicated per recipient/source event, and keep read state independent from alert or approval lifecycle state; in-app delivery is explicit and email remains `not_configured` until a provider is selected
+- Back Office `/notifications` now provides All/Unread views, individual and bulk read controls, linked-record navigation, delivery status, and a live unread badge in every page header
+- GitHub CI run `36224291596` passed the complete application check, a fresh Supabase reset, and all database pgTAP suites including the 26 notification assertions
+- Development API Worker version `80632818-a6a1-431a-8cb1-3bf6b37f1b8c` is deployed with notification read/history endpoints; live health returned 200 and unauthenticated notification access returned 403
+- Authenticated desktop and 390x844 mobile smoke testing showed the genuine `LR-0001` notification with no horizontal overflow; the unread record was intentionally left unchanged
+- Post-migration advisors found no notification-specific unindexed foreign keys; expected private-schema no-policy notices, prior supporting-index follow-ups, and leaked-password protection remain tracked
 
 ## Not started
 
@@ -141,12 +148,13 @@ Last updated: 2026-09-25
 - Phase 4 customer profiles and sale linkage are deployed and owner-verified
 - Loyalty earning and proportional refund reversal are deployed and owner-verified with a controlled customer-linked transaction
 - Owner validation of reporting date/location/channel filters and both CSV exports remains
-- Alerts and Audit Activity are deployed and visually verified; one controlled owner lifecycle action remains for end-to-end audit confirmation
+- Alerts and Audit Activity are deployed and visually verified; the owner acknowledgement is reflected in the live alert queue and its notification remains independently unread
+- Basic Notifications are deployed and visually verified; email delivery awaits an owner-selected provider and remains truthfully marked `not_configured`
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-On `/alerts`, acknowledge the genuine `LR-0001` out-of-stock alert, then confirm the new `alert / acknowledged` event appears in `/audit`. This is a controlled status change only and does not mutate stock.
+Verify the live notification read/unread control on `/notifications`, then begin the Phase 4 entitlement and basic Super Admin slice. Email delivery stays deferred until the owner selects a provider.
 
 ## Production state
 
