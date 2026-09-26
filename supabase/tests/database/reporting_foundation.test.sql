@@ -27,8 +27,8 @@ insert into app.register_sessions(id,tenant_id,register_id,location_id,employee_
 ('6d000000-0000-4000-8000-000000000001','2d000000-0000-4000-8000-000000000001','5d000000-0000-4000-8000-000000000001','3d000000-0000-4000-8000-000000000001','4d000000-0000-4000-8000-000000000001','open',1000,'2026-09-25 00:00:00+00');
 insert into app.payment_methods(id,tenant_id,code,name,method_type) values
 ('7d000000-0000-4000-8000-000000000001','2d000000-0000-4000-8000-000000000001','report-cash','Report Cash','cash');
-insert into app.product_categories(id,tenant_id,code,name,created_by) values
-('8d000000-0000-4000-8000-000000000001','2d000000-0000-4000-8000-000000000001','shirts','Shirts','1d000000-0000-4000-8000-000000000001');
+insert into app.product_categories(id,tenant_id,name,created_by) values
+('8d000000-0000-4000-8000-000000000001','2d000000-0000-4000-8000-000000000001','Shirts','1d000000-0000-4000-8000-000000000001');
 insert into app.products(id,tenant_id,name,category_id,created_by) values
 ('9d000000-0000-4000-8000-000000000001','2d000000-0000-4000-8000-000000000001','Report Shirt','8d000000-0000-4000-8000-000000000001','1d000000-0000-4000-8000-000000000001');
 insert into app.product_variants(id,tenant_id,product_id,name,sku,retail_price,unit_cost,created_by) values
