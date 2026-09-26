@@ -137,6 +137,7 @@ Last updated: 2026-09-26
 - GitHub CI run `36248532663` passed the complete application check, a fresh Supabase reset, and all database suites including 41 Support Access assertions
 - Development API Worker version `a2c19580-a002-4247-bf69-7fe79a2df5ad` is deployed; health, unauthenticated rejection, Admin-origin CORS, authenticated empty support history, desktop rendering, and 390px mobile overflow checks passed without creating a live grant
 - Post-migration advisors report no Support Access unindexed foreign keys; fresh supporting indexes are expected to remain unused until controlled grant activity begins, while private-schema no-policy notices and leaked-password protection remain tracked
+- The owner designated `SCALEOPS PH` as the permanent platform test tenant. Controlled Support Access ticket `HCS-SUPPORT-VALIDATION-001` completed the live 15-minute grant, read-only overview, audit, and immediate revoke lifecycle; the grant history remains, all three lifecycle audit events exist exactly once, and zero active grants remain
 
 ## Not started
 
@@ -165,12 +166,12 @@ Last updated: 2026-09-26
 - Basic Notifications are deployed and visually verified; email delivery awaits an owner-selected provider and remains truthfully marked `not_configured`
 - Entitlements and the Basic Super Admin console are deployed and owner-verified with MFA; the real two-tenant directory and eight available modules loaded without changing entitlement or tenant status, and platform access remains limited to explicitly owner-confirmed allowlist entries
 - The owner-confirmed first platform account is provisioned as an active Super Admin; its account identifier remains outside the public repository, and TOTP enrollment plus authenticated read-only console validation succeeded
-- Time-boxed read-only Support Access is deployed and ready for an owner-controlled grant, overview, audit, and revoke validation; no live support grant has been created yet
+- Time-boxed read-only Support Access is deployed and live-validated against the owner-designated `SCALEOPS PH` test tenant; grant, overview view, audit, immediate revoke, and preserved-history behavior passed, while automatic expiry remains covered by the database regression suite
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Run one controlled Support Access grant, overview, audit, expiry/revoke validation against an owner-selected test tenant. Keep `SCALEOPS PH` unchanged until the owner explicitly decides whether it remains the platform test tenant. Automated billing remains deferred.
+Build the Subscriptions & Add-ons foundation: plan catalog, manual tenant subscription assignment, plan/module limits, trials, and time-boxed overrides. Keep automated recurring billing and provider integration deferred until the owner selects a billing provider.
 
 ## Production state
 
