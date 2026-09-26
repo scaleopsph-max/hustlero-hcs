@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-09-25
+Last updated: 2026-09-26
 
 ## Phase
 
@@ -124,6 +124,13 @@ Last updated: 2026-09-25
 - Development API Worker version `80632818-a6a1-431a-8cb1-3bf6b37f1b8c` is deployed with notification read/history endpoints; live health returned 200 and unauthenticated notification access returned 403
 - Authenticated desktop and 390x844 mobile smoke testing showed the genuine `LR-0001` notification with no horizontal overflow; the unread record was intentionally left unchanged
 - Post-migration advisors found no notification-specific unindexed foreign keys; expected private-schema no-policy notices, prior supporting-index follow-ups, and leaked-password protection remain tracked
+- Platform administration migration `20260926133441` is applied to development; the private platform-admin allowlist and actor-scoped idempotency ledger have RLS enabled, deny direct Worker table reads, and expose only restricted security-definer functions
+- Platform API routes require a valid Supabase session at AAL2 before the database allowlist is checked; Super Admin and Operations may grant/revoke time-boxable tenant entitlements, while tenant suspension/reactivation remains Super Admin-only
+- Entitlement revocation forces the tenant module off and tenant suspension blocks access without deleting historical tenant records; every committed platform operation requires a reason and appends a `platform_admin` audit event
+- The separate Super Admin app at `:3003` now provides operator sign-in, TOTP enrollment/challenge, real tenant directory metrics, tenant search, entitlement controls, and reasoned suspend/reactivate confirmation flows
+- GitHub CI run `36245448614` passed full application checks, a fresh Supabase reset, and the platform administration pgTAP suite including 38 new assertions
+- Development API Worker version `a7f67531-9484-4651-b53b-4e66c1c7d1cb` is deployed; live health, unauthenticated platform rejection, and Admin-origin CORS smoke tests passed
+- Post-migration advisors found no platform-specific unindexed foreign keys; private-schema no-policy notices are expected by the deny-all design, while leaked-password protection and prior supporting-index findings remain tracked
 
 ## Not started
 
@@ -150,11 +157,12 @@ Last updated: 2026-09-25
 - Owner validation of reporting date/location/channel filters and both CSV exports remains
 - Alerts and Audit Activity are deployed and visually verified; the owner acknowledgement is reflected in the live alert queue and its notification remains independently unread
 - Basic Notifications are deployed and visually verified; email delivery awaits an owner-selected provider and remains truthfully marked `not_configured`
+- Entitlements and the Basic Super Admin console are deployed to development; no account has been silently provisioned as a platform admin, so authenticated AAL2 operator validation remains pending owner confirmation of the exact account
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Verify the live notification read/unread control on `/notifications`, then begin the Phase 4 entitlement and basic Super Admin slice. Email delivery stays deferred until the owner selects a provider.
+Confirm the exact Supabase account that should become the first `super_admin`, provision only that user in the private allowlist, enroll TOTP MFA through `http://localhost:3003`, and validate tenant/entitlement reads without changing live tenant access. Automated billing and support impersonation remain deferred.
 
 ## Production state
 
