@@ -67,7 +67,7 @@ select is((app.load_reporting('1d000000-0000-4000-8000-000000000001','2d000000-0
 select is((app.load_reporting('1d000000-0000-4000-8000-000000000001','2d000000-0000-4000-8000-000000000001','2026-09-25','2026-09-25',null,'all')->'inventory'->>'valuationCentavos')::bigint,270000::bigint,'inventory valuation uses current balance and average cost');
 select is((app.load_reporting('1d000000-0000-4000-8000-000000000001','2d000000-0000-4000-8000-000000000001','2026-09-25','2026-09-25',null,'all')->'registers'->>'openCount')::integer,1,'dashboard shows open registers');
 select is(jsonb_array_length(app.load_reporting('1d000000-0000-4000-8000-000000000001','2d000000-0000-4000-8000-000000000001','2026-09-25','2026-09-25','3d000000-0000-4000-8000-000000000001','pos')->'inventoryItems'),1,'location and POS channel scope is accepted');
-select is((select count(*)::integer from app.role_permissions rp join app.roles r on r.tenant_id=rp.tenant_id and r.id=rp.role_id where r.tenant_id='2d000000-0000-4000-8000-000000000001' and r.code='owner' and rp.permission_code='reports.read'),1,'owner role receives reporting permission');
+select is((select count(*)::integer from app.role_permissions rp join app.roles r on r.tenant_id=rp.tenant_id and r.id=rp.role_id where r.tenant_id='2d000000-0000-4000-8000-000000000001' and r.code='manager' and rp.permission_code='reports.read'),1,'future manager role receives reporting permission');
 
 select * from finish();
 rollback;
