@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(39);
+select plan(41);
 
 select has_table('platform','support_access_grants','support access ledger exists');
 select has_function('platform','load_support_access',array['uuid'],'support history projection exists');
@@ -18,6 +18,8 @@ select ok((select relrowsecurity from pg_class where oid='platform.support_acces
 select has_index('platform','support_access_grants','platform_support_access_actor_history_idx','actor history has an index');
 select has_index('platform','support_access_grants','platform_support_access_tenant_history_idx','tenant history has an index');
 select has_index('platform','support_access_grants','platform_support_access_expiry_idx','active expiry has an index');
+select has_index('platform','support_access_grants','platform_support_access_granted_by_idx','granting actor has a supporting index');
+select has_index('platform','support_access_grants','platform_support_access_revoked_by_idx','revoking actor has a supporting index');
 
 insert into auth.users(id,email,aud,role,email_confirmed_at) values
 ('1b000000-0000-4000-8000-000000000001','support-super@example.invalid','authenticated','authenticated',now()),
