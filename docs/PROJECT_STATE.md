@@ -103,6 +103,13 @@ Last updated: 2026-09-25
 - GitHub CI run `36151218756` passed formatting, lint, strict typecheck, 59 Vitest cases, all application builds, a fresh Supabase reset, and all loyalty pgTAP assertions
 - Development API Worker version `6a3b4501-344a-4ada-af97-c84f1b630f36` is deployed with loyalty policy, earning, balance, activity, and refund-reversal endpoints
 - Post-migration Supabase advisors reported no new unindexed loyalty foreign keys; the expected private-schema no-policy notices and existing leaked-password warning remain tracked for hardening
+- The owner completed and verified the controlled customer-linked loyalty earning and refund-reversal flow in development
+- Reporting migration `20260926014136` is applied to development; `reports.read` is provisioned for owner, admin, and manager roles, while the tenant-authorized reporting projection is executable only through the restricted Hyperdrive database role
+- Dashboard and Reports now use one timezone-aware reconciled projection for sales, refunds, COGS, gross profit, item/category/employee/payment summaries, branch performance, register status, and current inventory valuation; sales and inventory CSV exports are generated only from validated API data
+- GitHub CI run `36209097197` passed formatting, lint, strict typecheck, 61 Vitest cases, all application builds, a fresh Supabase reset, and all 365 pgTAP assertions
+- Development API Worker version `e6ee76e1-d000-4a3b-a658-2d5a4feec12d` is deployed with dashboard, sales-report, and inventory-report endpoints; live `/health` returned 200
+- Authenticated Dashboard and Reports screens loaded reconciled development data successfully and passed desktop visual smoke testing with date, location, and channel filters available
+- Post-reporting Supabase advisors found no reporting-specific table or index regression; expected private-schema no-policy notices, existing supporting-index follow-ups, and leaked-password protection remain tracked for hardening
 
 ## Not started
 
@@ -125,12 +132,13 @@ Last updated: 2026-09-25
 - Receipt detail/reprint and cash refund/void implementation is deployed and manually verified with a controlled partial refund: receipt `MAIN-20260925-000001` is partially refunded by PHP 999, net sales are PHP 4,995, and returned XL inventory increased from 4 to 5
 - The first Main Register session was closed and reconciled successfully: PHP 1,000 opening cash, PHP 5,995 expected cash, PHP 5,995 counted cash, and zero variance
 - Phase 4 customer profiles and sale linkage are deployed and owner-verified
-- Loyalty earning and refund reversal are deployed; owner policy configuration and one controlled customer-linked earn/refund verification remain
+- Loyalty earning and proportional refund reversal are deployed and owner-verified with a controlled customer-linked transaction
+- Owner validation of reporting date/location/channel filters and both CSV exports remains
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Set an owner-approved spend-per-point amount on `/loyalty`, enable the policy, open a POS register session, complete one customer-linked test sale, verify the earned balance in POS and the customer profile, then issue a controlled partial refund and verify the proportional reversal.
+On `/reports`, verify one custom date range, the Main Store and POS filters, then download and inspect the Sales by item and Inventory valuation CSV exports against the visible totals.
 
 ## Production state
 
