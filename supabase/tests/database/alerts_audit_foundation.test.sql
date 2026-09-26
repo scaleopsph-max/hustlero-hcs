@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(25);
+select plan(28);
 
 select has_function('app','load_alert_center',array['uuid','uuid'],'alert center projection exists');
 select has_function('app','update_alert_status',array['uuid','uuid','uuid','text','text','text'],'alert lifecycle command exists');
@@ -10,6 +10,9 @@ select ok(has_function_privilege('hcs_hyperdrive','app.load_alert_center(uuid,uu
 select ok(has_function_privilege('hcs_hyperdrive','app.update_alert_status(uuid,uuid,uuid,text,text,text)','execute'),'API login can update alerts');
 select ok(has_function_privilege('hcs_hyperdrive','app.load_audit_activity(uuid,uuid,date,date,uuid,text,text,text,text,integer,integer)','execute'),'API login can load audit');
 select ok(not has_table_privilege('hcs_hyperdrive','app.risk_alerts','select'),'API login cannot read alert table directly');
+select has_index('app','risk_alerts','risk_alerts_acknowledged_by_idx','alert acknowledgements have a supporting actor index');
+select has_index('app','risk_alerts','risk_alerts_resolved_by_idx','alert resolutions have a supporting actor index');
+select has_index('app','risk_alerts','risk_alerts_dismissed_by_idx','alert dismissals have a supporting actor index');
 
 insert into auth.users(id,email,aud,role,email_confirmed_at) values
 ('1e000000-0000-4000-8000-000000000001','controls-a@example.invalid','authenticated','authenticated',now()),
