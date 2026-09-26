@@ -51,6 +51,10 @@ import {
   dashboardContextSchema,
   inventoryReportContextSchema,
   salesReportContextSchema,
+  alertCenterSchema,
+  alertStatusUpdateResponseSchema,
+  auditActivityContextSchema,
+  type AlertStatusUpdateRequest,
   type LoyaltyPolicyUpdateRequest,
 } from '@hcs/contracts'
 import { describe, expect, it, vi } from 'vitest'
@@ -578,6 +582,60 @@ const inventoryReportContext = {
 const loadDashboard = vi.fn(async () => dashboardContext)
 const loadSalesReport = vi.fn(async () => salesReportContext)
 const loadInventoryReport = vi.fn(async () => inventoryReportContext)
+const alertId = 'e0000000-0000-4000-8000-000000000001'
+const alertCenter = {
+  canManage: true,
+  counts: { open: 1, acknowledged: 0, resolved: 0, dismissed: 0 },
+  alerts: [
+    {
+      id: alertId,
+      category: 'inventory' as const,
+      severity: 'warning' as const,
+      status: 'open' as const,
+      title: 'Out of stock',
+      message: 'Triple Black / XL is out of stock at Main Store.',
+      entityType: 'product_variant',
+      entityId: '50000000-0000-4000-8000-000000000001',
+      locationId,
+      locationName: 'Main Store',
+      firstDetectedAt: '2026-09-25T05:00:00.000Z',
+      lastDetectedAt: '2026-09-25T05:00:00.000Z',
+      acknowledgedAt: null,
+      resolvedAt: null,
+      dismissedAt: null,
+      note: null,
+      metadata: { availableMilli: 0 },
+    },
+  ],
+}
+const auditActivity = {
+  locations: reportLocations,
+  items: [
+    {
+      id: 'e1000000-0000-4000-8000-000000000001',
+      requestId: 'request-001',
+      actorType: 'tenant_user' as const,
+      actorId: userId,
+      actorLabel: 'Owner',
+      action: 'alert.status_updated',
+      entityType: 'risk_alert',
+      entityId: alertId,
+      locationId,
+      locationName: 'Main Store',
+      reason: 'Reviewed by owner',
+      metadata: { fromStatus: 'open', toStatus: 'acknowledged' },
+      occurredAt: '2026-09-25T05:10:00.000Z',
+    },
+  ],
+  total: 1,
+  hasMore: false,
+}
+const loadAlertCenter = vi.fn(async () => alertCenter)
+const updateAlertStatus = vi.fn(async (_userId, _tenantId, nextAlertId, request: AlertStatusUpdateRequest) => ({
+  alertId: nextAlertId,
+  status: request.status,
+}))
+const loadAuditActivity = vi.fn(async () => auditActivity)
 
 const authenticatedApp = createApp({
   verifyAccessToken: async (token) => (token === 'valid-token' ? { userId } : null),
@@ -654,6 +712,9 @@ const authenticatedApp = createApp({
   loadDashboard,
   loadSalesReport,
   loadInventoryReport,
+  loadAlertCenter,
+  updateAlertStatus,
+  loadAuditActivity,
 })
 
 const businessDetails = {
@@ -900,6 +961,9 @@ describe('API', () => {
       loadDashboard,
       loadSalesReport,
       loadInventoryReport,
+      loadAlertCenter,
+      updateAlertStatus,
+      loadAuditActivity,
     })
     const response = await multiTenantApp.request(
       '/v1/onboarding',
@@ -984,6 +1048,9 @@ describe('API', () => {
       loadDashboard,
       loadSalesReport,
       loadInventoryReport,
+      loadAlertCenter,
+      updateAlertStatus,
+      loadAuditActivity,
     })
     const response = await employeeApp.request(
       '/v1/onboarding',
@@ -2165,6 +2232,65 @@ describe('API', () => {
     expect(response.status).toBe(400)
     expect(apiErrorResponseSchema.parse(await response.json()).error.code).toBe('INVALID_REPORT_FILTERS')
     expect(loadDashboard).not.toHaveBeenCalled()
+  })
+
+  it('loads the tenant alert center and updates an alert lifecycle state', async () => {
+    const headers = { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId }
+    const loaded = await authenticatedApp.request('/v1/alerts', { headers }, bindings)
+    expect(loaded.status).toBe(200)
+    expect(alertCenterSchema.safeParse(await loaded.json()).success).toBe(true)
+    expect(loadAlertCenter).toHaveBeenCalledWith(userId, tenantId, bindings)
+
+    const request = { status: 'acknowledged' as const, note: 'Reviewed by owner' }
+    const updated = await authenticatedApp.request(
+      `/v1/alerts/${alertId}`,
+      {
+        method: 'PATCH',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify(request),
+      },
+      bindings,
+    )
+    expect(updated.status).toBe(200)
+    expect(alertStatusUpdateResponseSchema.safeParse(await updated.json()).success).toBe(true)
+    expect(updateAlertStatus).toHaveBeenCalledWith(userId, tenantId, alertId, request, expect.any(String), bindings)
+  })
+
+  it('loads filtered audit activity and rejects invalid audit dates', async () => {
+    const headers = { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId }
+    const loaded = await authenticatedApp.request(
+      '/v1/audit-activity?from=2026-09-01&to=2026-09-25&search=alert&limit=50&offset=0',
+      { headers },
+      bindings,
+    )
+    expect(loaded.status).toBe(200)
+    expect(auditActivityContextSchema.safeParse(await loaded.json()).success).toBe(true)
+    expect(loadAuditActivity).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      {
+        from: '2026-09-01',
+        to: '2026-09-25',
+        locationId: null,
+        actorType: null,
+        action: null,
+        entityType: null,
+        search: 'alert',
+        limit: 50,
+        offset: 0,
+      },
+      bindings,
+    )
+
+    loadAuditActivity.mockClear()
+    const invalid = await authenticatedApp.request(
+      '/v1/audit-activity?from=invalid&to=2026-09-25',
+      { headers },
+      bindings,
+    )
+    expect(invalid.status).toBe(400)
+    expect(apiErrorResponseSchema.parse(await invalid.json()).error.code).toBe('INVALID_AUDIT_FILTERS')
+    expect(loadAuditActivity).not.toHaveBeenCalled()
   })
 
   it('creates, updates, and annotates a customer with idempotent commands', async () => {

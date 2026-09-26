@@ -47,7 +47,7 @@ export function Topbar({
             ))
           : null}
         {actions}
-        <button type="button" aria-label="Notifications, 5 unread" className={`${ghost} w-11 justify-center px-0`}>
+        <button type="button" aria-label="Notifications" className={`${ghost} w-11 justify-center px-0`}>
           <Bell size={20} strokeWidth={1.75} />
         </button>
         <div className="ml-1.5 flex items-center gap-2.5">

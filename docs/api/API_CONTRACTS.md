@@ -168,7 +168,10 @@ Current POS cash-sales implementation:
 - Completed refunds append proportional negative point transactions using the original sale's rate snapshot. Policy changes never recalculate prior earnings, and the account balance must equal the sum of its immutable ledger.
 - `GET/POST /v1/approvals`
 - `POST /v1/approvals/{id}/decisions`
-- `GET/PATCH /v1/alerts`
+- `GET /v1/alerts` requires server-resolved tenant membership and `alerts.read`. It synchronizes deterministic conditions before returning status counts, management capability, and tenant-scoped alert records.
+- The first rule set opens warning alerts for active tracked variants with zero or negative branch availability and attention alerts for closed register sessions with a non-zero cash variance. Out-of-stock alerts resolve automatically after availability becomes positive; no low-stock rule exists until an explicit reorder point is configured.
+- `PATCH /v1/alerts/{id}` requires `alerts.manage` and accepts `acknowledged`, `resolved`, or `dismissed` plus an optional note. Setting the same state is naturally idempotent; actual transitions append an audit event and alert records cannot be deleted.
+- `GET /v1/audit-activity` requires `audit.read`, inclusive ISO business dates, and accepts optional location, actor type, action, entity type, search, limit, and offset filters. It reads append-only business audit events only; technical request logs remain separate.
 - `GET/PATCH /v1/notifications`
 - `GET /v1/dashboard`
 - `GET /v1/reports/sales`

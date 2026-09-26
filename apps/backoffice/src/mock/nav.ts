@@ -70,7 +70,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { label: 'Finance', href: '/finance', icon: Wallet },
       { label: 'Approvals', href: '/approvals', icon: CircleCheck },
-      { label: 'Alerts', href: '/alerts', icon: Bell, badge: 5 },
+      { label: 'Alerts', href: '/alerts', icon: Bell },
       { label: 'Reports', href: '/reports', icon: ChartColumn },
       { label: 'Audit and activity', href: '/audit', icon: Activity },
     ],

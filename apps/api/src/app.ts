@@ -89,6 +89,11 @@ import {
   loyaltyPolicyUpdateRequestSchema,
   loyaltyPolicyUpdateResponseSchema,
   reportingFilterSchema,
+  alertCenterSchema,
+  alertStatusUpdateRequestSchema,
+  alertStatusUpdateResponseSchema,
+  auditActivityContextSchema,
+  auditActivityFilterSchema,
 } from '@hcs/contracts'
 import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
@@ -174,6 +179,14 @@ import {
   type InventoryReportLoader,
   type SalesReportLoader,
 } from './reporting-repository'
+import {
+  loadAlertCenterFromPostgres,
+  loadAuditActivityFromPostgres,
+  updateAlertStatusInPostgres,
+  type AlertCenterLoader,
+  type AlertStatusUpdater,
+  type AuditActivityLoader,
+} from './controls-repository'
 import {
   loadInventoryMovementsFromPostgres,
   loadInventoryStockFromPostgres,
@@ -298,6 +311,9 @@ interface AppDependencies {
   loadDashboard: DashboardLoader
   loadSalesReport: SalesReportLoader
   loadInventoryReport: InventoryReportLoader
+  loadAlertCenter: AlertCenterLoader
+  updateAlertStatus: AlertStatusUpdater
+  loadAuditActivity: AuditActivityLoader
 }
 
 const defaultDependencies: AppDependencies = {
@@ -360,6 +376,9 @@ const defaultDependencies: AppDependencies = {
   loadDashboard: loadDashboardFromPostgres,
   loadSalesReport: loadSalesReportFromPostgres,
   loadInventoryReport: loadInventoryReportFromPostgres,
+  loadAlertCenter: loadAlertCenterFromPostgres,
+  updateAlertStatus: updateAlertStatusInPostgres,
+  loadAuditActivity: loadAuditActivityFromPostgres,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -3143,6 +3162,147 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
   app.get('/v1/dashboard', (context) => loadReport(context, dependencies.loadDashboard))
   app.get('/v1/reports/sales', (context) => loadReport(context, dependencies.loadSalesReport))
   app.get('/v1/reports/inventory', (context) => loadReport(context, dependencies.loadInventoryReport))
+
+  const controlError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
+    const code = postgresErrorCode(error)
+    const requestId = context.get('requestId')
+    if (code === 'HCSE0')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'CONTROL_ACCESS_DENIED', message: 'Your role cannot access this control center.', requestId },
+        }),
+        403,
+      )
+    if (code === 'HCSE1')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'INVALID_CONTROL_REQUEST', message: 'Check the selected filters or alert status.', requestId },
+        }),
+        400,
+      )
+    if (code === 'HCSE2')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: { code: 'CONTROL_RECORD_NOT_FOUND', message: 'The selected control record was not found.', requestId },
+        }),
+        404,
+      )
+    throw error
+  }
+
+  app.get('/v1/alerts', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'CONTROL_ACCESS_DENIED',
+            message: 'Sign in and select a business to view alerts.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    try {
+      context.header('Cache-Control', 'private, no-store')
+      return context.json(
+        alertCenterSchema.parse(await dependencies.loadAlertCenter(resolved.userId, resolved.tenantId, context.env)),
+      )
+    } catch (error) {
+      return controlError(context, error)
+    }
+  })
+
+  app.patch('/v1/alerts/:alertId', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'CONTROL_ACCESS_DENIED',
+            message: 'Sign in and select a business before updating an alert.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    const alertId = context.req.param('alertId')
+    const parsed = alertStatusUpdateRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(alertId) || !parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_CONTROL_REQUEST',
+            message: 'Choose a valid alert action.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      return context.json(
+        alertStatusUpdateResponseSchema.parse(
+          await dependencies.updateAlertStatus(
+            resolved.userId,
+            resolved.tenantId,
+            alertId,
+            parsed.data,
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+      )
+    } catch (error) {
+      return controlError(context, error)
+    }
+  })
+
+  app.get('/v1/audit-activity', async (context) => {
+    const resolved = await resolvePurchasingTenant(context)
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'CONTROL_ACCESS_DENIED',
+            message: 'Sign in and select a business to view audit activity.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    const parsed = auditActivityFilterSchema.safeParse({
+      from: context.req.query('from'),
+      to: context.req.query('to'),
+      locationId: context.req.query('locationId') || null,
+      actorType: context.req.query('actorType') || null,
+      action: context.req.query('action') || null,
+      entityType: context.req.query('entityType') || null,
+      search: context.req.query('search') || '',
+      limit: Number(context.req.query('limit') || 50),
+      offset: Number(context.req.query('offset') || 0),
+    })
+    if (!parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_AUDIT_FILTERS',
+            message: 'Choose valid audit filters.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      context.header('Cache-Control', 'private, no-store')
+      return context.json(
+        auditActivityContextSchema.parse(
+          await dependencies.loadAuditActivity(resolved.userId, resolved.tenantId, parsed.data, context.env),
+        ),
+      )
+    } catch (error) {
+      return controlError(context, error)
+    }
+  })
 
   const customerError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
     const code = postgresErrorCode(error)
