@@ -73,6 +73,7 @@ Current Phase 1 implementation:
 - `POST /v1/inventory/opening-balances`
 - `GET /v1/inventory/opening-balances`
 - `GET /v1/inventory/stock`
+- `PATCH /v1/inventory/reorder-level`
 - `GET /v1/inventory/movements`
 
 Current catalog implementation:
@@ -107,6 +108,9 @@ Current adjustment implementation:
 Current inventory visibility implementation:
 
 - `GET /v1/inventory/stock` returns the live balance projection for active inventory-tracked variants at a server-authorized branch. `available` is computed as `on_hand - reserved`; quantities cross the TypeScript boundary as integer thousandths.
+- Every stock item includes an optional branch-variant reorder level and a server-derived `not_started`, `out_of_stock`, `low_stock`, or `in_stock` status. A positive available quantity is low stock when it is at or below the active reorder level.
+- `PATCH /v1/inventory/reorder-level` requires owner or `inventory.manage` access and an `Idempotency-Key`. A non-negative integer-thousandth threshold enables monitoring for that branch and variant; `null` disables the policy without deleting its history.
+- Reorder-level changes are serialized, idempotent, audited, and outbox-backed. They never alter inventory movements or balances.
 - `GET /v1/inventory/movements` returns the newest ledger rows for a server-authorized branch, optionally filtered by variant and limited to 1-200 rows. Each row includes movement type, quantity, source reference, actor label, timestamp, and computed balance after.
 - Both read paths use private security-definer functions with pinned search paths and execute permission only for the Hyperdrive role. Direct table reads remain denied.
 
@@ -171,7 +175,7 @@ Current POS cash-sales implementation:
 - `GET/POST /v1/approvals`
 - `POST /v1/approvals/{id}/decisions`
 - `GET /v1/alerts` requires server-resolved tenant membership and `alerts.read`. It synchronizes deterministic conditions before returning status counts, management capability, and tenant-scoped alert records.
-- The first rule set opens warning alerts for active tracked variants with zero or negative branch availability and attention alerts for closed register sessions with a non-zero cash variance. Out-of-stock alerts resolve automatically after availability becomes positive; no low-stock rule exists until an explicit reorder point is configured.
+- The inventory rule set opens warning alerts for active tracked variants with zero or negative branch availability and attention alerts when positive availability is at or below an active branch-variant reorder level. Both conditions use tenant-scoped deduplication and resolve automatically after the condition clears or monitoring is disabled. Closed register sessions with non-zero cash variance remain attention alerts.
 - `PATCH /v1/alerts/{id}` requires `alerts.manage` and accepts `acknowledged`, `resolved`, or `dismissed` plus an optional note. Setting the same state is naturally idempotent; actual transitions append an audit event and alert records cannot be deleted.
 - `GET /v1/audit-activity` requires `audit.read`, inclusive ISO business dates, and accepts optional location, actor type, action, entity type, search, limit, and offset filters. It reads append-only business audit events only; technical request logs remain separate.
 - `GET /v1/notifications` returns only the authenticated tenant member's recipient-specific history, unread count, linked record, location, and per-channel delivery status. `unreadOnly`, `limit`, and `offset` are validated server-side.
@@ -182,7 +186,7 @@ Current POS cash-sales implementation:
 - `GET /v1/reports/inventory`
 - The three reporting reads require `from` and `to` ISO business dates, accept an optional tenant-owned `locationId`, and currently accept `channel=all|pos`. Date ranges are inclusive and limited to 367 business days.
 - Dashboard and sales-report totals share one PostgreSQL projection. Gross sales use sale commit dates; refunds use reversal commit dates; net COGS reverses the original line-cost snapshot on the refund date; gross profit is net sales less net COGS.
-- Inventory reporting is a current balance snapshot. Stock valuation is on-hand quantity multiplied by the current average unit cost. Out-of-stock is available quantity less than or equal to zero; low-stock remains unclassified until the tenant configures an explicit reorder point.
+- Inventory reporting is a current balance snapshot. Stock valuation is on-hand quantity multiplied by the current average unit cost. Out-of-stock is available quantity less than or equal to zero; low-stock is positive availability at or below the active branch-variant reorder level. Dashboard and inventory CSV output use the same server projection.
 - Basic CSV downloads serialize the validated sales and inventory report payload already shown to the user. The asynchronous `POST /v1/exports` contract remains reserved for large, scheduled, or custom exports.
 - `POST /v1/exports`
 

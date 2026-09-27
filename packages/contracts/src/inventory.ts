@@ -70,6 +70,19 @@ export const inventoryAdjustmentCreateResponseSchema = z.discriminatedUnion('sta
   }),
 ])
 
+export const inventoryReorderLevelUpdateRequestSchema = z.strictObject({
+  locationId: identifierSchema,
+  variantId: identifierSchema,
+  reorderLevelMilli: quantityMilliSchema.nullable(),
+})
+
+export const inventoryReorderLevelUpdateResponseSchema = z.object({
+  locationId: identifierSchema,
+  variantId: identifierSchema,
+  reorderLevelMilli: quantityMilliSchema.nullable(),
+  status: z.literal('updated'),
+})
+
 export const openingInventoryContextSchema = z.object({
   locations: z.array(inventoryLocationSchema),
   selectedLocationId: identifierSchema,
@@ -106,6 +119,8 @@ export const inventoryStockContextSchema = z.object({
       inTransitMilli: z.number().int().min(0),
       damagedMilli: z.number().int().min(0),
       averageUnitCostMinor: moneyMinorSchema.nullable(),
+      reorderLevelMilli: quantityMilliSchema.nullable(),
+      stockStatus: z.enum(['not_started', 'out_of_stock', 'low_stock', 'in_stock']),
       hasBalance: z.boolean(),
     }),
   ),
@@ -137,6 +152,8 @@ export type OpeningInventoryCreateRequest = z.infer<typeof openingInventoryCreat
 export type OpeningInventoryCreateResponse = z.infer<typeof openingInventoryCreateResponseSchema>
 export type InventoryAdjustmentCreateRequest = z.infer<typeof inventoryAdjustmentCreateRequestSchema>
 export type InventoryAdjustmentCreateResponse = z.infer<typeof inventoryAdjustmentCreateResponseSchema>
+export type InventoryReorderLevelUpdateRequest = z.infer<typeof inventoryReorderLevelUpdateRequestSchema>
+export type InventoryReorderLevelUpdateResponse = z.infer<typeof inventoryReorderLevelUpdateResponseSchema>
 export type OpeningInventoryContext = z.infer<typeof openingInventoryContextSchema>
 export type InventoryStockContext = z.infer<typeof inventoryStockContextSchema>
 export type InventoryMovementContext = z.infer<typeof inventoryMovementContextSchema>

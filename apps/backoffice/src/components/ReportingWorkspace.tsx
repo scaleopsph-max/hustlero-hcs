@@ -257,6 +257,7 @@ function DashboardView({ data, maxTrend }: { data: DashboardContext; maxTrend: n
           <div className="mt-5 grid grid-cols-2 gap-4">
             <Metric label="Active SKUs" value={data.inventory.skuCount} />
             <Metric label="Out of stock" value={data.inventory.outOfStockCount} />
+            <Metric label="Low stock" value={data.inventory.lowStockCount} />
             <Metric label="Available units" value={quantity(data.inventory.availableMilli)} />
             <Metric label="Stock value" value={formatPeso(data.inventory.valuationCentavos)} />
           </div>
@@ -322,6 +323,8 @@ function ReportsView({ sales, inventory }: { sales: SalesReportContext; inventor
     quantity(item.reservedMilli),
     quantity(item.availableMilli),
     quantity(item.inTransitMilli),
+    item.reorderLevelMilli === null ? '' : quantity(item.reorderLevelMilli),
+    item.stockStatus.replaceAll('_', ' '),
     (item.averageUnitCostCentavos ?? 0) / 100,
     item.valuationCentavos / 100,
   ])
@@ -399,6 +402,8 @@ function ReportsView({ sales, inventory }: { sales: SalesReportContext; inventor
                   'Reserved',
                   'Available',
                   'In transit',
+                  'Reorder level',
+                  'Status',
                   'Average unit cost',
                   'Valuation',
                 ],
@@ -410,10 +415,11 @@ function ReportsView({ sales, inventory }: { sales: SalesReportContext; inventor
             CSV
           </Button>
         </div>
-        <div className="grid gap-3 border-b border-ink-900/10 p-5 sm:grid-cols-4">
+        <div className="grid gap-3 border-b border-ink-900/10 p-5 sm:grid-cols-5">
           <Metric label="SKUs" value={inventory.summary.skuCount} />
           <Metric label="Available" value={quantity(inventory.summary.availableMilli)} />
           <Metric label="Out of stock" value={inventory.summary.outOfStockCount} />
+          <Metric label="Low stock" value={inventory.summary.lowStockCount} />
           <Metric label="Valuation" value={formatPeso(inventory.summary.valuationCentavos)} />
         </div>
         <ReportTable
@@ -427,9 +433,11 @@ function ReportsView({ sales, inventory }: { sales: SalesReportContext; inventor
             item.locationName,
             quantity(item.onHandMilli),
             quantity(item.availableMilli),
+            item.reorderLevelMilli === null ? 'Not set' : quantity(item.reorderLevelMilli),
+            item.stockStatus.replaceAll('_', ' '),
             formatPeso(item.valuationCentavos),
           ])}
-          headings={['Item', 'Location', 'On hand', 'Available', 'Valuation']}
+          headings={['Item', 'Location', 'On hand', 'Available', 'Reorder level', 'Status', 'Valuation']}
         />
       </Glass>
     </>

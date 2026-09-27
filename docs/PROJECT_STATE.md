@@ -111,7 +111,7 @@ Last updated: 2026-09-27
 - Authenticated Dashboard and Reports screens loaded reconciled development data successfully and passed desktop visual smoke testing with date, location, and channel filters available
 - Post-reporting Supabase advisors found no reporting-specific table or index regression; expected private-schema no-policy notices, existing supporting-index follow-ups, and leaked-password protection remain tracked for hardening
 - Alerts and Audit Activity migrations `20260926060528` and `20260926060944` are applied to development; alert records are private, RLS-enabled, non-deletable, and reachable only through tenant-authorized Hyperdrive functions
-- Deterministic alert detection now covers out-of-stock tracked variants and closed register sessions with non-zero cash variance; low-stock remains intentionally unavailable until reorder points are configured
+- Deterministic alert detection covers out-of-stock tracked variants, configured branch-variant low-stock thresholds, and closed register sessions with non-zero cash variance
 - Back Office `/alerts` provides Open/Acknowledged/Resolved/Dismissed queues and audited lifecycle actions; `/audit` provides date, branch, actor, and text filtering over append-only business events
 - GitHub CI runs `36210806738` and `36222748443` passed full application checks, fresh Supabase resets, and the alert/audit pgTAP suite including supporting-index assertions
 - Development API Worker version `877104a2-5e65-4840-8d14-93bd8100ab07` is deployed with alert and audit endpoints; live `/health` returned 200 and unauthenticated alert access returned 403
@@ -175,11 +175,12 @@ Last updated: 2026-09-27
 - Time-boxed read-only Support Access is deployed and live-validated against the owner-designated `SCALEOPS PH` test tenant; grant, overview view, audit, immediate revoke, and preserved-history behavior passed, while automatic expiry remains covered by the database regression suite
 - Subscriptions & Add-ons and the remaining onboarding/go-live foundation are deployed. Owner-controlled validation remains before creating a first pilot plan, changing tenant access, or completing any pending basic-fund action
 - The owner locked the inventory migration and cutover flow in ADR-037 and `docs/product/INVENTORY_MIGRATION_AND_CUTOVER.md`: product setup remains separate from previewed/idempotent opening-stock posting, reorder levels are branch-variant configuration, and POS go-live waits for reconciliation
+- Branch-variant reorder levels, server-derived low-stock status, alert lifecycle, reporting counts/details, Inventory editing, and CSV output are implemented locally; development migration, deployment, and owner smoke testing remain before this slice is closed
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Build the branch-variant reorder-level vertical slice first: schema and tenant-safe commands, Inventory UI, low-stock projection, alerts, reporting, and regression tests. Follow it with staged CSV preview/validation, atomic opening-balance batch posting, reconciliation, and the cutover go-live gate defined in `docs/product/INVENTORY_MIGRATION_AND_CUTOVER.md`.
+Verify and deploy the branch-variant reorder-level slice, then build staged CSV preview/validation, atomic opening-balance batch posting, reconciliation, and the cutover go-live gate defined in `docs/product/INVENTORY_MIGRATION_AND_CUTOVER.md`.
 
 ## Production state
 

@@ -1,10 +1,13 @@
 import {
   inventoryAdjustmentCreateResponseSchema,
   inventoryMovementContextSchema,
+  inventoryReorderLevelUpdateResponseSchema,
   inventoryStockContextSchema,
   openingInventoryContextSchema,
   openingInventoryCreateResponseSchema,
   type InventoryMovementContext,
+  type InventoryReorderLevelUpdateRequest,
+  type InventoryReorderLevelUpdateResponse,
   type InventoryAdjustmentCreateRequest,
   type InventoryAdjustmentCreateResponse,
   type InventoryStockContext,
@@ -60,6 +63,16 @@ export type InventoryAdjustmentRecorder = (
   bindings: Bindings,
 ) => Promise<InventoryAdjustmentCreateResponse>
 
+export type InventoryReorderLevelUpdater = (
+  userId: string,
+  tenantId: string,
+  request: InventoryReorderLevelUpdateRequest,
+  idempotencyKey: string,
+  requestHash: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<InventoryReorderLevelUpdateResponse>
+
 const databaseContextSchema = z.object({
   locations: z.array(z.object({ id: z.uuid(), code: z.string(), name: z.string() })),
   selectedLocationId: z.uuid(),
@@ -96,6 +109,8 @@ const databaseStockContextSchema = z.object({
       inTransit: z.string(),
       damaged: z.string(),
       averageUnitCost: z.string().nullable(),
+      reorderLevel: z.string().nullable(),
+      stockStatus: z.enum(['not_started', 'out_of_stock', 'low_stock', 'in_stock']),
       hasBalance: z.boolean(),
     }),
   ),
@@ -204,23 +219,25 @@ export const loadInventoryStockFromPostgres: InventoryStockLoader = async (userI
   const client = new Client({ connectionString: connectionString(bindings) })
   try {
     await client.connect()
-    const result = await client.query('select app.list_inventory_stock($1::uuid, $2::uuid, $3::uuid) as context', [
-      userId,
-      tenantId,
-      locationId,
-    ])
+    const result = await client.query(
+      'select app.list_inventory_stock_with_reorder($1::uuid, $2::uuid, $3::uuid) as context',
+      [userId, tenantId, locationId],
+    )
     const context = databaseStockContextSchema.parse(result.rows[0]?.context)
     return inventoryStockContextSchema.parse({
       ...context,
-      items: context.items.map(({ onHand, reserved, available, inTransit, damaged, averageUnitCost, ...item }) => ({
-        ...item,
-        onHandMilli: decimalToScaled(onHand, 3),
-        reservedMilli: decimalToScaled(reserved, 3),
-        availableMilli: decimalToScaled(available, 3),
-        inTransitMilli: decimalToScaled(inTransit, 3),
-        damagedMilli: decimalToScaled(damaged, 3),
-        averageUnitCostMinor: averageUnitCost === null ? null : decimalToScaled(averageUnitCost, 2),
-      })),
+      items: context.items.map(
+        ({ onHand, reserved, available, inTransit, damaged, averageUnitCost, reorderLevel, ...item }) => ({
+          ...item,
+          onHandMilli: decimalToScaled(onHand, 3),
+          reservedMilli: decimalToScaled(reserved, 3),
+          availableMilli: decimalToScaled(available, 3),
+          inTransitMilli: decimalToScaled(inTransit, 3),
+          damagedMilli: decimalToScaled(damaged, 3),
+          averageUnitCostMinor: averageUnitCost === null ? null : decimalToScaled(averageUnitCost, 2),
+          reorderLevelMilli: reorderLevel === null ? null : decimalToScaled(reorderLevel, 3),
+        }),
+      ),
     })
   } finally {
     await client.end()
@@ -290,6 +307,40 @@ export const recordInventoryAdjustmentInPostgres: InventoryAdjustmentRecorder = 
     const response = result.rows[0]?.response
     const parsed = inventoryAdjustmentCreateResponseSchema.parse(response)
     return parsed
+  } finally {
+    await client.end()
+  }
+}
+
+export const updateInventoryReorderLevelInPostgres: InventoryReorderLevelUpdater = async (
+  userId,
+  tenantId,
+  request,
+  idempotencyKey,
+  requestHash,
+  requestId,
+  bindings,
+) => {
+  const client = new Client({ connectionString: connectionString(bindings) })
+  try {
+    await client.connect()
+    const result = await client.query(
+      `select app.set_inventory_reorder_level(
+        $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::numeric,
+        $6::text, $7::text, $8::text
+      ) as response`,
+      [
+        userId,
+        tenantId,
+        request.locationId,
+        request.variantId,
+        request.reorderLevelMilli === null ? null : scaledToDecimal(request.reorderLevelMilli, 3),
+        idempotencyKey,
+        requestHash,
+        requestId,
+      ],
+    )
+    return inventoryReorderLevelUpdateResponseSchema.parse(result.rows[0]?.response)
   } finally {
     await client.end()
   }

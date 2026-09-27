@@ -64,6 +64,8 @@ import {
   inventoryAdjustmentCreateRequestSchema,
   inventoryAdjustmentCreateResponseSchema,
   inventoryMovementContextSchema,
+  inventoryReorderLevelUpdateRequestSchema,
+  inventoryReorderLevelUpdateResponseSchema,
   inventoryStockContextSchema,
   openingInventoryContextSchema,
   openingInventoryCreateRequestSchema,
@@ -247,9 +249,11 @@ import {
   loadOpeningInventoryFromPostgres,
   recordInventoryAdjustmentInPostgres,
   recordOpeningInventoryInPostgres,
+  updateInventoryReorderLevelInPostgres,
   type InventoryMovementLoader,
   type InventoryStockLoader,
   type InventoryAdjustmentRecorder,
+  type InventoryReorderLevelUpdater,
   type OpeningInventoryLoader,
   type OpeningInventoryRecorder,
 } from './inventory-repository'
@@ -320,6 +324,7 @@ interface AppDependencies {
   loadInventoryStock: InventoryStockLoader
   loadInventoryMovements: InventoryMovementLoader
   recordInventoryAdjustment: InventoryAdjustmentRecorder
+  updateInventoryReorderLevel: InventoryReorderLevelUpdater
   loadOpeningInventory: OpeningInventoryLoader
   recordOpeningInventory: OpeningInventoryRecorder
   loadApprovalCenter: ApprovalCenterLoader
@@ -399,6 +404,7 @@ const defaultDependencies: AppDependencies = {
   loadInventoryStock: loadInventoryStockFromPostgres,
   loadInventoryMovements: loadInventoryMovementsFromPostgres,
   recordInventoryAdjustment: recordInventoryAdjustmentInPostgres,
+  updateInventoryReorderLevel: updateInventoryReorderLevelInPostgres,
   loadOpeningInventory: loadOpeningInventoryFromPostgres,
   recordOpeningInventory: recordOpeningInventoryInPostgres,
   loadApprovalCenter: loadApprovalCenterFromPostgres,
@@ -4909,6 +4915,153 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
             },
           }),
           404,
+        )
+      }
+      throw error
+    }
+  })
+
+  app.patch('/v1/inventory/reorder-level', async (context) => {
+    const accessToken = readBearerToken(context.req.header('authorization'))
+    if (!accessToken) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Sign in before changing a reorder level.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+    const user = await dependencies.verifyAccessToken(accessToken, context.env)
+    if (!user) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_ACCESS_TOKEN',
+            message: 'The access token is invalid or expired.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+    const idempotencyKey = context.req.header('idempotency-key')
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_REQUIRED',
+            message: 'A valid Idempotency-Key is required.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    const tenants = await dependencies.loadSessionAccess(user.userId, context.env)
+    const requestedTenantId = context.req.header('x-tenant-id')
+    if (!requestedTenantId && tenants.length > 1) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'TENANT_SELECTION_REQUIRED',
+            message: 'Select a business before changing a reorder level.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        409,
+      )
+    }
+    const tenant = requestedTenantId ? tenants.find((entry) => entry.tenantId === requestedTenantId) : tenants[0]
+    if (!tenant) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVENTORY_ACCESS_DENIED',
+            message: 'You do not have access to this business inventory.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    }
+    const body: unknown = await context.req.json().catch(() => null)
+    const parsed = inventoryReorderLevelUpdateRequestSchema.safeParse(body)
+    if (!parsed.success) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_REORDER_LEVEL',
+            message: 'Choose a valid branch, variant, and non-negative reorder level.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    try {
+      const response = await dependencies.updateInventoryReorderLevel(
+        user.userId,
+        tenant.tenantId,
+        parsed.data,
+        idempotencyKey,
+        await requestHash(parsed.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(inventoryReorderLevelUpdateResponseSchema.parse(response))
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS08') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'IDEMPOTENCY_KEY_CONFLICT',
+              message: 'This request key was already used for a different reorder-level change.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      }
+      if (code === 'HCS17' || code === 'HCS18') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS18' ? 'INVENTORY_UNAVAILABLE' : 'INVENTORY_ACCESS_DENIED',
+              message: code === 'HCS18' ? 'The inventory module is not enabled.' : 'You cannot manage this inventory.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      }
+      if (code === 'HCS19' || code === 'HCS21') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS19' ? 'LOCATION_NOT_FOUND' : 'VARIANT_NOT_FOUND',
+              message:
+                code === 'HCS19' ? 'The inventory location was not found.' : 'The inventory variant was not found.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          404,
+        )
+      }
+      if (code === 'HCSR0' || code === '22P02' || code === '22003') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVALID_REORDER_LEVEL',
+              message: 'Enter a non-negative reorder level with up to three decimal places.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          400,
         )
       }
       throw error

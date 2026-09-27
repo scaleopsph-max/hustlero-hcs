@@ -12,6 +12,7 @@ import {
   healthResponseSchema,
   inventoryAdjustmentCreateResponseSchema,
   inventoryMovementContextSchema,
+  inventoryReorderLevelUpdateResponseSchema,
   inventoryStockContextSchema,
   openingInventoryContextSchema,
   openingInventoryCreateResponseSchema,
@@ -171,6 +172,8 @@ const loadInventoryStock = vi.fn(async () => ({
       inTransitMilli: 0,
       damagedMilli: 0,
       averageUnitCostMinor: 55_000,
+      reorderLevelMilli: 5_000,
+      stockStatus: 'in_stock' as const,
       hasBalance: true,
     },
   ],
@@ -203,6 +206,12 @@ const recordInventoryAdjustment = vi.fn(async () => ({
   quantityMilli: -500,
   onHandMilli: 11_500,
   status: 'recorded' as const,
+}))
+const updateInventoryReorderLevel = vi.fn(async (_userId, _tenantId, request) => ({
+  locationId: request.locationId,
+  variantId: request.variantId,
+  reorderLevelMilli: request.reorderLevelMilli,
+  status: 'updated' as const,
 }))
 const loadApprovalCenter = vi.fn(async () => ({
   canManage: false,
@@ -572,6 +581,7 @@ const dashboardContext = {
     onHandMilli: 10_000,
     availableMilli: 10_000,
     outOfStockCount: 0,
+    lowStockCount: 0,
     valuationCentavos: 40_000,
   },
   registers: { openCount: 1, totalCount: 1 },
@@ -595,6 +605,7 @@ const inventoryReportContext = {
     availableMilli: 10_000,
     inTransitMilli: 0,
     outOfStockCount: 0,
+    lowStockCount: 0,
     valuationCentavos: 40_000,
   },
   items: [],
@@ -858,6 +869,7 @@ const authenticatedApp = createApp({
   loadInventoryStock,
   loadInventoryMovements,
   recordInventoryAdjustment,
+  updateInventoryReorderLevel,
   loadOpeningInventory,
   recordOpeningInventory,
   loadApprovalCenter,
@@ -1345,6 +1357,7 @@ describe('API', () => {
       loadInventoryStock,
       loadInventoryMovements,
       recordInventoryAdjustment,
+      updateInventoryReorderLevel,
       loadOpeningInventory,
       recordOpeningInventory,
       loadApprovalCenter,
@@ -1446,6 +1459,7 @@ describe('API', () => {
       loadInventoryStock,
       loadInventoryMovements,
       recordInventoryAdjustment,
+      updateInventoryReorderLevel,
       loadOpeningInventory,
       recordOpeningInventory,
       loadApprovalCenter,
@@ -1890,6 +1904,64 @@ describe('API', () => {
     expect(response.status).toBe(200)
     expect(inventoryStockContextSchema.safeParse(await response.json()).success).toBe(true)
     expect(loadInventoryStock).toHaveBeenCalledWith(userId, tenantId, locationId, bindings)
+  })
+
+  it('updates a branch-variant reorder level idempotently', async () => {
+    updateInventoryReorderLevel.mockClear()
+    const request = {
+      locationId,
+      variantId: '50000000-0000-4000-8000-000000000001',
+      reorderLevelMilli: 5_000,
+    }
+    const response = await authenticatedApp.request(
+      '/v1/inventory/reorder-level',
+      {
+        method: 'PATCH',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'inventory-reorder-001',
+        },
+        body: JSON.stringify(request),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(inventoryReorderLevelUpdateResponseSchema.parse(await response.json())).toMatchObject(request)
+    expect(updateInventoryReorderLevel).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      request,
+      'inventory-reorder-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('rejects a negative reorder level before the database command', async () => {
+    updateInventoryReorderLevel.mockClear()
+    const response = await authenticatedApp.request(
+      '/v1/inventory/reorder-level',
+      {
+        method: 'PATCH',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'inventory-reorder-002',
+        },
+        body: JSON.stringify({
+          locationId,
+          variantId: '50000000-0000-4000-8000-000000000001',
+          reorderLevelMilli: -1,
+        }),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(400)
+    expect(updateInventoryReorderLevel).not.toHaveBeenCalled()
   })
 
   it('loads the approval center for the server-resolved tenant', async () => {

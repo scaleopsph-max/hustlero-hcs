@@ -41,7 +41,7 @@ async function load(
   try {
     await client.connect()
     const result = await client.query(
-      'select app.load_reporting($1::uuid,$2::uuid,$3::date,$4::date,$5::uuid,$6::text) context',
+      'select app.load_reporting_with_inventory_policy($1::uuid,$2::uuid,$3::date,$4::date,$5::uuid,$6::text) context',
       [userId, tenantId, filter.from, filter.to, filter.locationId, filter.channel],
     )
     return result.rows[0]?.context as ReportingPayload

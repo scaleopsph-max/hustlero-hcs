@@ -1,18 +1,19 @@
 'use client'
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { CheckCircle2, Download, Loader2, PackageSearch, Search, X } from 'lucide-react'
+import { CheckCircle2, Download, Loader2, PackageSearch, Save, Search, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   inventoryAdjustmentCreateResponseSchema,
   inventoryMovementContextSchema,
+  inventoryReorderLevelUpdateResponseSchema,
   inventoryStockContextSchema,
   sessionContextResponseSchema,
   type InventoryMovementContext,
   type InventoryMovementType,
   type InventoryStockContext,
 } from '@hcs/contracts'
-import { Button, Chip, Glass, cn } from '@hcs/ui'
+import { Button, Chip, Glass, cn, type ChipTone } from '@hcs/ui'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
@@ -90,7 +91,19 @@ function formatDate(value: string): string {
 function downloadCsv(stock: InventoryStockContext) {
   const location = stock.locations.find((item) => item.id === stock.selectedLocationId)
   const rows = [
-    ['Location', 'Product', 'Variant', 'SKU', 'On hand', 'Reserved', 'Available', 'In transit', 'Damaged'],
+    [
+      'Location',
+      'Product',
+      'Variant',
+      'SKU',
+      'On hand',
+      'Reserved',
+      'Available',
+      'In transit',
+      'Damaged',
+      'Reorder level',
+      'Status',
+    ],
     ...stock.items.map((item) => [
       location?.name ?? '',
       item.productName,
@@ -101,6 +114,8 @@ function downloadCsv(stock: InventoryStockContext) {
       formatQuantity(item.availableMilli),
       formatQuantity(item.inTransitMilli),
       formatQuantity(item.damagedMilli),
+      item.reorderLevelMilli === null ? '' : formatQuantity(item.reorderLevelMilli),
+      item.stockStatus.replaceAll('_', ' '),
     ]),
   ]
   const csv = rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(',')).join('\r\n')
@@ -347,13 +362,26 @@ function StockTable({
               <th className="border-b border-ink-900/10 py-3 text-right font-semibold">Reserved</th>
               <th className="border-b border-ink-900/10 py-3 text-right font-semibold">Available</th>
               <th className="border-b border-ink-900/10 py-3 text-right font-semibold">In transit</th>
+              <th className="border-b border-ink-900/10 py-3 text-right font-semibold">Reorder level</th>
               <th className="border-b border-ink-900/10 py-3 text-right font-semibold">Status</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((item) => {
-              const status = !item.hasBalance ? 'Not started' : item.availableMilli <= 0 ? 'Out of stock' : 'In stock'
-              const tone = !item.hasBalance ? 'neutral' : item.availableMilli <= 0 ? 'critical' : 'success'
+              const status = {
+                not_started: 'Not started',
+                out_of_stock: 'Out of stock',
+                low_stock: 'Low stock',
+                in_stock: 'In stock',
+              }[item.stockStatus]
+              const tone: ChipTone = (
+                {
+                  not_started: 'neutral',
+                  out_of_stock: 'critical',
+                  low_stock: 'warning',
+                  in_stock: 'success',
+                } as const
+              )[item.stockStatus]
               return (
                 <tr
                   key={item.variantId}
@@ -372,6 +400,9 @@ function StockTable({
                   <td className="py-3 text-right">{formatQuantity(item.reservedMilli)}</td>
                   <td className="py-3 text-right font-bold">{formatQuantity(item.availableMilli)}</td>
                   <td className="py-3 text-right">{formatQuantity(item.inTransitMilli)}</td>
+                  <td className="py-3 text-right">
+                    {item.reorderLevelMilli === null ? 'Not set' : formatQuantity(item.reorderLevelMilli)}
+                  </td>
                   <td className="py-3 text-right">
                     <Chip surface="light" tone={tone} className="h-6 text-xs">
                       {status}
@@ -443,6 +474,7 @@ function StockDetails({
           ['Reserved', formatQuantity(item.reservedMilli)],
           ['Damaged', formatQuantity(item.damagedMilli)],
           ['In transit', formatQuantity(item.inTransitMilli)],
+          ['Reorder level', item.reorderLevelMilli === null ? 'Not set' : formatQuantity(item.reorderLevelMilli)],
           ['Average cost', formatMoney(item.averageUnitCostMinor)],
         ].map(([label, value]) => (
           <div key={label} className="border-b border-ink-900/10 py-3 last:border-0">
@@ -451,6 +483,14 @@ function StockDetails({
           </div>
         ))}
       </dl>
+      <ReorderLevelForm
+        item={item}
+        locationId={locationId}
+        tenantId={tenantId}
+        token={token}
+        auth={auth}
+        onUpdated={onRecorded}
+      />
       <div className="pt-4">
         <div className="mb-2 flex items-center justify-between">
           <h3 className="font-bold">Latest movements</h3>
@@ -486,6 +526,104 @@ function parseOptionalMoney(input: string): number | null {
   const match = /^(\d+)(?:\.(\d{0,2}))?$/.exec(input.trim())
   if (!match) throw new Error('Use a unit cost with up to two decimal places.')
   return Number(match[1]) * 100 + Number((match[2] ?? '').padEnd(2, '0'))
+}
+
+function parseOptionalQuantity(input: string): number | null {
+  if (!input.trim()) return null
+  const match = /^(\d+)(?:\.(\d{0,3}))?$/.exec(input.trim())
+  if (!match) throw new Error('Use a non-negative quantity with up to three decimal places.')
+  return Number(match[1]) * 1000 + Number((match[2] ?? '').padEnd(3, '0'))
+}
+
+function ReorderLevelForm({
+  item,
+  locationId,
+  tenantId,
+  token,
+  auth,
+  onUpdated,
+}: {
+  item: InventoryStockContext['items'][number]
+  locationId: string
+  tenantId: string
+  token: string
+  auth: SupabaseClient | null
+  onUpdated: () => Promise<void>
+}) {
+  const [value, setValue] = useState(
+    item.reorderLevelMilli === null ? '' : formatQuantity(item.reorderLevelMilli).replaceAll(',', ''),
+  )
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    setValue(item.reorderLevelMilli === null ? '' : formatQuantity(item.reorderLevelMilli).replaceAll(',', ''))
+    setError(null)
+    setNotice(null)
+  }, [item.reorderLevelMilli, item.variantId])
+
+  async function submit() {
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const response = inventoryReorderLevelUpdateResponseSchema.parse(
+        await apiRequest('/v1/inventory/reorder-level', token, tenantId, auth ?? undefined, undefined, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
+          body: JSON.stringify({
+            locationId,
+            variantId: item.variantId,
+            reorderLevelMilli: parseOptionalQuantity(value),
+          }),
+        }),
+      )
+      await onUpdated()
+      setNotice(response.reorderLevelMilli === null ? 'Low-stock monitoring disabled.' : 'Reorder level saved.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not update the reorder level.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="border-b border-ink-900/10 py-4">
+      <h3 className="font-bold">Low-stock monitoring</h3>
+      <p className="mt-1 text-xs leading-5 text-ink-500">
+        This threshold applies only to this variant at the selected branch. Leave it blank to disable the alert.
+      </p>
+      {error ? (
+        <p role="alert" className="mt-3 border-l-2 border-red-600 bg-red-50 p-2 text-xs text-red-800">
+          {error}
+        </p>
+      ) : null}
+      {notice ? (
+        <p role="status" className="mt-3 border-l-2 border-emerald-600 bg-emerald-50 p-2 text-xs text-emerald-900">
+          {notice}
+        </p>
+      ) : null}
+      <div className="mt-3 flex items-end gap-2">
+        <label className="min-w-0 flex-1 text-xs font-semibold">
+          Reorder level
+          <input
+            aria-label="Reorder level"
+            inputMode="decimal"
+            placeholder="Not set"
+            value={value}
+            disabled={busy}
+            onChange={(event) => setValue(event.target.value)}
+            className="mt-1 h-10 w-full rounded-control border border-ink-900/15 bg-white px-3 text-sm"
+          />
+        </label>
+        <Button type="button" size="sm" variant="confirm" disabled={busy} onClick={() => void submit()}>
+          {busy ? <Loader2 size={16} className="mr-2 animate-spin" /> : <Save size={16} className="mr-2" />}
+          Save
+        </Button>
+      </div>
+    </div>
+  )
 }
 
 function AdjustmentForm({
