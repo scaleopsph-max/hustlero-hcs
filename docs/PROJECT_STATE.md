@@ -175,15 +175,15 @@ Last updated: 2026-09-27
 - Time-boxed read-only Support Access is deployed and live-validated against the owner-designated `SCALEOPS PH` test tenant; grant, overview view, audit, immediate revoke, and preserved-history behavior passed, while automatic expiry remains covered by the database regression suite
 - Subscriptions & Add-ons and the remaining onboarding/go-live foundation are deployed. Owner-controlled validation remains before creating a first pilot plan, changing tenant access, or completing any pending basic-fund action
 - The owner locked the inventory migration and cutover flow in ADR-037 and `docs/product/INVENTORY_MIGRATION_AND_CUTOVER.md`: product setup remains separate from previewed/idempotent opening-stock posting, reorder levels are branch-variant configuration, and POS go-live waits for reconciliation
-- Branch-variant reorder levels, server-derived low-stock status, alert lifecycle, reporting counts/details, Inventory editing, and CSV output are implemented and deployed; owner smoke testing remains before this slice is closed
+- Branch-variant reorder levels, server-derived low-stock status, alert lifecycle, reporting counts/details, Inventory editing, and CSV output are implemented, deployed, and owner-validated end to end
 - Reorder-level migrations `20260927080425` and `20260927080914` plus API Worker version `a7ce01ce-20e6-4040-9f44-cf290c779765` are deployed to development; CI runs `36304872151` and `36305132237` passed full application checks, fresh database resets, and all pgTAP suites, while live health and unauthenticated endpoint smoke tests returned 200 and 401 respectively
-- Desktop visual smoke testing confirmed the Inventory reorder/status columns render correctly. The selected browser tenant has no inventory entitlement, so an owner-controlled save/alert/report mutation remains intentionally pending; post-migration advisors report no new unindexed reorder-policy foreign key
-- The Back Office sidebar business control is now a real authenticated tenant selector instead of a hardcoded prototype label. Its persisted selection is honored across Back Office workspaces and was browser-verified; the current account exposes only `SCALEOPS PH`, whose inventory entitlement is not enabled.
+- Controlled validation against `SCALEOPS PH` changed `SAH-00001` from reorder level 5 to 10 and back to 5. Inventory status moved `in_stock -> low_stock -> in_stock`, report low-stock count moved `0 -> 1 -> 0`, the alert opened and automatically resolved, notification history remained preserved, and valuation stayed reconciled at PHP 6,200.00 for 10 available units. Post-migration advisors report no new unindexed reorder-policy foreign key.
+- The Back Office sidebar business control is now a real authenticated tenant selector instead of a hardcoded prototype label. Its persisted selection is honored across Back Office workspaces and was browser-verified; the current account exposes only `SCALEOPS PH`.
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Complete one owner-controlled reorder-level save/alert/report smoke test, then build staged CSV preview/validation, atomic opening-balance batch posting, reconciliation, and the cutover go-live gate defined in `docs/product/INVENTORY_MIGRATION_AND_CUTOVER.md`.
+Build staged CSV preview/validation, atomic opening-balance batch posting, reconciliation, and the cutover go-live gate defined in `docs/product/INVENTORY_MIGRATION_AND_CUTOVER.md`.
 
 ## Production state
 
