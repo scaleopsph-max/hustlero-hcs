@@ -1,8 +1,8 @@
-import type { TenantAccess } from '@hcs/contracts'
-
 const activeTenantStorageKey = 'hcs:backoffice:active-tenant'
 
-export function selectActiveTenant(tenants: TenantAccess[]): TenantAccess | undefined {
+type TenantChoice = { tenantId: string; isOwner: boolean }
+
+export function selectActiveTenant<T extends TenantChoice>(tenants: T[]): T | undefined {
   if (typeof window !== 'undefined') {
     const storedTenantId = window.localStorage.getItem(activeTenantStorageKey)
     const storedTenant = tenants.find((tenant) => tenant.tenantId === storedTenantId)

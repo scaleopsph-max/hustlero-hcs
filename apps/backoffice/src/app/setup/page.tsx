@@ -11,6 +11,7 @@ import {
   tenantBootstrapResponseSchema,
   type OnboardingResponse,
 } from '@hcs/contracts'
+import { saveActiveTenant, selectActiveTenant } from '@/lib/active-tenant'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
@@ -93,7 +94,9 @@ export default function SetupPage() {
     const owned = data.tenants.filter((item) => item.isOwner)
     setBusinesses(owned)
     setSelectedTenantId((current) =>
-      current && owned.some((item) => item.tenantId === current) ? current : (owned[0]?.tenantId ?? null),
+      current && owned.some((item) => item.tenantId === current)
+        ? current
+        : (selectActiveTenant(owned)?.tenantId ?? null),
     )
   }, [])
 
@@ -214,6 +217,7 @@ export default function SetupPage() {
         }),
       )
       await loadBusinesses(token)
+      saveActiveTenant(data.tenantId)
       setSelectedTenantId(data.tenantId)
       setNotice('Business and main location created.')
     } catch (cause) {
@@ -449,7 +453,10 @@ export default function SetupPage() {
                   <select
                     className={inputClass}
                     value={selectedTenantId}
-                    onChange={(event) => setSelectedTenantId(event.target.value)}
+                    onChange={(event) => {
+                      saveActiveTenant(event.target.value)
+                      setSelectedTenantId(event.target.value)
+                    }}
                   >
                     {businesses.map((item) => (
                       <option key={item.tenantId} value={item.tenantId}>
