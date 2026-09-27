@@ -48,11 +48,13 @@ Error codes are stable and operational. Unknown payment state must never be repo
 Current Phase 1 implementation:
 
 - `POST /v1/tenants` requires a Supabase bearer token and a 16-128 character `Idempotency-Key`. Body: `name`, `slug`, optional `baseCurrency` (default `PHP`), optional `timezone` (default `Asia/Manila`), and `mainLocation` with `code` and `name`. It atomically creates the tenant, main store, owner membership and role, audit event, and outbox event. Identical retries replay the stored response; a changed body with the same key returns 409.
-- `GET /v1/onboarding` requires an owner bearer token. `X-Tenant-Id` selects only a tenant found in that user's server-resolved memberships and is required when the user owns multiple tenants. It reports the full planned step sequence, including persisted completion for business, main location, questions, feature selection, products, and opening inventory; `readyToSell` remains false.
+- `GET /v1/onboarding` requires an owner bearer token. `X-Tenant-Id` selects only a tenant found in that user's server-resolved memberships and is required when the user owns multiple tenants. It derives every checklist item from persisted business records: business, location, questions, features, products, opening inventory when applicable, payment methods, basic funds, employees, registers, POS activation, and a completed test sale.
 - `PATCH /v1/onboarding` requires the same owner context. `business_questions` stores business type, one or more sales channels, inventory-tracking preference, and product setup method. `feature_selection` can run only afterward and may toggle only the tenant's entitled core modules: inventory, purchasing, customers, employees, and finance.
 - Catalog, sales, and basic reports are required core features and remain enabled. Unavailable paid add-ons cannot be selected or self-entitled through onboarding.
 - Identical step retries return success without adding duplicate audit/outbox records. Changed saved answers create a new audit event and outbox event.
-- The Products step becomes complete after the tenant has at least one non-archived product. Opening inventory completes after its first ledger movement. Later onboarding steps are not implemented yet.
+- The Products step becomes complete after the tenant has at least one non-archived product. Opening inventory completes after its first ledger movement and is automatically satisfied for businesses that explicitly do not track inventory.
+- `PATCH /v1/onboarding` with `step=basic_fund_setup` is owner-only and requires an `Idempotency-Key`. It atomically creates the tenant's Capital and Operating fund accounts, audit event, and outbox event without inventing an opening balance. Fund transactions remain append-only ledger entries.
+- `readyToSell` becomes true only when every required persisted step is complete. The Back Office checklist links to the existing setup workspaces and exposes the basic-fund command directly; it never marks an operational step complete from browser-only state.
 
 ### Catalog and inventory
 
@@ -193,7 +195,11 @@ Current POS cash-sales implementation:
 - `POST /v1/platform/support-access` requires AAL2, an `Idempotency-Key`, tenant, ticket reference, reason, and a 15-120 minute duration. Super Admin and Operations may issue read-only `tenant_overview` access only to themselves; overlapping active grants for the same operator and tenant are rejected.
 - `GET /v1/platform/support-access/{grantId}/overview` accepts only an active, unrevoked grant owned by the current operator. It returns aggregate operational counts and tenant locations, excludes customer and record-level data, and appends a tenant audit event on every successful view.
 - `PATCH /v1/platform/support-access/{grantId}/revoke` requires an `Idempotency-Key` and reason. Operators may revoke their own grant; Super Admin may also terminate another operator's grant. Grant history is preserved and cannot be deleted.
-- Platform feature availability is read-only in this slice. Automated subscription billing, plan catalogs, support impersonation, and production provisioning remain deferred.
+- `GET /v1/platform/subscriptions` returns the dynamic plan catalog, included modules and optional numeric limits, tenant subscription history/current assignment, temporary overrides, and the caller's management capability.
+- `POST /v1/platform/subscription-plans` requires an `Idempotency-Key`, unique code/name, default trial days, and selected modules with optional numeric limits. Catalog, sales, and basic reports are always included as core modules.
+- `POST /v1/platform/tenants/{tenantId}/subscription` requires an `Idempotency-Key`, plan, assignment state, optional expiry, and a human reason. It closes the prior current assignment, appends the new subscription history, and materializes effective tenant entitlements atomically.
+- `POST /v1/platform/tenants/{tenantId}/feature-overrides` requires an `Idempotency-Key`, module, future expiry, and reason. Overrides are temporary grants only, cannot overlap, and cannot duplicate a module already included by the current plan.
+- Super Admin and Operations may manage plans, assignments, and temporary overrides after AAL2 verification. Support receives the same subscription context read-only. Automated recurring billing, payment-provider integration, support impersonation, and production provisioning remain deferred.
 - Platform commands use a separate actor-scoped idempotency ledger and append `platform_admin` audit events. The restricted Worker database role may execute the platform functions but cannot read the allowlist or idempotency tables directly.
 
 ## Command safety

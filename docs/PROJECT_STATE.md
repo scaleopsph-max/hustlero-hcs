@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-09-26
+Last updated: 2026-09-27
 
 ## Phase
 
@@ -138,10 +138,16 @@ Last updated: 2026-09-26
 - Development API Worker version `a2c19580-a002-4247-bf69-7fe79a2df5ad` is deployed; health, unauthenticated rejection, Admin-origin CORS, authenticated empty support history, desktop rendering, and 390px mobile overflow checks passed without creating a live grant
 - Post-migration advisors report no Support Access unindexed foreign keys; fresh supporting indexes are expected to remain unused until controlled grant activity begins, while private-schema no-policy notices and leaked-password protection remain tracked
 - The owner designated `SCALEOPS PH` as the permanent platform test tenant. Controlled Support Access ticket `HCS-SUPPORT-VALIDATION-001` completed the live 15-minute grant, read-only overview, audit, and immediate revoke lifecycle; the grant history remains, all three lifecycle audit events exist exactly once, and zero active grants remain
+- Subscription and add-on migrations `20260927000523`, `20260927000532`, and supporting-index migration `20260927001355` are applied to development. Dynamic plans, core/module composition, optional limits, manual trial/active assignment, and time-boxed grant-only overrides are private, RLS-enabled, idempotent, audited, and inaccessible through direct Worker table reads
+- The Super Admin app now includes a Subscriptions & Add-ons workspace for plan creation, tenant assignment, and temporary override management. No live plan or tenant access change was created during read-only validation
+- Remaining onboarding readiness now derives payment methods, basic funds, employees, registers, POS activation, and a completed sale from real records. Basic fund setup creates Capital and Operating accounts atomically while later money movement remains append-only
+- GitHub CI run `36281715406` passed formatting, lint, strict typecheck, 77 Vitest cases, all application and Cloudflare builds, a fresh Supabase reset, and every pgTAP suite including the new 52 subscription and 28 onboarding assertions
+- Development API Worker version `4a5b6d34-43ce-4b7c-a831-e143c1421d0c` is deployed; live health returned 200, unauthenticated subscription access returned 401, and Admin-origin CORS passed
+- Desktop and 390px Admin checks rendered the empty plan catalog and all subscription controls without page-level horizontal overflow. Back Office go-live owner validation requires a fresh sign-in before any pending basic-fund action is submitted
+- Post-migration advisors confirmed both new foreign-key supporting-index findings are resolved. New indexes are unused as expected before controlled activity; private-schema deny-all RLS notices and leaked-password protection remain tracked
 
 ## Not started
 
-- Remaining onboarding steps and go-live validation
 - Non-cash and split tender implementation
 - Cross-session cash refunds after the original register has closed
 - Staging and production environments
@@ -167,11 +173,12 @@ Last updated: 2026-09-26
 - Entitlements and the Basic Super Admin console are deployed and owner-verified with MFA; the real two-tenant directory and eight available modules loaded without changing entitlement or tenant status, and platform access remains limited to explicitly owner-confirmed allowlist entries
 - The owner-confirmed first platform account is provisioned as an active Super Admin; its account identifier remains outside the public repository, and TOTP enrollment plus authenticated read-only console validation succeeded
 - Time-boxed read-only Support Access is deployed and live-validated against the owner-designated `SCALEOPS PH` test tenant; grant, overview view, audit, immediate revoke, and preserved-history behavior passed, while automatic expiry remains covered by the database regression suite
+- Subscriptions & Add-ons and the remaining onboarding/go-live foundation are deployed. Owner-controlled validation remains before creating a first pilot plan, changing tenant access, or completing any pending basic-fund action
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Build the Subscriptions & Add-ons foundation: plan catalog, manual tenant subscription assignment, plan/module limits, trials, and time-boxed overrides. Keep automated recurring billing and provider integration deferred until the owner selects a billing provider.
+Complete owner-controlled development validation: sign back into Back Office and confirm `LOCAL RECIPE` go-live readiness, creating basic funds only if still pending. Then, after explicit owner confirmation, create the first pilot plan and assign it only to the designated `SCALEOPS PH` test tenant. Automated recurring billing remains deferred until a provider is selected.
 
 ## Production state
 

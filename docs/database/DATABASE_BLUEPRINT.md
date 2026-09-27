@@ -19,6 +19,7 @@
 | `audit` | Append-only audit and access events | Server-only |
 | `integration` | Outbox, webhook receipts, sync state | Server-only |
 | `reporting` | Security-invoker views/materialized projections | Controlled |
+| `platform` | Platform operators, support access, subscription plans, assignments, and overrides | Server-only |
 
 ## Core entity groups
 
@@ -35,6 +36,16 @@
 - `employee_locations`
 - `roles`, `permissions`, `role_permissions`, `membership_roles`
 - `features`, `tenant_entitlements`, `tenant_feature_settings`
+- `fund_accounts`, `fund_ledger_entries`
+
+### Platform subscriptions
+
+- `platform.subscription_plans`
+- `platform.subscription_plan_features`
+- `platform.tenant_subscriptions`
+- `platform.tenant_feature_overrides`
+
+Plan assignment history and temporary override history are non-deletable. A current assignment materializes effective rows in `tenant_entitlements`; expired or replaced access is handled through status/end timestamps and a new history row rather than destructive edits. Temporary overrides are grant-only and time-boxed in the pilot implementation.
 
 ### Catalog and pricing
 
