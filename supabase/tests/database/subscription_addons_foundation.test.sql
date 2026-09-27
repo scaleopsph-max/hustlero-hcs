@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(51);
+select plan(52);
 
 select has_table('platform','subscription_plans','subscription plan catalog exists');
 select has_table('platform','subscription_plan_features','plan modules exist');
@@ -28,6 +28,7 @@ select has_index('platform','tenant_subscriptions','tenant_subscriptions_one_cur
 select has_index('platform','tenant_subscriptions','tenant_subscriptions_tenant_history_idx','tenant subscription history is indexed');
 select has_index('platform','tenant_feature_overrides','tenant_feature_overrides_expiry_idx','override expiry is indexed');
 select has_index('platform','tenant_feature_overrides','tenant_feature_overrides_created_by_idx','override actor reference is indexed');
+select has_index('platform','subscription_plans','subscription_plans_created_by_idx','plan creator reference is indexed');
 
 insert into auth.users(id,email,aud,role,email_confirmed_at) values
 ('61000000-0000-4000-8000-000000000001','sub-super@example.invalid','authenticated','authenticated',now()),

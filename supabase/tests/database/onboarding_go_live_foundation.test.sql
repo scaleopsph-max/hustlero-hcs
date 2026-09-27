@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(27);
+select plan(28);
 
 select has_table('app','fund_accounts','fund accounts exist');
 select has_table('app','fund_ledger_entries','fund ledger exists');
@@ -14,6 +14,7 @@ select ok(has_function_privilege('hcs_hyperdrive','app.load_onboarding_snapshot(
 select ok(not has_table_privilege('hcs_hyperdrive','app.fund_accounts','select'),'API role cannot read fund accounts directly');
 select ok(not has_table_privilege('hcs_hyperdrive','app.fund_ledger_entries','select'),'API role cannot read fund ledger directly');
 select has_index('app','fund_accounts','fund_accounts_tenant_status_idx','active fund lookup is indexed');
+select has_index('app','fund_accounts','fund_accounts_created_by_idx','fund creator reference is indexed');
 select has_index('app','fund_ledger_entries','fund_ledger_entries_account_occurred_idx','fund history is indexed');
 
 insert into auth.users(id,email,aud,role,email_confirmed_at) values
