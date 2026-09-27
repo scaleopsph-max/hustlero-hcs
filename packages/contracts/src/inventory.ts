@@ -83,6 +83,80 @@ export const inventoryReorderLevelUpdateResponseSchema = z.object({
   status: z.literal('updated'),
 })
 
+const inventoryImportRawValueSchema = z.string().trim().max(240).default('')
+
+export const inventoryImportPreviewRowSchema = z.strictObject({
+  rowNumber: z.number().int().min(2).max(5001),
+  branchCode: inventoryImportRawValueSchema,
+  sku: inventoryImportRawValueSchema,
+  barcode: inventoryImportRawValueSchema,
+  quantityOnHand: inventoryImportRawValueSchema,
+  unitCost: inventoryImportRawValueSchema,
+  reorderLevel: inventoryImportRawValueSchema,
+  reservedQuantity: inventoryImportRawValueSchema,
+  damagedQuantity: inventoryImportRawValueSchema,
+  inTransitQuantity: inventoryImportRawValueSchema,
+  sourceReference: inventoryImportRawValueSchema,
+})
+
+export const inventoryImportPreviewRequestSchema = z.strictObject({
+  filename: z.string().trim().min(1).max(255),
+  cutoverAt: z.iso.datetime({ offset: true }),
+  rows: z.array(inventoryImportPreviewRowSchema).min(1).max(5000),
+})
+
+const inventoryImportIssueSchema = z.object({
+  code: z.string().min(1),
+  field: z.string().min(1),
+  message: z.string().min(1),
+})
+
+export const inventoryImportPreviewResponseSchema = z.object({
+  batchId: identifierSchema,
+  status: z.literal('previewed'),
+  filename: z.string().min(1),
+  cutoverAt: z.iso.datetime({ offset: true }),
+  summary: z.object({
+    rowCount: z.number().int().min(0),
+    acceptedCount: z.number().int().min(0),
+    rejectedCount: z.number().int().min(0),
+    warningCount: z.number().int().min(0),
+    totalQuantityMilli: quantityMilliSchema,
+    totalValuationMinor: moneyMinorSchema,
+    branches: z.array(
+      z.object({
+        branchCode: z.string(),
+        acceptedCount: z.number().int().min(0),
+        rejectedCount: z.number().int().min(0),
+        totalQuantityMilli: quantityMilliSchema,
+        totalValuationMinor: moneyMinorSchema,
+      }),
+    ),
+  }),
+  rows: z.array(
+    z.object({
+      rowNumber: z.number().int().min(2),
+      branchCode: z.string(),
+      sku: z.string().nullable(),
+      barcode: z.string().nullable(),
+      locationId: identifierSchema.nullable(),
+      variantId: identifierSchema.nullable(),
+      productName: z.string().nullable(),
+      variantName: z.string().nullable(),
+      quantityOnHandMilli: quantityMilliSchema.nullable(),
+      unitCostMinor: moneyMinorSchema.nullable(),
+      reorderLevelMilli: quantityMilliSchema.nullable(),
+      reservedQuantityMilli: quantityMilliSchema.nullable(),
+      damagedQuantityMilli: quantityMilliSchema.nullable(),
+      inTransitQuantityMilli: quantityMilliSchema.nullable(),
+      sourceReference: z.string().nullable(),
+      status: z.enum(['accepted', 'rejected']),
+      errors: z.array(inventoryImportIssueSchema),
+      warnings: z.array(inventoryImportIssueSchema),
+    }),
+  ),
+})
+
 export const openingInventoryContextSchema = z.object({
   locations: z.array(inventoryLocationSchema),
   selectedLocationId: identifierSchema,
@@ -154,6 +228,8 @@ export type InventoryAdjustmentCreateRequest = z.infer<typeof inventoryAdjustmen
 export type InventoryAdjustmentCreateResponse = z.infer<typeof inventoryAdjustmentCreateResponseSchema>
 export type InventoryReorderLevelUpdateRequest = z.infer<typeof inventoryReorderLevelUpdateRequestSchema>
 export type InventoryReorderLevelUpdateResponse = z.infer<typeof inventoryReorderLevelUpdateResponseSchema>
+export type InventoryImportPreviewRequest = z.infer<typeof inventoryImportPreviewRequestSchema>
+export type InventoryImportPreviewResponse = z.infer<typeof inventoryImportPreviewResponseSchema>
 export type OpeningInventoryContext = z.infer<typeof openingInventoryContextSchema>
 export type InventoryStockContext = z.infer<typeof inventoryStockContextSchema>
 export type InventoryMovementContext = z.infer<typeof inventoryMovementContextSchema>

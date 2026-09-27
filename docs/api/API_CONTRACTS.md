@@ -72,6 +72,7 @@ Current Phase 1 implementation:
 - `POST /v1/inventory/adjustments`
 - `POST /v1/inventory/opening-balances`
 - `GET /v1/inventory/opening-balances`
+- `POST /v1/inventory/imports/preview`
 - `GET /v1/inventory/stock`
 - `PATCH /v1/inventory/reorder-level`
 - `GET /v1/inventory/movements`
@@ -93,6 +94,7 @@ Current opening-inventory implementation:
 
 - `GET /v1/inventory/opening-balances` returns active inventory-tracked variants and their opening status for one server-authorized branch. Owners can select any active tenant branch; future employees are restricted to assigned branches.
 - `POST /v1/inventory/opening-balances` requires an `Idempotency-Key` and one or more positive entries. Quantities cross the TypeScript boundary as integer thousandths and unit costs as integer centavos.
+- `POST /v1/inventory/imports/preview` requires an `Idempotency-Key`, filename, cutover timestamp, and 1-5,000 raw CSV rows. PostgreSQL resolves tenant-owned branches and variants by SKU/barcode, rejects duplicate branch-variant rows, returns row-level errors/warnings and reconciled branch totals, and writes only private staging, audit, and outbox records. Preview never creates inventory movements or balances.
 - The command atomically appends one `OPENING_BALANCE` movement per submitted variant and creates its branch balance projection. No direct balance overwrite path or direct Worker table grant exists.
 - Opening inventory is one-time per branch and variant and must precede any other movement for that stock position. Corrections use future adjustment or reversal commands.
 - Successful batches create one audit event and one outbox event. Identical retries replay the response; changed retries and duplicate openings return 409.

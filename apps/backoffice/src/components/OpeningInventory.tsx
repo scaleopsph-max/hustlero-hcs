@@ -14,6 +14,7 @@ import { Button, Glass } from '@hcs/ui'
 import { selectActiveTenant } from '@/lib/active-tenant'
 
 import { Topbar } from './Topbar'
+import { InventoryImportPreview } from './InventoryImportPreview'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
@@ -348,6 +349,7 @@ export function OpeningInventory() {
           </div>
         )}
       </Glass>
+      <InventoryImportPreview />
     </>
   )
 }

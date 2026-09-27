@@ -11,6 +11,7 @@ import {
   catalogVariantUpdateResponseSchema,
   healthResponseSchema,
   inventoryAdjustmentCreateResponseSchema,
+  inventoryImportPreviewResponseSchema,
   inventoryMovementContextSchema,
   inventoryReorderLevelUpdateResponseSchema,
   inventoryStockContextSchema,
@@ -154,6 +155,51 @@ const recordOpeningInventory = vi.fn(async () => ({
   locationId,
   movementCount: 1,
   status: 'recorded' as const,
+}))
+const previewInventoryImport = vi.fn(async (user: string, tenant: string, request: { filename: string }) => ({
+  batchId: '5a000000-0000-4000-8000-000000000001',
+  status: 'previewed' as const,
+  filename: request.filename,
+  cutoverAt: '2026-09-27T09:00:00.000Z',
+  summary: {
+    rowCount: 1,
+    acceptedCount: 1,
+    rejectedCount: 0,
+    warningCount: 0,
+    totalQuantityMilli: 10_000,
+    totalValuationMinor: 6_200,
+    branches: [
+      {
+        branchCode: 'MAIN',
+        acceptedCount: 1,
+        rejectedCount: 0,
+        totalQuantityMilli: 10_000,
+        totalValuationMinor: 6_200,
+      },
+    ],
+  },
+  rows: [
+    {
+      rowNumber: 2,
+      branchCode: 'MAIN',
+      sku: 'SAH-00001',
+      barcode: null,
+      locationId,
+      variantId: '50000000-0000-4000-8000-000000000001',
+      productName: 'Jordan Shoes',
+      variantName: 'Size 45',
+      quantityOnHandMilli: 10_000,
+      unitCostMinor: 6_200,
+      reorderLevelMilli: 5_000,
+      reservedQuantityMilli: 0,
+      damagedQuantityMilli: 0,
+      inTransitQuantityMilli: 0,
+      sourceReference: null,
+      status: 'accepted' as const,
+      errors: [],
+      warnings: [],
+    },
+  ],
 }))
 const loadInventoryStock = vi.fn(async () => ({
   locations: [{ id: locationId, code: 'MAIN', name: 'Main Store' }],
@@ -872,6 +918,7 @@ const authenticatedApp = createApp({
   updateInventoryReorderLevel,
   loadOpeningInventory,
   recordOpeningInventory,
+  previewInventoryImport,
   loadApprovalCenter,
   updateApprovalPolicy,
   decideApprovalRequest,
@@ -1360,6 +1407,7 @@ describe('API', () => {
       updateInventoryReorderLevel,
       loadOpeningInventory,
       recordOpeningInventory,
+      previewInventoryImport,
       loadApprovalCenter,
       updateApprovalPolicy,
       decideApprovalRequest,
@@ -1462,6 +1510,7 @@ describe('API', () => {
       updateInventoryReorderLevel,
       loadOpeningInventory,
       recordOpeningInventory,
+      previewInventoryImport,
       loadApprovalCenter,
       updateApprovalPolicy,
       decideApprovalRequest,
@@ -2192,6 +2241,74 @@ describe('API', () => {
     )
     expect(response.status).toBe(400)
     expect(recordOpeningInventory).not.toHaveBeenCalled()
+  })
+
+  it('previews raw inventory import rows without posting inventory', async () => {
+    previewInventoryImport.mockClear()
+    const request = {
+      filename: 'opening-inventory.csv',
+      cutoverAt: '2026-09-27T09:00:00.000Z',
+      rows: [
+        {
+          rowNumber: 2,
+          branchCode: 'MAIN',
+          sku: 'SAH-00001',
+          barcode: '',
+          quantityOnHand: '10',
+          unitCost: '62.00',
+          reorderLevel: '5',
+          reservedQuantity: '',
+          damagedQuantity: '',
+          inTransitQuantity: '',
+          sourceReference: '',
+        },
+      ],
+    }
+    const response = await authenticatedApp.request(
+      '/v1/inventory/imports/preview',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'inventory-import-preview-001',
+        },
+        body: JSON.stringify(request),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(201)
+    expect(inventoryImportPreviewResponseSchema.safeParse(await response.json()).success).toBe(true)
+    expect(previewInventoryImport).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      request,
+      'inventory-import-preview-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('rejects an empty inventory import before reaching the database', async () => {
+    previewInventoryImport.mockClear()
+    const response = await authenticatedApp.request(
+      '/v1/inventory/imports/preview',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'inventory-import-preview-002',
+        },
+        body: JSON.stringify({ filename: 'empty.csv', cutoverAt: '2026-09-27T09:00:00.000Z', rows: [] }),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(400)
+    expect(previewInventoryImport).not.toHaveBeenCalled()
   })
 
   it('loads purchasing context for the server-resolved tenant', async () => {

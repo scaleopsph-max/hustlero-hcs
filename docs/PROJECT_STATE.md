@@ -179,11 +179,12 @@ Last updated: 2026-09-27
 - Reorder-level migrations `20260927080425` and `20260927080914` plus API Worker version `a7ce01ce-20e6-4040-9f44-cf290c779765` are deployed to development; CI runs `36304872151` and `36305132237` passed full application checks, fresh database resets, and all pgTAP suites, while live health and unauthenticated endpoint smoke tests returned 200 and 401 respectively
 - Controlled validation against `SCALEOPS PH` changed `SAH-00001` from reorder level 5 to 10 and back to 5. Inventory status moved `in_stock -> low_stock -> in_stock`, report low-stock count moved `0 -> 1 -> 0`, the alert opened and automatically resolved, notification history remained preserved, and valuation stayed reconciled at PHP 6,200.00 for 10 available units. Post-migration advisors report no new unindexed reorder-policy foreign key.
 - The Back Office sidebar business control is now a real authenticated tenant selector instead of a hardcoded prototype label. Its persisted selection is honored across Back Office workspaces and was browser-verified; the current account exposes only `SCALEOPS PH`.
+- Inventory migration slice 2 is implemented locally: private RLS-enabled batch/row staging, idempotent tenant-authorized preview validation, SKU/barcode and branch resolution, duplicate detection, row-level errors/warnings, reconciled branch totals, downloadable CSV template/error rows, and a preview-only Opening Inventory UI. Database CI and development deployment remain pending.
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Build staged CSV preview/validation, atomic opening-balance batch posting, reconciliation, and the cutover go-live gate defined in `docs/product/INVENTORY_MIGRATION_AND_CUTOVER.md`.
+Verify and deploy staged CSV preview/validation, then build atomic opening-balance batch posting, reconciliation, and the cutover go-live gate defined in `docs/product/INVENTORY_MIGRATION_AND_CUTOVER.md`.
 
 ## Production state
 

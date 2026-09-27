@@ -1,11 +1,14 @@
 import {
   inventoryAdjustmentCreateResponseSchema,
+  inventoryImportPreviewResponseSchema,
   inventoryMovementContextSchema,
   inventoryReorderLevelUpdateResponseSchema,
   inventoryStockContextSchema,
   openingInventoryContextSchema,
   openingInventoryCreateResponseSchema,
   type InventoryMovementContext,
+  type InventoryImportPreviewRequest,
+  type InventoryImportPreviewResponse,
   type InventoryReorderLevelUpdateRequest,
   type InventoryReorderLevelUpdateResponse,
   type InventoryAdjustmentCreateRequest,
@@ -72,6 +75,16 @@ export type InventoryReorderLevelUpdater = (
   requestId: string,
   bindings: Bindings,
 ) => Promise<InventoryReorderLevelUpdateResponse>
+
+export type InventoryImportPreviewer = (
+  userId: string,
+  tenantId: string,
+  request: InventoryImportPreviewRequest,
+  idempotencyKey: string,
+  requestHash: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<InventoryImportPreviewResponse>
 
 const databaseContextSchema = z.object({
   locations: z.array(z.object({ id: z.uuid(), code: z.string(), name: z.string() })),
@@ -210,6 +223,40 @@ export const recordOpeningInventoryInPostgres: OpeningInventoryRecorder = async 
       [userId, tenantId, request.locationId, JSON.stringify(entries), idempotencyKey, requestHash, requestId],
     )
     return openingInventoryCreateResponseSchema.parse(result.rows[0]?.response)
+  } finally {
+    await client.end()
+  }
+}
+
+export const previewInventoryImportInPostgres: InventoryImportPreviewer = async (
+  userId,
+  tenantId,
+  request,
+  idempotencyKey,
+  requestHash,
+  requestId,
+  bindings,
+) => {
+  const client = new Client({ connectionString: connectionString(bindings) })
+  try {
+    await client.connect()
+    const result = await client.query(
+      `select app.preview_inventory_import(
+        $1::uuid, $2::uuid, $3::text, $4::timestamptz, $5::jsonb,
+        $6::text, $7::text, $8::text
+      ) as response`,
+      [
+        userId,
+        tenantId,
+        request.filename,
+        request.cutoverAt,
+        JSON.stringify(request.rows),
+        idempotencyKey,
+        requestHash,
+        requestId,
+      ],
+    )
+    return inventoryImportPreviewResponseSchema.parse(result.rows[0]?.response)
   } finally {
     await client.end()
   }
