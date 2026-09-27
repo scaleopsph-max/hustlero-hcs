@@ -1,5 +1,7 @@
 'use client'
 
+import { selectActiveTenant } from '@/lib/active-tenant'
+
 import { createClient } from '@supabase/supabase-js'
 import { Receipt } from 'lucide-react'
 import Link from 'next/link'
@@ -39,7 +41,7 @@ export function SalesWorkspace() {
         if (!sessionData.session) throw new Error('Sign in to view sales.')
         const token = sessionData.session.access_token
         const session = sessionContextResponseSchema.parse(await call('/v1/me', token))
-        const tenant = session.tenants.find((entry) => entry.isOwner) ?? session.tenants[0]
+        const tenant = selectActiveTenant(session.tenants)
         if (!tenant) throw new Error('Create a business first.')
         setData(salesContextSchema.parse(await call('/v1/sales', token, tenant.tenantId)))
       } catch (cause) {

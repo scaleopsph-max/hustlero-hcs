@@ -14,6 +14,7 @@ import {
   type InventoryStockContext,
 } from '@hcs/contracts'
 import { Button, Chip, Glass, cn, type ChipTone } from '@hcs/ui'
+import { selectActiveTenant } from '@/lib/active-tenant'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
@@ -186,7 +187,7 @@ export function StockExplorer() {
         const session = sessionContextResponseSchema.parse(
           await apiRequest('/v1/me', data.session.access_token, '', auth, setToken),
         )
-        const tenant = session.tenants.find((item) => item.isOwner) ?? session.tenants[0]
+        const tenant = selectActiveTenant(session.tenants)
         if (!tenant) throw new Error('Create a business before viewing inventory.')
         setTenantId(tenant.tenantId)
         await loadWorkspace(data.session.access_token, tenant.tenantId)

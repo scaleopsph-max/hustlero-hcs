@@ -1,5 +1,7 @@
 'use client'
 
+import { selectActiveTenant } from '@/lib/active-tenant'
+
 import { createClient } from '@supabase/supabase-js'
 import { ArrowLeft, Printer, RotateCcw, XCircle } from 'lucide-react'
 import Link from 'next/link'
@@ -73,7 +75,7 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
         if (!data.session) throw new Error('Sign in to view this receipt.')
         const accessToken = data.session.access_token
         const session = sessionContextResponseSchema.parse(await request('/v1/me', accessToken, ''))
-        const tenant = session.tenants.find((entry) => entry.isOwner) ?? session.tenants[0]
+        const tenant = selectActiveTenant(session.tenants)
         if (!tenant) throw new Error('Create a business first.')
         setToken(accessToken)
         setTenantId(tenant.tenantId)

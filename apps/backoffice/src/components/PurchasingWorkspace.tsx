@@ -1,5 +1,7 @@
 'use client'
 
+import { selectActiveTenant } from '@/lib/active-tenant'
+
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { ClipboardList, Loader2, Plus, Send, Trash2, Truck } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
@@ -133,7 +135,7 @@ export function PurchasingWorkspace() {
         const session = sessionContextResponseSchema.parse(
           await apiRequest('/v1/me', data.session.access_token, '', {}, auth, setToken),
         )
-        const tenant = session.tenants.find((item) => item.isOwner) ?? session.tenants[0]
+        const tenant = selectActiveTenant(session.tenants)
         if (!tenant) throw new Error('Create a business before using purchasing.')
         setTenantId(tenant.tenantId)
         await load(data.session.access_token, tenant.tenantId)

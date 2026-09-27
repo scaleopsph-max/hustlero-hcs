@@ -1,5 +1,7 @@
 'use client'
 
+import { selectActiveTenant } from '@/lib/active-tenant'
+
 import { createClient } from '@supabase/supabase-js'
 import { Building2, Monitor, Plus, UserRound } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
@@ -66,7 +68,7 @@ export function WorkforceWorkspace({ focus = 'employees' }: { focus?: 'employees
         if (!sessionData.session) throw new Error('Sign in to manage the business.')
         setToken(sessionData.session.access_token)
         const session = sessionContextResponseSchema.parse(await call('/v1/me', sessionData.session.access_token, ''))
-        const tenant = session.tenants.find((item) => item.isOwner) ?? session.tenants[0]
+        const tenant = selectActiveTenant(session.tenants)
         if (!tenant) throw new Error('Create a business first.')
         setTenantId(tenant.tenantId)
         await load(sessionData.session.access_token, tenant.tenantId)

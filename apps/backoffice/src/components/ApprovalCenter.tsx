@@ -1,5 +1,7 @@
 'use client'
 
+import { selectActiveTenant } from '@/lib/active-tenant'
+
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { Check, Loader2, ShieldCheck, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -98,7 +100,7 @@ export function ApprovalCenter() {
         if (!sessionData.session) throw new Error('Sign in to view approvals.')
         const accessToken = sessionData.session.access_token
         const session = sessionContextResponseSchema.parse(await apiRequest('/v1/me', accessToken, '', auth))
-        const tenant = session.tenants.find((item) => item.isOwner) ?? session.tenants[0]
+        const tenant = selectActiveTenant(session.tenants)
         if (!tenant) throw new Error('Create a business before viewing approvals.')
         setIsOwner(tenant.isOwner)
         setToken(accessToken)

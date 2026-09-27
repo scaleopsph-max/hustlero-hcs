@@ -14,6 +14,7 @@ import {
   type CatalogVariantCreateRequest,
 } from '@hcs/contracts'
 import { Button, Glass, parsePeso } from '@hcs/ui'
+import { selectActiveTenant } from '@/lib/active-tenant'
 import { Topbar } from './Topbar'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -111,7 +112,7 @@ export function ProductCatalog() {
         const context = sessionContextResponseSchema.parse(
           await apiRequest('/v1/me', session.access_token, '', undefined, auth, setToken),
         )
-        const tenant = context.tenants.find((item) => item.isOwner) ?? context.tenants[0]
+        const tenant = selectActiveTenant(context.tenants)
         if (!tenant) throw new Error('Create a business before adding products.')
         setTenantId(tenant.tenantId)
         await loadCatalog(session.access_token, tenant.tenantId)

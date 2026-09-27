@@ -178,6 +178,7 @@ Last updated: 2026-09-27
 - Branch-variant reorder levels, server-derived low-stock status, alert lifecycle, reporting counts/details, Inventory editing, and CSV output are implemented and deployed; owner smoke testing remains before this slice is closed
 - Reorder-level migrations `20260927080425` and `20260927080914` plus API Worker version `a7ce01ce-20e6-4040-9f44-cf290c779765` are deployed to development; CI runs `36304872151` and `36305132237` passed full application checks, fresh database resets, and all pgTAP suites, while live health and unauthenticated endpoint smoke tests returned 200 and 401 respectively
 - Desktop visual smoke testing confirmed the Inventory reorder/status columns render correctly. The selected browser tenant has no inventory entitlement, so an owner-controlled save/alert/report mutation remains intentionally pending; post-migration advisors report no new unindexed reorder-policy foreign key
+- The Back Office sidebar business control is now a real authenticated tenant selector instead of a hardcoded prototype label. Its persisted selection is honored across Back Office workspaces and was browser-verified; the current account exposes only `SCALEOPS PH`, whose inventory entitlement is not enabled.
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action

@@ -11,6 +11,7 @@ import {
   type OpeningInventoryContext,
 } from '@hcs/contracts'
 import { Button, Glass } from '@hcs/ui'
+import { selectActiveTenant } from '@/lib/active-tenant'
 
 import { Topbar } from './Topbar'
 
@@ -135,7 +136,7 @@ export function OpeningInventory() {
         const session = sessionContextResponseSchema.parse(
           await apiRequest('/v1/me', data.session.access_token, '', undefined, auth, setToken),
         )
-        const tenant = session.tenants.find((item) => item.isOwner) ?? session.tenants[0]
+        const tenant = selectActiveTenant(session.tenants)
         if (!tenant) throw new Error('Create a business before recording opening inventory.')
         setTenantId(tenant.tenantId)
         await loadContext(data.session.access_token, tenant.tenantId)

@@ -1,5 +1,7 @@
 'use client'
 
+import { selectActiveTenant } from '@/lib/active-tenant'
+
 import { createClient } from '@supabase/supabase-js'
 import { Copy, KeyRound, Plus, Smartphone } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
@@ -58,7 +60,7 @@ export function PosDevicesWorkspace() {
         if (!sessionData.session) throw new Error('Sign in to manage POS devices.')
         const nextToken = sessionData.session.access_token
         const session = sessionContextResponseSchema.parse(await call('/v1/me', nextToken, ''))
-        const tenant = session.tenants.find((entry) => entry.isOwner) ?? session.tenants[0]
+        const tenant = selectActiveTenant(session.tenants)
         if (!tenant) throw new Error('Create a business first.')
         setToken(nextToken)
         setTenantId(tenant.tenantId)

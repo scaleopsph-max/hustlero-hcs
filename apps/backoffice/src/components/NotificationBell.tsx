@@ -1,5 +1,7 @@
 'use client'
 
+import { selectActiveTenant } from '@/lib/active-tenant'
+
 import { createClient } from '@supabase/supabase-js'
 import { Bell } from 'lucide-react'
 import Link from 'next/link'
@@ -22,7 +24,7 @@ export function NotificationBell() {
     const sessionResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/me`, { headers, cache: 'no-store' })
     if (!sessionResponse.ok) return
     const session = sessionContextResponseSchema.parse(await sessionResponse.json())
-    const tenant = session.tenants.find((entry) => entry.isOwner) ?? session.tenants[0]
+    const tenant = selectActiveTenant(session.tenants)
     if (!tenant) return
     const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/notifications?unreadOnly=true&limit=1&offset=0`, {
       headers: { ...headers, 'X-Tenant-Id': tenant.tenantId },

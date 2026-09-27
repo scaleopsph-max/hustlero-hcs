@@ -1,16 +1,65 @@
 'use client'
 
+import { createClient } from '@supabase/supabase-js'
 import { ChevronDown, Lock } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useEffect, useRef, useState } from 'react'
+import { sessionContextResponseSchema, type TenantAccess } from '@hcs/contracts'
 import { Glass, Logo, cn } from '@hcs/ui'
+import { saveActiveTenant, selectActiveTenant } from '@/lib/active-tenant'
 import { NAV_CONTEXT, navGroups, resolveNav } from '@/mock/nav'
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+const apiUrl = process.env.NEXT_PUBLIC_API_URL
 
 /** Floating black-glass sidebar. Adaptive: see mock/nav.ts. */
 export function Sidebar({ className, onNavigate }: { className?: string; onNavigate?: () => void }) {
   const pathname = usePathname()
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [tenants, setTenants] = useState<TenantAccess[]>([])
+  const [activeTenant, setActiveTenant] = useState<TenantAccess | null>(null)
+  const [businessMenuOpen, setBusinessMenuOpen] = useState(false)
   const groups = resolveNav(navGroups, NAV_CONTEXT)
   const lockedCount = groups.flatMap((g) => g.items).filter((i) => i.locked).length
+
+  useEffect(() => {
+    if (!supabaseUrl || !supabaseKey || !apiUrl) return
+    const auth = createClient(supabaseUrl, supabaseKey)
+
+    void auth.auth.getSession().then(async ({ data }) => {
+      if (!data.session) return
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/me`, {
+        headers: { Authorization: `Bearer ${data.session.access_token}` },
+        cache: 'no-store',
+      })
+      if (!response.ok) return
+      const session = sessionContextResponseSchema.parse(await response.json())
+      setTenants(session.tenants)
+      setActiveTenant(selectActiveTenant(session.tenants) ?? null)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!businessMenuOpen) return
+    const closeMenu = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setBusinessMenuOpen(false)
+    }
+    document.addEventListener('mousedown', closeMenu)
+    return () => document.removeEventListener('mousedown', closeMenu)
+  }, [businessMenuOpen])
+
+  function changeBusiness(tenant: TenantAccess) {
+    if (tenant.tenantId === activeTenant?.tenantId) {
+      setBusinessMenuOpen(false)
+      return
+    }
+    saveActiveTenant(tenant.tenantId)
+    setActiveTenant(tenant)
+    setBusinessMenuOpen(false)
+    window.location.reload()
+  }
 
   return (
     <Glass
@@ -23,16 +72,60 @@ export function Sidebar({ className, onNavigate }: { className?: string; onNavig
         <span className="font-display text-[19px] font-bold text-white">HUSTLERO</span>
       </div>
 
-      <button
-        type="button"
-        className="flex h-14 items-center justify-between gap-2 rounded-[14px] border border-white/[0.12] bg-white/[0.08] px-3.5 text-left text-white"
-      >
-        <span className="flex flex-col">
-          <span className="text-sm font-semibold">Mabuhay Trading</span>
-          <span className="text-xs text-ink-300">3 locations</span>
-        </span>
-        <ChevronDown size={18} strokeWidth={1.75} className="text-ink-300" />
-      </button>
+      <div ref={menuRef} className="relative">
+        <button
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={businessMenuOpen}
+          disabled={!activeTenant}
+          onClick={() => setBusinessMenuOpen((open) => !open)}
+          className="flex h-14 w-full items-center justify-between gap-2 rounded-[14px] border border-white/[0.12] bg-white/[0.08] px-3.5 text-left text-white disabled:cursor-wait disabled:opacity-60"
+        >
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate text-sm font-semibold">{activeTenant?.tenantName ?? 'Loading business...'}</span>
+            <span className="text-xs text-ink-300">
+              {activeTenant
+                ? `${activeTenant.locationIds.length} location${activeTenant.locationIds.length === 1 ? '' : 's'}`
+                : 'Please wait'}
+            </span>
+          </span>
+          <ChevronDown
+            size={18}
+            strokeWidth={1.75}
+            className={cn('flex-none text-ink-300 transition-transform', businessMenuOpen && 'rotate-180')}
+          />
+        </button>
+
+        {businessMenuOpen ? (
+          <div
+            role="menu"
+            aria-label="Select business"
+            className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[10px] border border-white/15 bg-ink-900 p-1.5 shadow-xl"
+          >
+            {tenants.map((tenant) => (
+              <button
+                key={tenant.tenantId}
+                type="button"
+                role="menuitemradio"
+                aria-checked={tenant.tenantId === activeTenant?.tenantId}
+                onClick={() => changeBusiness(tenant)}
+                className={cn(
+                  'flex min-h-11 w-full items-center justify-between gap-2 rounded-md px-3 text-left text-sm hover:bg-white/10',
+                  tenant.tenantId === activeTenant?.tenantId ? 'bg-white/10 text-gold-200' : 'text-white',
+                )}
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold">{tenant.tenantName}</span>
+                  <span className="block text-xs text-ink-300">
+                    {tenant.locationIds.length} location{tenant.locationIds.length === 1 ? '' : 's'}
+                  </span>
+                </span>
+                {tenant.tenantId === activeTenant?.tenantId ? <span className="text-xs">Active</span> : null}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
 
       <nav aria-label="Main" className="flex flex-col">
         {groups.map((g) => (

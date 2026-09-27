@@ -1,5 +1,7 @@
 'use client'
 
+import { selectActiveTenant } from '@/lib/active-tenant'
+
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { ArrowRightLeft, Plus, Truck } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
@@ -62,7 +64,7 @@ export function TransferWorkspace() {
         if (!data.session) throw new Error('Sign in to view transfers.')
         setToken(data.session.access_token)
         const session = sessionContextResponseSchema.parse(await request('/v1/me', data.session.access_token, ''))
-        const tenant = session.tenants.find((item) => item.isOwner) ?? session.tenants[0]
+        const tenant = selectActiveTenant(session.tenants)
         if (!tenant) throw new Error('Create a business first.')
         setTenantId(tenant.tenantId)
         await load(data.session.access_token, tenant.tenantId)
