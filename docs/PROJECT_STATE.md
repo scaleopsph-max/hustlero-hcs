@@ -174,11 +174,12 @@ Last updated: 2026-09-27
 - The owner-confirmed first platform account is provisioned as an active Super Admin; its account identifier remains outside the public repository, and TOTP enrollment plus authenticated read-only console validation succeeded
 - Time-boxed read-only Support Access is deployed and live-validated against the owner-designated `SCALEOPS PH` test tenant; grant, overview view, audit, immediate revoke, and preserved-history behavior passed, while automatic expiry remains covered by the database regression suite
 - Subscriptions & Add-ons and the remaining onboarding/go-live foundation are deployed. Owner-controlled validation remains before creating a first pilot plan, changing tenant access, or completing any pending basic-fund action
+- The owner locked the inventory migration and cutover flow in ADR-037 and `docs/product/INVENTORY_MIGRATION_AND_CUTOVER.md`: product setup remains separate from previewed/idempotent opening-stock posting, reorder levels are branch-variant configuration, and POS go-live waits for reconciliation
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Complete owner-controlled development validation: sign back into Back Office and confirm `LOCAL RECIPE` go-live readiness, creating basic funds only if still pending. Then, after explicit owner confirmation, create the first pilot plan and assign it only to the designated `SCALEOPS PH` test tenant. Automated recurring billing remains deferred until a provider is selected.
+Build the branch-variant reorder-level vertical slice first: schema and tenant-safe commands, Inventory UI, low-stock projection, alerts, reporting, and regression tests. Follow it with staged CSV preview/validation, atomic opening-balance batch posting, reconciliation, and the cutover go-live gate defined in `docs/product/INVENTORY_MIGRATION_AND_CUTOVER.md`.
 
 ## Production state
 
