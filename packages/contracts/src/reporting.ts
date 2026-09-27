@@ -115,7 +115,45 @@ export const inventoryReportContextSchema = z.object({
   ),
 })
 
+export const shiftReportContextSchema = z.object({
+  scope: reportingScopeSchema,
+  locations: z.array(locationSchema),
+  summary: z.object({
+    sessionCount: z.number().int().nonnegative(),
+    openCount: z.number().int().nonnegative(),
+    closedCount: z.number().int().nonnegative(),
+    exceptionCount: z.number().int().nonnegative(),
+    netSalesCentavos: money,
+    expectedCashCentavos: money.nonnegative(),
+    countedCashCentavos: money.nonnegative(),
+    varianceCentavos: money,
+  }),
+  sessions: z.array(
+    z.object({
+      id,
+      registerId: id,
+      registerName: z.string(),
+      locationId: id,
+      locationName: z.string(),
+      employeeId: id,
+      employeeName: z.string(),
+      status: z.enum(['open', 'closed', 'exception']),
+      openedAt: z.iso.datetime({ offset: true }),
+      closedAt: z.iso.datetime({ offset: true }).nullable(),
+      openingCashCentavos: money.nonnegative(),
+      expectedCashCentavos: money.nonnegative().nullable(),
+      countedCashCentavos: money.nonnegative().nullable(),
+      varianceCentavos: money.nullable(),
+      grossSalesCentavos: money.nonnegative(),
+      refundsCentavos: money.nonnegative(),
+      netSalesCentavos: money,
+      transactionCount: z.number().int().nonnegative(),
+    }),
+  ),
+})
+
 export type ReportingFilter = z.infer<typeof reportingFilterSchema>
 export type DashboardContext = z.infer<typeof dashboardContextSchema>
 export type SalesReportContext = z.infer<typeof salesReportContextSchema>
 export type InventoryReportContext = z.infer<typeof inventoryReportContextSchema>
+export type ShiftReportContext = z.infer<typeof shiftReportContextSchema>

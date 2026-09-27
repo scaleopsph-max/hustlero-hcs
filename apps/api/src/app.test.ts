@@ -53,6 +53,7 @@ import {
   dashboardContextSchema,
   inventoryReportContextSchema,
   salesReportContextSchema,
+  shiftReportContextSchema,
   alertCenterSchema,
   alertStatusUpdateResponseSchema,
   auditActivityContextSchema,
@@ -659,6 +660,43 @@ const inventoryReportContext = {
 const loadDashboard = vi.fn(async () => dashboardContext)
 const loadSalesReport = vi.fn(async () => salesReportContext)
 const loadInventoryReport = vi.fn(async () => inventoryReportContext)
+const shiftReportContext = {
+  scope: reportScope,
+  locations: reportLocations,
+  summary: {
+    sessionCount: 1,
+    openCount: 0,
+    closedCount: 1,
+    exceptionCount: 0,
+    netSalesCentavos: 90_000,
+    expectedCashCentavos: 190_000,
+    countedCashCentavos: 190_000,
+    varianceCentavos: 0,
+  },
+  sessions: [
+    {
+      id: 'f0000000-0000-4000-8000-000000000001',
+      registerId,
+      registerName: 'Register 1',
+      locationId,
+      locationName: 'Main Store',
+      employeeId,
+      employeeName: 'Cashier One',
+      status: 'closed' as const,
+      openedAt: '2026-09-25T02:00:00.000Z',
+      closedAt: '2026-09-25T10:00:00.000Z',
+      openingCashCentavos: 100_000,
+      expectedCashCentavos: 190_000,
+      countedCashCentavos: 190_000,
+      varianceCentavos: 0,
+      grossSalesCentavos: 100_000,
+      refundsCentavos: 10_000,
+      netSalesCentavos: 90_000,
+      transactionCount: 2,
+    },
+  ],
+}
+const loadShiftReport = vi.fn(async () => shiftReportContext)
 const alertId = 'e0000000-0000-4000-8000-000000000001'
 const alertCenter = {
   canManage: true,
@@ -962,6 +1000,7 @@ const authenticatedApp = createApp({
   loadDashboard,
   loadSalesReport,
   loadInventoryReport,
+  loadShiftReport,
   loadAlertCenter,
   updateAlertStatus,
   loadAuditActivity,
@@ -1451,6 +1490,7 @@ describe('API', () => {
       loadDashboard,
       loadSalesReport,
       loadInventoryReport,
+      loadShiftReport,
       loadAlertCenter,
       updateAlertStatus,
       loadAuditActivity,
@@ -1554,6 +1594,7 @@ describe('API', () => {
       loadDashboard,
       loadSalesReport,
       loadInventoryReport,
+      loadShiftReport,
       loadAlertCenter,
       updateAlertStatus,
       loadAuditActivity,
@@ -2887,23 +2928,27 @@ describe('API', () => {
     )
   })
 
-  it('loads reconciled dashboard, sales, and inventory reports with server-resolved tenancy', async () => {
+  it('loads reconciled dashboard, sales, inventory, and shift reports with server-resolved tenancy', async () => {
     const query = '?from=2026-09-01&to=2026-09-25&channel=all'
     const headers = { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId }
     const dashboard = await authenticatedApp.request(`/v1/dashboard${query}`, { headers }, bindings)
     const sales = await authenticatedApp.request(`/v1/reports/sales${query}`, { headers }, bindings)
     const inventory = await authenticatedApp.request(`/v1/reports/inventory${query}`, { headers }, bindings)
+    const shifts = await authenticatedApp.request(`/v1/reports/shifts${query}`, { headers }, bindings)
 
     expect(dashboard.status).toBe(200)
     expect(sales.status).toBe(200)
     expect(inventory.status).toBe(200)
+    expect(shifts.status).toBe(200)
     expect(dashboardContextSchema.safeParse(await dashboard.json()).success).toBe(true)
     expect(salesReportContextSchema.safeParse(await sales.json()).success).toBe(true)
     expect(inventoryReportContextSchema.safeParse(await inventory.json()).success).toBe(true)
+    expect(shiftReportContextSchema.safeParse(await shifts.json()).success).toBe(true)
     const filter = { from: '2026-09-01', to: '2026-09-25', locationId: null, channel: 'all' }
     expect(loadDashboard).toHaveBeenCalledWith(userId, tenantId, filter, bindings)
     expect(loadSalesReport).toHaveBeenCalledWith(userId, tenantId, filter, bindings)
     expect(loadInventoryReport).toHaveBeenCalledWith(userId, tenantId, filter, bindings)
+    expect(loadShiftReport).toHaveBeenCalledWith(userId, tenantId, filter, bindings)
   })
 
   it('rejects invalid reporting filters before querying the database', async () => {

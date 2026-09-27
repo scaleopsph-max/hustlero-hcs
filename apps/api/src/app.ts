@@ -201,9 +201,11 @@ import {
   loadDashboardFromPostgres,
   loadInventoryReportFromPostgres,
   loadSalesReportFromPostgres,
+  loadShiftReportFromPostgres,
   type DashboardLoader,
   type InventoryReportLoader,
   type SalesReportLoader,
+  type ShiftReportLoader,
 } from './reporting-repository'
 import {
   loadAlertCenterFromPostgres,
@@ -375,6 +377,7 @@ interface AppDependencies {
   loadDashboard: DashboardLoader
   loadSalesReport: SalesReportLoader
   loadInventoryReport: InventoryReportLoader
+  loadShiftReport: ShiftReportLoader
   loadAlertCenter: AlertCenterLoader
   updateAlertStatus: AlertStatusUpdater
   loadAuditActivity: AuditActivityLoader
@@ -456,6 +459,7 @@ const defaultDependencies: AppDependencies = {
   loadDashboard: loadDashboardFromPostgres,
   loadSalesReport: loadSalesReportFromPostgres,
   loadInventoryReport: loadInventoryReportFromPostgres,
+  loadShiftReport: loadShiftReportFromPostgres,
   loadAlertCenter: loadAlertCenterFromPostgres,
   updateAlertStatus: updateAlertStatusInPostgres,
   loadAuditActivity: loadAuditActivityFromPostgres,
@@ -3677,7 +3681,7 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
 
   const loadReport = async (
     context: Context<{ Bindings: Bindings }>,
-    loader: DashboardLoader | SalesReportLoader | InventoryReportLoader,
+    loader: DashboardLoader | SalesReportLoader | InventoryReportLoader | ShiftReportLoader,
   ) => {
     const resolved = await resolvePurchasingTenant(context)
     if (!resolved)
@@ -3718,6 +3722,7 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
   app.get('/v1/dashboard', (context) => loadReport(context, dependencies.loadDashboard))
   app.get('/v1/reports/sales', (context) => loadReport(context, dependencies.loadSalesReport))
   app.get('/v1/reports/inventory', (context) => loadReport(context, dependencies.loadInventoryReport))
+  app.get('/v1/reports/shifts', (context) => loadReport(context, dependencies.loadShiftReport))
 
   const controlError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
     const code = postgresErrorCode(error)

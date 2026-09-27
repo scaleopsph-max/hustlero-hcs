@@ -2,10 +2,12 @@ import {
   dashboardContextSchema,
   inventoryReportContextSchema,
   salesReportContextSchema,
+  shiftReportContextSchema,
   type DashboardContext,
   type InventoryReportContext,
   type ReportingFilter,
   type SalesReportContext,
+  type ShiftReportContext,
 } from '@hcs/contracts'
 import { Client } from 'pg'
 import type { Bindings } from './env'
@@ -29,6 +31,12 @@ export type InventoryReportLoader = (
   filter: ReportingFilter,
   bindings: Bindings,
 ) => Promise<InventoryReportContext>
+export type ShiftReportLoader = (
+  userId: string,
+  tenantId: string,
+  filter: ReportingFilter,
+  bindings: Bindings,
+) => Promise<ShiftReportContext>
 
 async function load(
   userId: string,
@@ -66,4 +74,19 @@ export const loadInventoryReportFromPostgres: InventoryReportLoader = async (use
     summary: context.inventory,
     items: context.inventoryItems,
   })
+}
+
+export const loadShiftReportFromPostgres: ShiftReportLoader = async (userId, tenantId, filter, bindings) => {
+  if (!bindings.HYPERDRIVE?.connectionString) throw new Error('HYPERDRIVE binding is not configured.')
+  const client = new Client({ connectionString: bindings.HYPERDRIVE.connectionString })
+  try {
+    await client.connect()
+    const result = await client.query(
+      'select app.load_shift_report($1::uuid,$2::uuid,$3::date,$4::date,$5::uuid,$6::text) context',
+      [userId, tenantId, filter.from, filter.to, filter.locationId, filter.channel],
+    )
+    return shiftReportContextSchema.parse(result.rows[0]?.context)
+  } finally {
+    await client.end()
+  }
 }

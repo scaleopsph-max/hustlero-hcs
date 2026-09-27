@@ -134,10 +134,12 @@ export {
   inventoryReportContextSchema,
   reportingFilterSchema,
   salesReportContextSchema,
+  shiftReportContextSchema,
   type DashboardContext,
   type InventoryReportContext,
   type ReportingFilter,
   type SalesReportContext,
+  type ShiftReportContext,
 } from './reporting'
 export {
   alertCategorySchema,

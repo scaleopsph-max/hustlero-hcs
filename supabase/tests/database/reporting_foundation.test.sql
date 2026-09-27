@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(22);
+select plan(31);
 
 select has_function('app','load_reporting',array['uuid','uuid','date','date','uuid','text'],'reporting projection exists');
 select ok(has_function_privilege('hcs_hyperdrive','app.load_reporting(uuid,uuid,date,date,uuid,text)','execute'),'API login can execute reporting projection');
@@ -68,6 +68,16 @@ select is((app.load_reporting('1d000000-0000-4000-8000-000000000001','2d000000-0
 select is((app.load_reporting('1d000000-0000-4000-8000-000000000001','2d000000-0000-4000-8000-000000000001','2026-09-25','2026-09-25',null,'all')->'registers'->>'openCount')::integer,1,'dashboard shows open registers');
 select is(jsonb_array_length(app.load_reporting('1d000000-0000-4000-8000-000000000001','2d000000-0000-4000-8000-000000000001','2026-09-25','2026-09-25','3d000000-0000-4000-8000-000000000001','pos')->'inventoryItems'),1,'location and POS channel scope is accepted');
 select is((select count(*)::integer from app.role_permissions rp join app.roles r on r.tenant_id=rp.tenant_id and r.id=rp.role_id where r.tenant_id='2d000000-0000-4000-8000-000000000001' and r.code='manager' and rp.permission_code='reports.read'),1,'future manager role receives reporting permission');
+
+select has_function('app','load_shift_report',array['uuid','uuid','date','date','uuid','text'],'shift reporting projection exists');
+select ok(has_function_privilege('hcs_hyperdrive','app.load_shift_report(uuid,uuid,date,date,uuid,text)','execute'),'API login can execute shift reporting projection');
+select ok(not has_function_privilege('authenticated','app.load_shift_report(uuid,uuid,date,date,uuid,text)','execute'),'browser login cannot execute shift reporting projection directly');
+select throws_ok($$select app.load_shift_report('1d000000-0000-4000-8000-000000000002','2d000000-0000-4000-8000-000000000001','2026-09-25','2026-09-25',null,'all')$$,'HCSD0','Reporting access is not allowed','cross-tenant shift report access is denied');
+select throws_ok($$select app.load_shift_report('1d000000-0000-4000-8000-000000000001','2d000000-0000-4000-8000-000000000001','2026-09-25','2026-09-25','3d000000-0000-4000-8000-000000000002','all')$$,'HCSD2','Reporting location was not found','foreign tenant shift location is rejected');
+select is((app.load_shift_report('1d000000-0000-4000-8000-000000000001','2d000000-0000-4000-8000-000000000001','2026-09-25','2026-09-25',null,'all')->'summary'->>'sessionCount')::integer,1,'shift report counts sessions by opening business date');
+select is((app.load_shift_report('1d000000-0000-4000-8000-000000000001','2d000000-0000-4000-8000-000000000001','2026-09-25','2026-09-25',null,'all')->'summary'->>'openCount')::integer,1,'shift report exposes open session count');
+select is((app.load_shift_report('1d000000-0000-4000-8000-000000000001','2d000000-0000-4000-8000-000000000001','2026-09-25','2026-09-25',null,'all')->'summary'->>'netSalesCentavos')::bigint,50000::bigint,'shift net sales reconcile gross sales less refunds');
+select is((app.load_shift_report('1d000000-0000-4000-8000-000000000001','2d000000-0000-4000-8000-000000000001','2026-09-25','2026-09-25',null,'all')->'sessions'->0->>'transactionCount')::integer,1,'shift rows expose committed transaction counts');
 
 select * from finish();
 rollback;

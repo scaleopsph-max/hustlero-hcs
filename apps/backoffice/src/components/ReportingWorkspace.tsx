@@ -3,16 +3,19 @@
 import { selectActiveTenant } from '@/lib/active-tenant'
 
 import { createClient } from '@supabase/supabase-js'
-import { Download, RefreshCw } from 'lucide-react'
+import { Clock3, CreditCard, Download, PackageSearch, Percent, ReceiptText, RefreshCw } from 'lucide-react'
+import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   dashboardContextSchema,
   inventoryReportContextSchema,
   salesReportContextSchema,
+  shiftReportContextSchema,
   sessionContextResponseSchema,
   type DashboardContext,
   type InventoryReportContext,
   type SalesReportContext,
+  type ShiftReportContext,
 } from '@hcs/contracts'
 import { Button, Chip, Glass, formatPeso } from '@hcs/ui'
 
@@ -91,6 +94,7 @@ export function ReportingWorkspace({ mode }: { mode: 'dashboard' | 'reports' }) 
   const [dashboard, setDashboard] = useState<DashboardContext | null>(null)
   const [sales, setSales] = useState<SalesReportContext | null>(null)
   const [inventory, setInventory] = useState<InventoryReportContext | null>(null)
+  const [shifts, setShifts] = useState<ShiftReportContext | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -111,12 +115,14 @@ export function ReportingWorkspace({ mode }: { mode: 'dashboard' | 'reports' }) 
         if (mode === 'dashboard') {
           setDashboard(dashboardContextSchema.parse(await call(`/v1/dashboard?${query}`, nextToken, nextTenant)))
         } else {
-          const [salesData, inventoryData] = await Promise.all([
+          const [salesData, inventoryData, shiftData] = await Promise.all([
             call(`/v1/reports/sales?${query}`, nextToken, nextTenant),
             call(`/v1/reports/inventory?${query}`, nextToken, nextTenant),
+            call(`/v1/reports/shifts?${query}`, nextToken, nextTenant),
           ])
           setSales(salesReportContextSchema.parse(salesData))
           setInventory(inventoryReportContextSchema.parse(inventoryData))
+          setShifts(shiftReportContextSchema.parse(shiftData))
         }
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : 'Could not load reporting data.')
@@ -224,7 +230,9 @@ export function ReportingWorkspace({ mode }: { mode: 'dashboard' | 'reports' }) 
         </Glass>
       ) : null}
       {!loading && dashboard ? <DashboardView data={dashboard} maxTrend={maxTrend} /> : null}
-      {!loading && sales && inventory ? <ReportsView sales={sales} inventory={inventory} /> : null}
+      {!loading && sales && inventory && shifts ? (
+        <ReportsView sales={sales} inventory={inventory} shifts={shifts} />
+      ) : null}
     </div>
   )
 }
@@ -303,7 +311,18 @@ function Metric({ label, value }: { label: string; value: string | number }) {
   )
 }
 
-function ReportsView({ sales, inventory }: { sales: SalesReportContext; inventory: InventoryReportContext }) {
+type ReportView = 'sales' | 'payments' | 'discounts' | 'inventory' | 'operations'
+
+function ReportsView({
+  sales,
+  inventory,
+  shifts,
+}: {
+  sales: SalesReportContext
+  inventory: InventoryReportContext
+  shifts: ShiftReportContext
+}) {
+  const [view, setView] = useState<ReportView>('sales')
   const salesRows = sales.byItem.map((item) => [
     item.label,
     item.variantName,
@@ -330,70 +349,154 @@ function ReportsView({ sales, inventory }: { sales: SalesReportContext; inventor
     (item.averageUnitCostCentavos ?? 0) / 100,
     item.valuationCentavos / 100,
   ])
+  const tabs: Array<{ value: ReportView; label: string; Icon: typeof CreditCard }> = [
+    { value: 'sales', label: 'Sales', Icon: PackageSearch },
+    { value: 'payments', label: 'Payments', Icon: CreditCard },
+    { value: 'discounts', label: 'Discounts & taxes', Icon: Percent },
+    { value: 'inventory', label: 'Inventory', Icon: PackageSearch },
+    { value: 'operations', label: 'Shifts & receipts', Icon: Clock3 },
+  ]
   return (
     <>
-      <SummaryCards summary={sales.summary} />
-      <Glass variant="light" className="overflow-hidden">
-        <div className="flex items-center justify-between gap-3 border-b border-ink-900/10 p-5">
-          <div>
-            <h2 className="font-display text-xl font-bold">Sales by item</h2>
-            <p className="text-sm text-ink-500">Net of refunds within the selected business dates.</p>
-          </div>
-          <Button
+      <Glass variant="light" className="flex flex-wrap gap-2 p-2" aria-label="Report views">
+        {tabs.map(({ value, label, Icon }) => (
+          <button
+            key={value}
             type="button"
-            variant="secondary"
-            onClick={() =>
-              downloadCsv(`hcs-sales-${sales.scope.from}-${sales.scope.to}.csv`, [
-                [
-                  'Product',
-                  'Variant',
-                  'SKU',
-                  'Net quantity',
-                  'Transactions',
-                  'Gross sales',
-                  'Refunds',
-                  'Net sales',
-                  'COGS',
-                  'Gross profit',
-                ],
-                ...salesRows,
+            onClick={() => setView(value)}
+            className={`flex min-h-10 items-center gap-2 px-3 text-sm font-semibold transition ${
+              view === value ? 'bg-ink-950 text-white' : 'text-ink-600 hover:bg-ink-950/5 hover:text-ink-950'
+            }`}
+            aria-pressed={view === value}
+          >
+            <Icon size={16} />
+            {label}
+          </button>
+        ))}
+      </Glass>
+
+      {view === 'sales' ? (
+        <>
+          <SummaryCards summary={sales.summary} />
+          <Glass variant="light" className="overflow-hidden">
+            <ReportHeader
+              title="Sales by item"
+              subtitle="Net of refunds within the selected business dates."
+              onExport={() =>
+                downloadCsv(`hcs-sales-${sales.scope.from}-${sales.scope.to}.csv`, [
+                  [
+                    'Product',
+                    'Variant',
+                    'SKU',
+                    'Net quantity',
+                    'Transactions',
+                    'Gross sales',
+                    'Refunds',
+                    'Net sales',
+                    'COGS',
+                    'Gross profit',
+                  ],
+                  ...salesRows,
+                ])
+              }
+            />
+            <ReportTable
+              rows={sales.byItem.map((item) => [
+                <div key="item">
+                  <strong>{item.label}</strong>
+                  <div className="text-xs text-ink-500">
+                    {item.variantName} · {item.sku}
+                  </div>
+                </div>,
+                quantity(item.quantityMilli ?? 0),
+                item.transactionCount,
+                formatPeso(item.netSalesCentavos),
+                formatPeso(item.grossProfitCentavos),
+              ])}
+              headings={['Item', 'Net qty', 'Txns', 'Net sales', 'Gross profit']}
+            />
+          </Glass>
+          <div className="grid gap-4 xl:grid-cols-2">
+            <Breakdown title="By category" rows={sales.byCategory} />
+            <Breakdown title="By employee" rows={sales.byEmployee} />
+          </div>
+        </>
+      ) : null}
+
+      {view === 'payments' ? (
+        <Glass variant="light" className="overflow-hidden">
+          <ReportHeader
+            title="Sales by payment type"
+            subtitle="Payment receipts net of linked payment reversals."
+            onExport={() =>
+              downloadCsv(`hcs-payments-${sales.scope.from}-${sales.scope.to}.csv`, [
+                ['Payment method', 'Gross sales', 'Refunds', 'Net sales'],
+                ...sales.byPaymentType.map((row) => [
+                  row.label,
+                  row.grossSalesCentavos / 100,
+                  row.refundsCentavos / 100,
+                  row.netSalesCentavos / 100,
+                ]),
               ])
             }
-          >
-            <Download size={16} className="mr-2" />
-            CSV
-          </Button>
-        </div>
-        <ReportTable
-          rows={sales.byItem.map((item) => [
-            <div key="item">
-              <strong>{item.label}</strong>
-              <div className="text-xs text-ink-500">
-                {item.variantName} · {item.sku}
-              </div>
-            </div>,
-            quantity(item.quantityMilli ?? 0),
-            item.transactionCount,
-            formatPeso(item.netSalesCentavos),
-            formatPeso(item.grossProfitCentavos),
-          ])}
-          headings={['Item', 'Net qty', 'Txns', 'Net sales', 'Gross profit']}
-        />
-      </Glass>
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Breakdown title="By category" rows={sales.byCategory} />
-        <Breakdown title="By employee" rows={sales.byEmployee} />
-      </div>
-      <Glass variant="light" className="overflow-hidden">
-        <div className="flex items-center justify-between gap-3 border-b border-ink-900/10 p-5">
-          <div>
-            <h2 className="font-display text-xl font-bold">Inventory valuation</h2>
-            <p className="text-sm text-ink-500">Current stock snapshot; date filters apply to sales only.</p>
+          />
+          <ReportTable
+            headings={['Payment method', 'Gross sales', 'Refunds', 'Net sales']}
+            rows={sales.byPaymentType.map((row) => [
+              row.label,
+              formatPeso(row.grossSalesCentavos),
+              formatPeso(row.refundsCentavos),
+              formatPeso(row.netSalesCentavos),
+            ])}
+          />
+        </Glass>
+      ) : null}
+
+      {view === 'discounts' ? (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <MetricPanel label="Gross sales" value={formatPeso(sales.summary.grossSalesCentavos)} />
+            <MetricPanel label="Discounts" value={formatPeso(sales.summary.discountCentavos)} />
+            <MetricPanel label="Taxes" value={formatPeso(sales.summary.taxCentavos)} />
+            <MetricPanel label="Net sales" value={formatPeso(sales.summary.netSalesCentavos)} />
           </div>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() =>
+          <Glass variant="light" className="overflow-hidden">
+            <ReportHeader
+              title="Discounts and taxes"
+              subtitle="Committed sale totals for the selected scope."
+              onExport={() =>
+                downloadCsv(`hcs-discounts-taxes-${sales.scope.from}-${sales.scope.to}.csv`, [
+                  ['From', 'To', 'Gross sales', 'Discounts', 'Taxes', 'Refunds', 'Net sales'],
+                  [
+                    sales.scope.from,
+                    sales.scope.to,
+                    sales.summary.grossSalesCentavos / 100,
+                    sales.summary.discountCentavos / 100,
+                    sales.summary.taxCentavos / 100,
+                    sales.summary.refundsCentavos / 100,
+                    sales.summary.netSalesCentavos / 100,
+                  ],
+                ])
+              }
+            />
+            <ReportTable
+              headings={['Metric', 'Amount']}
+              rows={[
+                ['Seller-funded discounts', formatPeso(sales.summary.discountCentavos)],
+                ['Collected taxes', formatPeso(sales.summary.taxCentavos)],
+                ['Refunds', formatPeso(sales.summary.refundsCentavos)],
+              ]}
+            />
+          </Glass>
+        </>
+      ) : null}
+
+      {view === 'inventory' ? (
+        <Glass variant="light" className="overflow-hidden">
+          <ReportHeader
+            title="Inventory valuation"
+            subtitle="Current stock snapshot; date filters apply to sales only."
+            onExport={() =>
               downloadCsv(`hcs-inventory-${inventory.scope.generatedAt.slice(0, 10)}.csv`, [
                 [
                   'Location',
@@ -412,37 +515,151 @@ function ReportsView({ sales, inventory }: { sales: SalesReportContext; inventor
                 ...inventoryRows,
               ])
             }
-          >
-            <Download size={16} className="mr-2" />
-            CSV
-          </Button>
-        </div>
-        <div className="grid gap-3 border-b border-ink-900/10 p-5 sm:grid-cols-5">
-          <Metric label="SKUs" value={inventory.summary.skuCount} />
-          <Metric label="Available" value={quantity(inventory.summary.availableMilli)} />
-          <Metric label="Out of stock" value={inventory.summary.outOfStockCount} />
-          <Metric label="Low stock" value={inventory.summary.lowStockCount} />
-          <Metric label="Valuation" value={formatPeso(inventory.summary.valuationCentavos)} />
-        </div>
-        <ReportTable
-          rows={inventory.items.map((item) => [
-            <div key="item">
-              <strong>{item.productName}</strong>
-              <div className="text-xs text-ink-500">
-                {item.variantName} · {item.sku}
+          />
+          <div className="grid gap-3 border-b border-ink-900/10 p-5 sm:grid-cols-5">
+            <Metric label="SKUs" value={inventory.summary.skuCount} />
+            <Metric label="Available" value={quantity(inventory.summary.availableMilli)} />
+            <Metric label="Out of stock" value={inventory.summary.outOfStockCount} />
+            <Metric label="Low stock" value={inventory.summary.lowStockCount} />
+            <Metric label="Valuation" value={formatPeso(inventory.summary.valuationCentavos)} />
+          </div>
+          <ReportTable
+            rows={inventory.items.map((item) => [
+              <div key="item">
+                <strong>{item.productName}</strong>
+                <div className="text-xs text-ink-500">
+                  {item.variantName} · {item.sku}
+                </div>
+              </div>,
+              item.locationName,
+              quantity(item.onHandMilli),
+              quantity(item.availableMilli),
+              item.reorderLevelMilli === null ? 'Not set' : quantity(item.reorderLevelMilli),
+              item.stockStatus.replaceAll('_', ' '),
+              formatPeso(item.valuationCentavos),
+            ])}
+            headings={['Item', 'Location', 'On hand', 'Available', 'Reorder level', 'Status', 'Valuation']}
+          />
+        </Glass>
+      ) : null}
+
+      {view === 'operations' ? (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <MetricPanel label="Sessions" value={shifts.summary.sessionCount} />
+            <MetricPanel label="Open" value={shifts.summary.openCount} />
+            <MetricPanel label="Exceptions" value={shifts.summary.exceptionCount} />
+            <MetricPanel label="Net sales" value={formatPeso(shifts.summary.netSalesCentavos)} />
+          </div>
+          <Glass variant="light" className="overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-900/10 p-5">
+              <div>
+                <h2 className="font-display text-xl font-bold">Shifts</h2>
+                <p className="text-sm text-ink-500">Register sessions opened within the selected business dates.</p>
               </div>
-            </div>,
-            item.locationName,
-            quantity(item.onHandMilli),
-            quantity(item.availableMilli),
-            item.reorderLevelMilli === null ? 'Not set' : quantity(item.reorderLevelMilli),
-            item.stockStatus.replaceAll('_', ' '),
-            formatPeso(item.valuationCentavos),
-          ])}
-          headings={['Item', 'Location', 'On hand', 'Available', 'Reorder level', 'Status', 'Valuation']}
-        />
-      </Glass>
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href="/sales"
+                  className="inline-flex min-h-10 items-center gap-2 border border-ink-900/15 bg-white px-3 text-sm font-semibold"
+                >
+                  <ReceiptText size={16} />
+                  Receipts
+                </Link>
+                <Link
+                  href="/register-sessions"
+                  className="inline-flex min-h-10 items-center gap-2 border border-ink-900/15 bg-white px-3 text-sm font-semibold"
+                >
+                  <Clock3 size={16} />
+                  Register control
+                </Link>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() =>
+                    downloadCsv(`hcs-shifts-${shifts.scope.from}-${shifts.scope.to}.csv`, [
+                      [
+                        'Opened',
+                        'Closed',
+                        'Location',
+                        'Register',
+                        'Employee',
+                        'Status',
+                        'Transactions',
+                        'Net sales',
+                        'Expected cash',
+                        'Counted cash',
+                        'Variance',
+                      ],
+                      ...shifts.sessions.map((row) => [
+                        row.openedAt,
+                        row.closedAt ?? '',
+                        row.locationName,
+                        row.registerName,
+                        row.employeeName,
+                        row.status,
+                        row.transactionCount,
+                        row.netSalesCentavos / 100,
+                        (row.expectedCashCentavos ?? 0) / 100,
+                        (row.countedCashCentavos ?? 0) / 100,
+                        (row.varianceCentavos ?? 0) / 100,
+                      ]),
+                    ])
+                  }
+                >
+                  <Download size={16} className="mr-2" />
+                  CSV
+                </Button>
+              </div>
+            </div>
+            <ReportTable
+              headings={['Shift', 'Location', 'Employee', 'Status', 'Txns', 'Net sales', 'Variance']}
+              rows={shifts.sessions.map((row) => [
+                <div key="shift">
+                  <strong>{row.registerName}</strong>
+                  <div className="text-xs text-ink-500">{formatReportDate(row.openedAt)}</div>
+                </div>,
+                row.locationName,
+                row.employeeName,
+                row.status,
+                row.transactionCount,
+                formatPeso(row.netSalesCentavos),
+                row.varianceCentavos === null ? 'Open' : formatPeso(row.varianceCentavos),
+              ])}
+            />
+          </Glass>
+        </>
+      ) : null}
     </>
+  )
+}
+
+function ReportHeader({ title, subtitle, onExport }: { title: string; subtitle: string; onExport: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-900/10 p-5">
+      <div>
+        <h2 className="font-display text-xl font-bold">{title}</h2>
+        <p className="text-sm text-ink-500">{subtitle}</p>
+      </div>
+      <Button type="button" variant="secondary" onClick={onExport}>
+        <Download size={16} className="mr-2" />
+        CSV
+      </Button>
+    </div>
+  )
+}
+
+function MetricPanel({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="border border-ink-900/10 bg-white p-4">
+      <div className="text-xs font-medium text-ink-500">{label}</div>
+      <div className="mt-2 break-words font-display text-2xl font-bold">{value}</div>
+    </div>
+  )
+}
+
+function formatReportDate(value: string) {
+  return new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' }).format(
+    new Date(value),
   )
 }
 
