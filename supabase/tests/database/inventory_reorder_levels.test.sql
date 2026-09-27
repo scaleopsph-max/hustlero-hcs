@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(22);
+select plan(23);
 
 select has_table('app', 'inventory_reorder_policies', 'branch-variant reorder policy table exists');
 select ok(
@@ -33,6 +33,10 @@ select ok(
     'EXECUTE'
   ),
   'browser users cannot execute the reorder command directly'
+);
+select has_index(
+  'app', 'inventory_reorder_policies', 'inventory_reorder_policies_variant_idx',
+  'reorder policy variant foreign key has a covering index'
 );
 
 insert into auth.users (id, email, aud, role, email_confirmed_at) values

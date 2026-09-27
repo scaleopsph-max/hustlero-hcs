@@ -175,7 +175,8 @@ Last updated: 2026-09-27
 - Time-boxed read-only Support Access is deployed and live-validated against the owner-designated `SCALEOPS PH` test tenant; grant, overview view, audit, immediate revoke, and preserved-history behavior passed, while automatic expiry remains covered by the database regression suite
 - Subscriptions & Add-ons and the remaining onboarding/go-live foundation are deployed. Owner-controlled validation remains before creating a first pilot plan, changing tenant access, or completing any pending basic-fund action
 - The owner locked the inventory migration and cutover flow in ADR-037 and `docs/product/INVENTORY_MIGRATION_AND_CUTOVER.md`: product setup remains separate from previewed/idempotent opening-stock posting, reorder levels are branch-variant configuration, and POS go-live waits for reconciliation
-- Branch-variant reorder levels, server-derived low-stock status, alert lifecycle, reporting counts/details, Inventory editing, and CSV output are implemented locally; development migration, deployment, and owner smoke testing remain before this slice is closed
+- Branch-variant reorder levels, server-derived low-stock status, alert lifecycle, reporting counts/details, Inventory editing, and CSV output are implemented and deployed; owner smoke testing remains before this slice is closed
+- Reorder-level migration `20260927080425` and API Worker version `a7ce01ce-20e6-4040-9f44-cf290c779765` are deployed to development; CI run `36304872151` passed full application checks, fresh database reset, and all pgTAP suites, while live health and unauthenticated endpoint smoke tests returned 200 and 401 respectively
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
