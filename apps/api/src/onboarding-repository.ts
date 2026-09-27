@@ -24,17 +24,26 @@ export type OnboardingSnapshot = {
   hasMainLocation: boolean
   hasProducts: boolean
   hasOpeningInventory: boolean
+  hasPaymentMethods: boolean
+  hasBasicFunds: boolean
+  hasEmployees: boolean
+  hasRegister: boolean
+  hasPosActivation: boolean
+  hasTestSale: boolean
   businessQuestionsComplete: boolean
   featureSelectionComplete: boolean
+  readyToSell: boolean
   businessProfile: OnboardingResponse['businessProfile']
   featureOptions: OnboardingResponse['featureOptions']
 }
 
-export type OnboardingLoader = (tenantId: string, bindings: Bindings) => Promise<OnboardingSnapshot>
+export type OnboardingLoader = (userId: string, tenantId: string, bindings: Bindings) => Promise<OnboardingSnapshot>
 export type OnboardingUpdater = (
   userId: string,
   tenantId: string,
   request: OnboardingUpdateRequest,
+  idempotencyKey: string | null,
+  requestHash: string | null,
   requestId: string,
   bindings: Bindings,
 ) => Promise<OnboardingUpdateResponse>
@@ -84,58 +93,16 @@ export const bootstrapTenantInPostgres: TenantBootstrapper = async (
   }
 }
 
-export const loadOnboardingFromPostgres: OnboardingLoader = async (tenantId, bindings) => {
+export const loadOnboardingFromPostgres: OnboardingLoader = async (userId, tenantId, bindings) => {
   const client = new Client({ connectionString: connectionString(bindings) })
 
   try {
     await client.connect()
-    const result = await client.query(
-      `select
-        exists (
-          select 1 from app.locations
-          where tenant_id = $1::uuid and is_active
-        ) as "hasMainLocation",
-        app.tenant_has_products($1::uuid) as "hasProducts",
-        app.tenant_has_opening_inventory($1::uuid) as "hasOpeningInventory",
-        profile.business_questions_completed_at is not null as "businessQuestionsComplete",
-        profile.feature_selection_completed_at is not null as "featureSelectionComplete",
-        case when profile.business_questions_completed_at is not null then
-          jsonb_build_object(
-            'businessType', profile.business_type,
-            'salesChannels', profile.sales_channels,
-            'tracksInventory', profile.tracks_inventory,
-            'productSetupMethod', profile.product_setup_method
-          )
-        else null end as "businessProfile",
-        coalesce((
-          select jsonb_agg(
-            jsonb_build_object(
-              'code', feature.code,
-              'name', feature.name,
-              'enabled', entitlement.enabled,
-              'required', feature.code in ('catalog', 'sales', 'reports')
-            ) order by
-              case feature.code
-                when 'catalog' then 1 when 'sales' then 2 when 'reports' then 3
-                when 'inventory' then 4 when 'purchasing' then 5 when 'customers' then 6
-                when 'employees' then 7 when 'finance' then 8
-              end
-          )
-          from app.tenant_entitlements entitlement
-          join app.features feature on feature.code = entitlement.feature_code
-          where entitlement.tenant_id = $1::uuid
-            and entitlement.entitled
-            and feature.platform_available
-            and feature.code in (
-              'catalog', 'sales', 'reports', 'inventory', 'purchasing', 'customers', 'employees', 'finance'
-            )
-        ), '[]'::jsonb) as "featureOptions"
-      from (select 1) seed
-      left join app.tenant_onboarding_profiles profile on profile.tenant_id = $1::uuid`,
-      [tenantId],
-    )
-
-    const row = result.rows[0] as OnboardingSnapshot | undefined
+    const result = await client.query('select app.load_onboarding_snapshot($1::uuid,$2::uuid) snapshot', [
+      userId,
+      tenantId,
+    ])
+    const row = result.rows[0]?.snapshot as OnboardingSnapshot | undefined
     if (!row) throw new Error('Onboarding state was not returned.')
     return row
   } finally {
@@ -143,7 +110,15 @@ export const loadOnboardingFromPostgres: OnboardingLoader = async (tenantId, bin
   }
 }
 
-export const updateOnboardingInPostgres: OnboardingUpdater = async (userId, tenantId, request, requestId, bindings) => {
+export const updateOnboardingInPostgres: OnboardingUpdater = async (
+  userId,
+  tenantId,
+  request,
+  idempotencyKey,
+  requestHash,
+  requestId,
+  bindings,
+) => {
   const client = new Client({ connectionString: connectionString(bindings) })
 
   try {
@@ -164,12 +139,17 @@ export const updateOnboardingInPostgres: OnboardingUpdater = async (userId, tena
               requestId,
             ],
           )
-        : await client.query(
-            `select app.save_feature_selection(
+        : request.step === 'feature_selection'
+          ? await client.query(
+              `select app.save_feature_selection(
               $1::uuid, $2::uuid, $3::text[], $4::text
             ) as response`,
-            [userId, tenantId, request.enabledFeatures, requestId],
-          )
+              [userId, tenantId, request.enabledFeatures, requestId],
+            )
+          : await client.query(
+              'select app.create_basic_fund_setup($1::uuid,$2::uuid,$3::text,$4::text,$5::text) response',
+              [userId, tenantId, idempotencyKey, requestHash, requestId],
+            )
 
     return onboardingUpdateResponseSchema.parse(result.rows[0]?.response)
   } finally {

@@ -104,6 +104,13 @@ import {
   platformEntitlementUpdateResponseSchema,
   platformTenantStatusUpdateRequestSchema,
   platformTenantStatusUpdateResponseSchema,
+  subscriptionAssignmentRequestSchema,
+  subscriptionAssignmentResponseSchema,
+  subscriptionContextSchema,
+  subscriptionPlanCreateRequestSchema,
+  subscriptionPlanSchema,
+  tenantFeatureOverrideCreateRequestSchema,
+  tenantFeatureOverrideSchema,
   supportAccessContextSchema,
   supportAccessCreateRequestSchema,
   supportAccessGrantSchema,
@@ -211,7 +218,11 @@ import {
   type NotificationsReadAllMarker,
 } from './notifications-repository'
 import {
+  assignTenantSubscriptionInPostgres,
+  createSubscriptionPlanInPostgres,
+  createTenantFeatureOverrideInPostgres,
   loadPlatformContextFromPostgres,
+  loadSubscriptionContextFromPostgres,
   createSupportAccessInPostgres,
   loadSupportAccessFromPostgres,
   loadSupportOverviewFromPostgres,
@@ -221,6 +232,10 @@ import {
   type PlatformContextLoader,
   type PlatformEntitlementUpdater,
   type PlatformTenantStatusUpdater,
+  type SubscriptionContextLoader,
+  type SubscriptionPlanCreator,
+  type TenantFeatureOverrideCreator,
+  type TenantSubscriptionAssigner,
   type SupportAccessCreator,
   type SupportAccessLoader,
   type SupportAccessRevoker,
@@ -359,6 +374,10 @@ interface AppDependencies {
   loadPlatformContext: PlatformContextLoader
   updatePlatformEntitlement: PlatformEntitlementUpdater
   updatePlatformTenantStatus: PlatformTenantStatusUpdater
+  loadSubscriptionContext: SubscriptionContextLoader
+  createSubscriptionPlan: SubscriptionPlanCreator
+  assignTenantSubscription: TenantSubscriptionAssigner
+  createTenantFeatureOverride: TenantFeatureOverrideCreator
   loadSupportAccess: SupportAccessLoader
   createSupportAccess: SupportAccessCreator
   revokeSupportAccess: SupportAccessRevoker
@@ -434,6 +453,10 @@ const defaultDependencies: AppDependencies = {
   loadPlatformContext: loadPlatformContextFromPostgres,
   updatePlatformEntitlement: updatePlatformEntitlementInPostgres,
   updatePlatformTenantStatus: updatePlatformTenantStatusInPostgres,
+  loadSubscriptionContext: loadSubscriptionContextFromPostgres,
+  createSubscriptionPlan: createSubscriptionPlanInPostgres,
+  assignTenantSubscription: assignTenantSubscriptionInPostgres,
+  createTenantFeatureOverride: createTenantFeatureOverrideInPostgres,
   loadSupportAccess: loadSupportAccessFromPostgres,
   createSupportAccess: createSupportAccessInPostgres,
   revokeSupportAccess: revokeSupportAccessInPostgres,
@@ -576,7 +599,25 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
                       code: 'IDEMPOTENCY_KEY_CONFLICT',
                       message: 'This request key was already used for a different platform operation.',
                     }
-                  : null
+                  : code === 'HCSP6'
+                    ? {
+                        status: 409 as const,
+                        code: 'SUBSCRIPTION_PLAN_CODE_EXISTS',
+                        message: 'A subscription plan already uses this code.',
+                      }
+                    : code === 'HCSP7'
+                      ? {
+                          status: 409 as const,
+                          code: 'FEATURE_ALREADY_IN_PLAN',
+                          message: 'This module is already included in the current plan.',
+                        }
+                      : code === 'HCSP8'
+                        ? {
+                            status: 409 as const,
+                            code: 'ACTIVE_FEATURE_OVERRIDE_EXISTS',
+                            message: 'This tenant already has an active override for the module.',
+                          }
+                        : null
     if (!mapped) return null
     return context.json(
       apiErrorResponseSchema.parse({
@@ -687,6 +728,136 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
         context.env,
       )
       return context.json(platformTenantStatusUpdateResponseSchema.parse(response))
+    } catch (error) {
+      const response = platformError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
+  app.get('/v1/platform/subscriptions', async (context) => {
+    const user = await requirePlatformUser(context)
+    if (user instanceof Response) return user
+    try {
+      return context.json(
+        subscriptionContextSchema.parse(await dependencies.loadSubscriptionContext(user.userId, context.env)),
+      )
+    } catch (error) {
+      const response = platformError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
+  app.post('/v1/platform/subscription-plans', async (context) => {
+    const user = await requirePlatformUser(context)
+    if (user instanceof Response) return user
+    const idempotencyKey = context.req.header('idempotency-key')
+    const parsed = subscriptionPlanCreateRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey) || !parsed.success) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_PLATFORM_REQUEST',
+            message: 'Check the subscription plan details and Idempotency-Key.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    try {
+      const response = await dependencies.createSubscriptionPlan(
+        user.userId,
+        parsed.data,
+        idempotencyKey,
+        await requestHash(parsed.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(subscriptionPlanSchema.parse(response), 201)
+    } catch (error) {
+      const response = platformError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
+  app.post('/v1/platform/tenants/:tenantId/subscription', async (context) => {
+    const user = await requirePlatformUser(context)
+    if (user instanceof Response) return user
+    const tenantId = context.req.param('tenantId')
+    const idempotencyKey = context.req.header('idempotency-key')
+    const parsed = subscriptionAssignmentRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantId) ||
+      !idempotencyKey ||
+      !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey) ||
+      !parsed.success
+    ) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_PLATFORM_REQUEST',
+            message: 'Check the subscription assignment and Idempotency-Key.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    try {
+      const response = await dependencies.assignTenantSubscription(
+        user.userId,
+        tenantId,
+        parsed.data,
+        idempotencyKey,
+        await requestHash({ tenantId, ...parsed.data }),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(subscriptionAssignmentResponseSchema.parse(response), 201)
+    } catch (error) {
+      const response = platformError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
+  app.post('/v1/platform/tenants/:tenantId/feature-overrides', async (context) => {
+    const user = await requirePlatformUser(context)
+    if (user instanceof Response) return user
+    const tenantId = context.req.param('tenantId')
+    const idempotencyKey = context.req.header('idempotency-key')
+    const parsed = tenantFeatureOverrideCreateRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantId) ||
+      !idempotencyKey ||
+      !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey) ||
+      !parsed.success
+    ) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_PLATFORM_REQUEST',
+            message: 'Check the add-on override and Idempotency-Key.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    try {
+      const response = await dependencies.createTenantFeatureOverride(
+        user.userId,
+        tenantId,
+        parsed.data,
+        idempotencyKey,
+        await requestHash({ tenantId, ...parsed.data }),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(tenantFeatureOverrideSchema.parse(response), 201)
     } catch (error) {
       const response = platformError(context, error)
       if (response) return response
@@ -5344,11 +5515,11 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
       )
     }
 
-    const setup = await dependencies.loadOnboarding(tenant.tenantId, context.env)
+    const setup = await dependencies.loadOnboarding(user.userId, tenant.tenantId, context.env)
     return context.json(
       onboardingResponseSchema.parse({
         tenantId: tenant.tenantId,
-        readyToSell: false,
+        readyToSell: setup.readyToSell,
         businessProfile: setup.businessProfile,
         featureOptions: setup.featureOptions,
         steps: [
@@ -5358,12 +5529,12 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
           { code: 'feature_selection', status: setup.featureSelectionComplete ? 'complete' : 'pending' },
           { code: 'products', status: setup.hasProducts ? 'complete' : 'pending' },
           { code: 'opening_inventory', status: setup.hasOpeningInventory ? 'complete' : 'pending' },
-          { code: 'payment_methods', status: 'pending' },
-          { code: 'basic_fund_setup', status: 'pending' },
-          { code: 'employees', status: 'pending' },
-          { code: 'register', status: 'pending' },
-          { code: 'pos_activation', status: 'pending' },
-          { code: 'test_sale', status: 'pending' },
+          { code: 'payment_methods', status: setup.hasPaymentMethods ? 'complete' : 'pending' },
+          { code: 'basic_fund_setup', status: setup.hasBasicFunds ? 'complete' : 'pending' },
+          { code: 'employees', status: setup.hasEmployees ? 'complete' : 'pending' },
+          { code: 'register', status: setup.hasRegister ? 'complete' : 'pending' },
+          { code: 'pos_activation', status: setup.hasPosActivation ? 'complete' : 'pending' },
+          { code: 'test_sale', status: setup.hasTestSale ? 'complete' : 'pending' },
         ],
       }),
     )
@@ -5442,18 +5613,37 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
       )
     }
 
+    const idempotencyKey = context.req.header('idempotency-key') ?? null
+    if (
+      parsed.data.step === 'basic_fund_setup' &&
+      (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey))
+    ) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_ONBOARDING_DETAILS',
+            message: 'Basic fund setup requires a valid Idempotency-Key.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+
     try {
       const response = await dependencies.updateOnboarding(
         user.userId,
         tenant.tenantId,
         parsed.data,
+        idempotencyKey,
+        parsed.data.step === 'basic_fund_setup' ? await requestHash(parsed.data) : null,
         context.get('requestId'),
         context.env,
       )
       return context.json(onboardingUpdateResponseSchema.parse(response))
     } catch (error) {
       const code = postgresErrorCode(error)
-      if (code === 'HCS04') {
+      if (code === 'HCS03' || code === 'HCS04') {
         return context.json(
           apiErrorResponseSchema.parse({
             error: {
@@ -5487,6 +5677,18 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
             },
           }),
           400,
+        )
+      }
+      if (code === 'HCS08') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'IDEMPOTENCY_KEY_CONFLICT',
+              message: 'This request key was already used for different fund setup details.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
         )
       }
       throw error

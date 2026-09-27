@@ -2,6 +2,10 @@ import {
   platformContextSchema,
   platformEntitlementUpdateResponseSchema,
   platformTenantStatusUpdateResponseSchema,
+  subscriptionAssignmentResponseSchema,
+  subscriptionContextSchema,
+  subscriptionPlanSchema,
+  tenantFeatureOverrideSchema,
   supportAccessContextSchema,
   supportAccessGrantSchema,
   supportAccessOverviewSchema,
@@ -10,6 +14,13 @@ import {
   type PlatformEntitlementUpdateResponse,
   type PlatformTenantStatusUpdateRequest,
   type PlatformTenantStatusUpdateResponse,
+  type SubscriptionAssignmentRequest,
+  type SubscriptionAssignmentResponse,
+  type SubscriptionContext,
+  type SubscriptionPlan,
+  type SubscriptionPlanCreateRequest,
+  type TenantFeatureOverride,
+  type TenantFeatureOverrideCreateRequest,
   type SupportAccessContext,
   type SupportAccessCreateRequest,
   type SupportAccessGrant,
@@ -64,6 +75,33 @@ export type SupportOverviewLoader = (
   requestId: string,
   bindings: Bindings,
 ) => Promise<SupportAccessOverview>
+export type SubscriptionContextLoader = (userId: string, bindings: Bindings) => Promise<SubscriptionContext>
+export type SubscriptionPlanCreator = (
+  userId: string,
+  request: SubscriptionPlanCreateRequest,
+  idempotencyKey: string,
+  requestHash: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<SubscriptionPlan>
+export type TenantSubscriptionAssigner = (
+  userId: string,
+  tenantId: string,
+  request: SubscriptionAssignmentRequest,
+  idempotencyKey: string,
+  requestHash: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<SubscriptionAssignmentResponse>
+export type TenantFeatureOverrideCreator = (
+  userId: string,
+  tenantId: string,
+  request: TenantFeatureOverrideCreateRequest,
+  idempotencyKey: string,
+  requestHash: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<TenantFeatureOverride>
 
 function connectionString(bindings: Bindings) {
   if (!bindings.HYPERDRIVE?.connectionString) throw new Error('HYPERDRIVE binding is not configured.')
@@ -76,6 +114,101 @@ export const loadPlatformContextFromPostgres: PlatformContextLoader = async (use
     await client.connect()
     const result = await client.query('select platform.load_context($1::uuid) context', [userId])
     return platformContextSchema.parse(result.rows[0]?.context)
+  } finally {
+    await client.end()
+  }
+}
+
+export const loadSubscriptionContextFromPostgres: SubscriptionContextLoader = async (userId, bindings) => {
+  const client = new Client({ connectionString: connectionString(bindings) })
+  try {
+    await client.connect()
+    const result = await client.query('select platform.load_subscription_context($1::uuid) context', [userId])
+    return subscriptionContextSchema.parse(result.rows[0]?.context)
+  } finally {
+    await client.end()
+  }
+}
+
+export const createSubscriptionPlanInPostgres: SubscriptionPlanCreator = async (
+  userId,
+  request,
+  idempotencyKey,
+  hash,
+  requestId,
+  bindings,
+) => {
+  const client = new Client({ connectionString: connectionString(bindings) })
+  try {
+    await client.connect()
+    const result = await client.query(
+      'select platform.create_subscription_plan($1::uuid,$2::text,$3::text,$4::integer,$5::jsonb,$6::text,$7::text,$8::text) response',
+      [
+        userId,
+        request.code,
+        request.name,
+        request.defaultTrialDays,
+        JSON.stringify(request.features),
+        idempotencyKey,
+        hash,
+        requestId,
+      ],
+    )
+    return subscriptionPlanSchema.parse(result.rows[0]?.response)
+  } finally {
+    await client.end()
+  }
+}
+
+export const assignTenantSubscriptionInPostgres: TenantSubscriptionAssigner = async (
+  userId,
+  tenantId,
+  request,
+  idempotencyKey,
+  hash,
+  requestId,
+  bindings,
+) => {
+  const client = new Client({ connectionString: connectionString(bindings) })
+  try {
+    await client.connect()
+    const result = await client.query(
+      'select platform.assign_tenant_subscription($1::uuid,$2::uuid,$3::uuid,$4::timestamptz,$5::timestamptz,$6::text,$7::text,$8::text,$9::text) response',
+      [
+        userId,
+        tenantId,
+        request.planId,
+        request.trialEndsAt,
+        request.endsAt,
+        request.reason,
+        idempotencyKey,
+        hash,
+        requestId,
+      ],
+    )
+    return subscriptionAssignmentResponseSchema.parse(result.rows[0]?.response)
+  } finally {
+    await client.end()
+  }
+}
+
+export const createTenantFeatureOverrideInPostgres: TenantFeatureOverrideCreator = async (
+  userId,
+  tenantId,
+  request,
+  idempotencyKey,
+  hash,
+  requestId,
+  bindings,
+) => {
+  const client = new Client({ connectionString: connectionString(bindings) })
+  try {
+    await client.connect()
+    const result = await client.query(
+      'select platform.create_tenant_feature_override($1::uuid,$2::uuid,$3::text,$4::timestamptz,$5::text,$6::text,$7::text,$8::text) response',
+      [userId, tenantId, request.featureCode, request.endsAt, request.reason, idempotencyKey, hash, requestId],
+    )
+    return tenantFeatureOverrideSchema.parse(result.rows[0]?.response)
   } finally {
     await client.end()
   }

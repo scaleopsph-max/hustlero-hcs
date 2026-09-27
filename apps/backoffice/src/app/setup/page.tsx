@@ -34,6 +34,10 @@ const stepLabels: Record<OnboardingResponse['steps'][number]['code'], string> = 
 const stepHrefs: Partial<Record<OnboardingResponse['steps'][number]['code'], string>> = {
   products: '/products',
   opening_inventory: '/inventory/opening',
+  payment_methods: '/payment-methods',
+  employees: '/employees',
+  register: '/registers',
+  pos_activation: '/devices',
 }
 
 type Business = { tenantId: string; tenantName: string; isOwner: boolean }
@@ -228,7 +232,11 @@ export default function SetupPage() {
       onboardingUpdateResponseSchema.parse(
         await apiRequest('/v1/onboarding', token, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': selectedTenantId },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Tenant-Id': selectedTenantId,
+            'Idempotency-Key': crypto.randomUUID(),
+          },
           body: JSON.stringify(body),
         }),
       )
@@ -256,6 +264,7 @@ export default function SetupPage() {
 
   const questionsComplete = onboarding?.steps.find((step) => step.code === 'business_questions')?.status === 'complete'
   const featuresComplete = onboarding?.steps.find((step) => step.code === 'feature_selection')?.status === 'complete'
+  const basicFundsComplete = onboarding?.steps.find((step) => step.code === 'basic_fund_setup')?.status === 'complete'
 
   const inputClass =
     'min-h-11 w-full rounded-md border border-ink-900/15 bg-white px-3 text-sm outline-none focus:border-ink-900'
@@ -456,6 +465,17 @@ export default function SetupPage() {
                     Add products
                     <ArrowRight size={17} />
                   </Link>
+                  {!basicFundsComplete ? (
+                    <button
+                      type="button"
+                      className={buttonClass}
+                      disabled={busy}
+                      onClick={() => void saveOnboardingStep({ step: 'basic_fund_setup' })}
+                    >
+                      {busy ? <Loader2 size={18} className="animate-spin" /> : null}
+                      Create basic funds
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="min-h-11 rounded-md border border-ink-900/15 bg-white px-4 text-sm font-semibold"
@@ -668,9 +688,11 @@ export default function SetupPage() {
             {onboarding?.readyToSell ? 'Ready to Sell' : selectedTenantId ? 'Setup in progress' : 'Account setup'}
           </p>
           <p className="mt-3 text-sm leading-6 text-ink-500">
-            {selectedTenantId
-              ? 'Products, stock, payments, register and a test sale are still required before POS can go live.'
-              : 'Create your account, business and first location to begin.'}
+            {onboarding?.readyToSell
+              ? 'All required setup records are verified. The business can now operate through POS.'
+              : selectedTenantId
+                ? 'Complete the remaining linked steps. Status updates automatically from saved business records.'
+                : 'Create your account, business and first location to begin.'}
           </p>
         </aside>
       </div>

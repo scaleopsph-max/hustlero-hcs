@@ -72,15 +72,29 @@ export const featureSelectionSchema = z.strictObject({
   enabledFeatures: z.array(selectableFeatureCodeSchema).max(5),
 })
 
+export const basicFundSetupSchema = z.strictObject({ step: z.literal('basic_fund_setup') })
+
 export const onboardingUpdateRequestSchema = z.discriminatedUnion('step', [
   businessSetupQuestionsSchema,
   featureSelectionSchema,
+  basicFundSetupSchema,
 ])
 
 export const onboardingUpdateResponseSchema = z.object({
-  step: z.enum(['business_questions', 'feature_selection']),
+  step: z.enum(['business_questions', 'feature_selection', 'basic_fund_setup']),
   status: z.literal('complete'),
   enabledFeatures: z.array(selectableFeatureCodeSchema).optional(),
+  fundAccounts: z
+    .array(
+      z.object({
+        id: z.uuid(),
+        code: z.string().min(1),
+        name: z.string().min(1),
+        fundType: z.enum(['capital_cogs', 'operating']),
+        status: z.literal('active'),
+      }),
+    )
+    .optional(),
 })
 
 const businessProfileSchema = z.object({

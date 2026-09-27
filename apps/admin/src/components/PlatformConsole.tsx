@@ -6,6 +6,7 @@ import { Building2, Check, KeyRound, LogOut, RefreshCw, Search, ShieldCheck, Sli
 import { FormEvent, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Button, Chip, Glass, Logo, Surface, cn } from '@hcs/ui'
 import { SupportAccessPanel } from './SupportAccessPanel'
+import { SubscriptionsPanel } from './SubscriptionsPanel'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? ''
@@ -45,7 +46,7 @@ export function PlatformConsole() {
   const [operation, setOperation] = useState<Operation | null>(null)
   const [reason, setReason] = useState('')
   const [endsAt, setEndsAt] = useState('')
-  const [section, setSection] = useState<'tenants' | 'support'>('tenants')
+  const [section, setSection] = useState<'tenants' | 'subscriptions' | 'support'>('tenants')
 
   const getAccessToken = useCallback(async () => {
     const { data } = (await auth?.auth.getSession()) ?? { data: { session: null } }
@@ -298,6 +299,15 @@ export function PlatformConsole() {
           <button
             className={cn(
               'border-b-2 px-4 py-3 text-sm font-semibold',
+              section === 'subscriptions' ? 'border-gold-400 text-gold-200' : 'border-transparent text-ink-300',
+            )}
+            onClick={() => setSection('subscriptions')}
+          >
+            Subscriptions & Add-ons
+          </button>
+          <button
+            className={cn(
+              'border-b-2 px-4 py-3 text-sm font-semibold',
               section === 'tenants' ? 'border-gold-400 text-gold-200' : 'border-transparent text-ink-300',
             )}
             onClick={() => setSection('tenants')}
@@ -483,6 +493,7 @@ export function PlatformConsole() {
             getAccessToken={getAccessToken}
           />
         ) : null}
+        {section === 'subscriptions' ? <SubscriptionsPanel getAccessToken={getAccessToken} /> : null}
       </div>
       {operation ? (
         <OperationDialog

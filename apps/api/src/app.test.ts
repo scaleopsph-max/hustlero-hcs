@@ -60,6 +60,10 @@ import {
   platformContextSchema,
   platformEntitlementUpdateResponseSchema,
   platformTenantStatusUpdateResponseSchema,
+  subscriptionAssignmentResponseSchema,
+  subscriptionContextSchema,
+  subscriptionPlanSchema,
+  tenantFeatureOverrideSchema,
   supportAccessContextSchema,
   supportAccessGrantSchema,
   supportAccessOverviewSchema,
@@ -85,8 +89,15 @@ const loadOnboarding = vi.fn(async () => ({
   hasMainLocation: true,
   hasProducts: false,
   hasOpeningInventory: false,
+  hasPaymentMethods: true,
+  hasBasicFunds: false,
+  hasEmployees: false,
+  hasRegister: false,
+  hasPosActivation: false,
+  hasTestSale: false,
   businessQuestionsComplete: false,
   featureSelectionComplete: false,
+  readyToSell: false,
   businessProfile: null,
   featureOptions,
 }))
@@ -719,6 +730,54 @@ const updatePlatformTenantStatus = vi.fn(async (_userId, nextTenantId, request) 
   tenantId: nextTenantId,
   status: request.status,
 }))
+const subscriptionPlanId = 'e1000000-0000-4000-8000-000000000001'
+const subscriptionPlan = {
+  id: subscriptionPlanId,
+  code: 'core-pilot',
+  name: 'Core Pilot',
+  status: 'active' as const,
+  defaultTrialDays: 14,
+  features: [
+    { featureCode: 'catalog', featureName: 'Catalog', limitValue: null },
+    { featureCode: 'sales', featureName: 'Sales', limitValue: null },
+    { featureCode: 'reports', featureName: 'Reports', limitValue: null },
+  ],
+  createdAt: '2026-09-27T00:00:00.000Z',
+}
+const subscriptionContext = {
+  canManage: true,
+  features: [{ code: 'catalog', name: 'Catalog' }],
+  plans: [subscriptionPlan],
+  tenants: [
+    {
+      tenantId,
+      tenantName: 'Sample Store',
+      tenantStatus: 'active' as const,
+      subscription: null,
+      activeOverrides: [],
+    },
+  ],
+}
+const loadSubscriptionContext = vi.fn(async () => subscriptionContext)
+const createSubscriptionPlan = vi.fn(async () => subscriptionPlan)
+const assignTenantSubscription = vi.fn(async (_userId, nextTenantId) => ({
+  tenantId: nextTenantId,
+  subscriptionId: 'e2000000-0000-4000-8000-000000000001',
+  planId: subscriptionPlanId,
+  planName: 'Core Pilot',
+  status: 'active' as const,
+  startsAt: '2026-09-27T00:00:00.000Z',
+  trialEndsAt: null,
+  endsAt: null,
+}))
+const createTenantFeatureOverride = vi.fn(async (_userId, nextTenantId, request) => ({
+  id: 'e3000000-0000-4000-8000-000000000001',
+  tenantId: nextTenantId,
+  featureCode: request.featureCode,
+  startsAt: '2026-09-27T00:00:00.000Z',
+  endsAt: request.endsAt,
+  reason: request.reason,
+}))
 const supportGrantId = 'f1000000-0000-4000-8000-000000000001'
 const supportGrant = {
   id: supportGrantId,
@@ -853,6 +912,10 @@ const authenticatedApp = createApp({
   loadPlatformContext,
   updatePlatformEntitlement,
   updatePlatformTenantStatus,
+  loadSubscriptionContext,
+  createSubscriptionPlan,
+  assignTenantSubscription,
+  createTenantFeatureOverride,
   loadSupportAccess,
   createSupportAccess,
   revokeSupportAccess,
@@ -1005,6 +1068,83 @@ describe('API', () => {
 
     expect(response.status).toBe(200)
     expect(platformTenantStatusUpdateResponseSchema.parse(payload).status).toBe('suspended')
+  })
+
+  it('loads the subscription catalog and tenant assignments', async () => {
+    const response = await authenticatedApp.request(
+      '/v1/platform/subscriptions',
+      { headers: { authorization: 'Bearer valid-token' } },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(subscriptionContextSchema.parse(await response.json())).toEqual(subscriptionContext)
+  })
+
+  it('creates a dynamic subscription plan', async () => {
+    const request = {
+      code: 'core-pilot',
+      name: 'Core Pilot',
+      defaultTrialDays: 14,
+      features: [{ featureCode: 'catalog', limitValue: null }],
+    }
+    const response = await authenticatedApp.request(
+      '/v1/platform/subscription-plans',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'idempotency-key': 'subscription-plan-create-001',
+        },
+        body: JSON.stringify(request),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(201)
+    expect(subscriptionPlanSchema.parse(await response.json())).toEqual(subscriptionPlan)
+    expect(createSubscriptionPlan).toHaveBeenCalledWith(
+      userId,
+      request,
+      'subscription-plan-create-001',
+      expect.any(String),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('assigns a plan and grants a time-boxed add-on override', async () => {
+    const assignment = await authenticatedApp.request(
+      `/v1/platform/tenants/${tenantId}/subscription`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'idempotency-key': 'subscription-assignment-001',
+        },
+        body: JSON.stringify({ planId: subscriptionPlanId, trialEndsAt: null, endsAt: null, reason: 'Pilot plan' }),
+      },
+      bindings,
+    )
+    expect(assignment.status).toBe(201)
+    expect(subscriptionAssignmentResponseSchema.parse(await assignment.json()).planId).toBe(subscriptionPlanId)
+
+    const endsAt = '2026-10-15T23:59:59.000Z'
+    const override = await authenticatedApp.request(
+      `/v1/platform/tenants/${tenantId}/feature-overrides`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'idempotency-key': 'feature-override-create-001',
+        },
+        body: JSON.stringify({ featureCode: 'inventory', endsAt, reason: 'Pilot add-on trial' }),
+      },
+      bindings,
+    )
+    expect(override.status).toBe(201)
+    expect(tenantFeatureOverrideSchema.parse(await override.json()).endsAt).toBe(endsAt)
   })
 
   it('loads the operator support-access history', async () => {
@@ -1259,6 +1399,10 @@ describe('API', () => {
       loadPlatformContext,
       updatePlatformEntitlement,
       updatePlatformTenantStatus,
+      loadSubscriptionContext,
+      createSubscriptionPlan,
+      assignTenantSubscription,
+      createTenantFeatureOverride,
       loadSupportAccess,
       createSupportAccess,
       revokeSupportAccess,
@@ -1356,6 +1500,10 @@ describe('API', () => {
       loadPlatformContext,
       updatePlatformEntitlement,
       updatePlatformTenantStatus,
+      loadSubscriptionContext,
+      createSubscriptionPlan,
+      assignTenantSubscription,
+      createTenantFeatureOverride,
       loadSupportAccess,
       createSupportAccess,
       revokeSupportAccess,
@@ -1425,7 +1573,7 @@ describe('API', () => {
       bindings,
     )
     expect(response.status).toBe(200)
-    expect(updateOnboarding).toHaveBeenCalledWith(userId, tenantId, request, expect.any(String), bindings)
+    expect(updateOnboarding).toHaveBeenCalledWith(userId, tenantId, request, null, null, expect.any(String), bindings)
   })
 
   it('saves only selectable feature codes', async () => {
@@ -1455,6 +1603,44 @@ describe('API', () => {
       status: 'complete',
       enabledFeatures: ['inventory', 'customers'],
     })
+  })
+
+  it('requires idempotency before creating the two basic fund accounts', async () => {
+    const missingKey = await authenticatedApp.request(
+      '/v1/onboarding',
+      {
+        method: 'PATCH',
+        headers: { authorization: 'Bearer valid-token', 'content-type': 'application/json', 'x-tenant-id': tenantId },
+        body: JSON.stringify({ step: 'basic_fund_setup' }),
+      },
+      bindings,
+    )
+    expect(missingKey.status).toBe(400)
+
+    const response = await authenticatedApp.request(
+      '/v1/onboarding',
+      {
+        method: 'PATCH',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'basic-fund-setup-001',
+        },
+        body: JSON.stringify({ step: 'basic_fund_setup' }),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(200)
+    expect(updateOnboarding).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      { step: 'basic_fund_setup' },
+      'basic-fund-setup-001',
+      expect.any(String),
+      expect.any(String),
+      bindings,
+    )
   })
 
   it('returns a contract-valid catalog for the server-resolved tenant', async () => {
