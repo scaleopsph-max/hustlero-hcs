@@ -1,6 +1,8 @@
 import {
   inventoryAdjustmentCreateResponseSchema,
   inventoryImportPreviewResponseSchema,
+  inventoryImportPostResponseSchema,
+  inventoryImportReconcileResponseSchema,
   inventoryMovementContextSchema,
   inventoryReorderLevelUpdateResponseSchema,
   inventoryStockContextSchema,
@@ -9,6 +11,8 @@ import {
   type InventoryMovementContext,
   type InventoryImportPreviewRequest,
   type InventoryImportPreviewResponse,
+  type InventoryImportPostResponse,
+  type InventoryImportReconcileResponse,
   type InventoryReorderLevelUpdateRequest,
   type InventoryReorderLevelUpdateResponse,
   type InventoryAdjustmentCreateRequest,
@@ -85,6 +89,26 @@ export type InventoryImportPreviewer = (
   requestId: string,
   bindings: Bindings,
 ) => Promise<InventoryImportPreviewResponse>
+
+export type InventoryImportPoster = (
+  userId: string,
+  tenantId: string,
+  batchId: string,
+  idempotencyKey: string,
+  requestHash: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<InventoryImportPostResponse>
+
+export type InventoryImportReconciler = (
+  userId: string,
+  tenantId: string,
+  batchId: string,
+  idempotencyKey: string,
+  requestHash: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<InventoryImportReconcileResponse>
 
 const databaseContextSchema = z.object({
   locations: z.array(z.object({ id: z.uuid(), code: z.string(), name: z.string() })),
@@ -257,6 +281,50 @@ export const previewInventoryImportInPostgres: InventoryImportPreviewer = async 
       ],
     )
     return inventoryImportPreviewResponseSchema.parse(result.rows[0]?.response)
+  } finally {
+    await client.end()
+  }
+}
+
+export const postInventoryImportInPostgres: InventoryImportPoster = async (
+  userId,
+  tenantId,
+  batchId,
+  idempotencyKey,
+  requestHash,
+  requestId,
+  bindings,
+) => {
+  const client = new Client({ connectionString: connectionString(bindings) })
+  try {
+    await client.connect()
+    const result = await client.query(
+      'select app.post_inventory_import($1::uuid,$2::uuid,$3::uuid,$4::text,$5::text,$6::text) response',
+      [userId, tenantId, batchId, idempotencyKey, requestHash, requestId],
+    )
+    return inventoryImportPostResponseSchema.parse(result.rows[0]?.response)
+  } finally {
+    await client.end()
+  }
+}
+
+export const reconcileInventoryImportInPostgres: InventoryImportReconciler = async (
+  userId,
+  tenantId,
+  batchId,
+  idempotencyKey,
+  requestHash,
+  requestId,
+  bindings,
+) => {
+  const client = new Client({ connectionString: connectionString(bindings) })
+  try {
+    await client.connect()
+    const result = await client.query(
+      'select app.reconcile_inventory_import($1::uuid,$2::uuid,$3::uuid,$4::text,$5::text,$6::text) response',
+      [userId, tenantId, batchId, idempotencyKey, requestHash, requestId],
+    )
+    return inventoryImportReconcileResponseSchema.parse(result.rows[0]?.response)
   } finally {
     await client.end()
   }

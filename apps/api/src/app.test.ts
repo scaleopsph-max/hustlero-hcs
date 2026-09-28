@@ -12,6 +12,8 @@ import {
   healthResponseSchema,
   inventoryAdjustmentCreateResponseSchema,
   inventoryImportPreviewResponseSchema,
+  inventoryImportPostResponseSchema,
+  inventoryImportReconcileResponseSchema,
   inventoryMovementContextSchema,
   inventoryReorderLevelUpdateResponseSchema,
   inventoryStockContextSchema,
@@ -201,6 +203,25 @@ const previewInventoryImport = vi.fn(async (user: string, tenant: string, reques
       warnings: [],
     },
   ],
+}))
+const postInventoryImport = vi.fn(async (_user: string, _tenant: string, batchId: string) => ({
+  batchId,
+  status: 'posted' as const,
+  postedAt: '2026-09-27T09:05:00.000Z',
+  movementCount: 1,
+  balanceCount: 1,
+  summary: { rowCount: 1, totalQuantityMilli: 10_000, totalValuationMinor: 6_200 },
+}))
+const reconcileInventoryImport = vi.fn(async (_user: string, _tenant: string, batchId: string) => ({
+  batchId,
+  status: 'reconciled' as const,
+  reconciledAt: '2026-09-27T09:06:00.000Z',
+  matches: true as const,
+  rowCount: 1,
+  expectedQuantityMilli: 10_000,
+  actualQuantityMilli: 10_000,
+  expectedValuationMinor: 6_200,
+  actualValuationMinor: 6_200,
 }))
 const loadInventoryStock = vi.fn(async () => ({
   locations: [{ id: locationId, code: 'MAIN', name: 'Main Store' }],
@@ -957,6 +978,8 @@ const authenticatedApp = createApp({
   loadOpeningInventory,
   recordOpeningInventory,
   previewInventoryImport,
+  postInventoryImport,
+  reconcileInventoryImport,
   loadApprovalCenter,
   updateApprovalPolicy,
   decideApprovalRequest,
@@ -1447,6 +1470,8 @@ describe('API', () => {
       loadOpeningInventory,
       recordOpeningInventory,
       previewInventoryImport,
+      postInventoryImport,
+      reconcileInventoryImport,
       loadApprovalCenter,
       updateApprovalPolicy,
       decideApprovalRequest,
@@ -1551,6 +1576,8 @@ describe('API', () => {
       loadOpeningInventory,
       recordOpeningInventory,
       previewInventoryImport,
+      postInventoryImport,
+      reconcileInventoryImport,
       loadApprovalCenter,
       updateApprovalPolicy,
       decideApprovalRequest,
@@ -2352,6 +2379,59 @@ describe('API', () => {
     expect(previewInventoryImport).not.toHaveBeenCalled()
   })
 
+  it('posts and reconciles an approved inventory import batch', async () => {
+    postInventoryImport.mockClear()
+    reconcileInventoryImport.mockClear()
+    const batchId = '5a000000-0000-4000-8000-000000000001'
+    const posted = await authenticatedApp.request(
+      `/v1/inventory/imports/${batchId}/post`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'inventory-import-post-001',
+        },
+      },
+      bindings,
+    )
+    expect(posted.status).toBe(200)
+    expect(inventoryImportPostResponseSchema.safeParse(await posted.json()).success).toBe(true)
+    expect(postInventoryImport).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      batchId,
+      'inventory-import-post-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+
+    const reconciled = await authenticatedApp.request(
+      `/v1/inventory/imports/${batchId}/reconcile`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'inventory-import-reconcile-001',
+        },
+      },
+      bindings,
+    )
+    expect(reconciled.status).toBe(200)
+    expect(inventoryImportReconcileResponseSchema.safeParse(await reconciled.json()).success).toBe(true)
+    expect(reconcileInventoryImport).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      batchId,
+      'inventory-import-reconcile-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+  })
+
   it('loads purchasing context for the server-resolved tenant', async () => {
     loadPurchasing.mockClear()
     const response = await authenticatedApp.request(
@@ -2783,6 +2863,32 @@ describe('API', () => {
       expect.any(String),
       bindings,
     )
+  })
+
+  it('returns a clear POS error while opening inventory cutover is incomplete', async () => {
+    completePosCashSale.mockRejectedValueOnce(
+      Object.assign(new Error('Opening inventory must be posted and reconciled before sales can begin'), {
+        code: 'HCSC0',
+      }),
+    )
+    const response = await authenticatedApp.request(
+      '/v1/pos/sales/complete',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-pos-session-token': 'e'.repeat(64),
+          'idempotency-key': 'pos-cutover-required-001',
+        },
+        body: JSON.stringify({
+          lines: [{ variantId: '50000000-0000-4000-8000-000000000001', quantityMilli: 1000 }],
+          cashReceivedCentavos: 100_000,
+        }),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(409)
+    expect(apiErrorResponseSchema.parse(await response.json()).error.code).toBe('INVENTORY_CUTOVER_REQUIRED')
   })
 
   it('lists tenant sales for an authenticated Back Office user', async () => {

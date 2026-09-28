@@ -65,6 +65,9 @@ import {
   inventoryAdjustmentCreateResponseSchema,
   inventoryImportPreviewRequestSchema,
   inventoryImportPreviewResponseSchema,
+  inventoryImportBatchCommandRequestSchema,
+  inventoryImportPostResponseSchema,
+  inventoryImportReconcileResponseSchema,
   inventoryMovementContextSchema,
   inventoryReorderLevelUpdateRequestSchema,
   inventoryReorderLevelUpdateResponseSchema,
@@ -252,6 +255,8 @@ import {
   loadInventoryStockFromPostgres,
   loadOpeningInventoryFromPostgres,
   previewInventoryImportInPostgres,
+  postInventoryImportInPostgres,
+  reconcileInventoryImportInPostgres,
   recordInventoryAdjustmentInPostgres,
   recordOpeningInventoryInPostgres,
   updateInventoryReorderLevelInPostgres,
@@ -262,6 +267,8 @@ import {
   type OpeningInventoryLoader,
   type OpeningInventoryRecorder,
   type InventoryImportPreviewer,
+  type InventoryImportPoster,
+  type InventoryImportReconciler,
 } from './inventory-repository'
 import {
   bootstrapTenantInPostgres,
@@ -334,6 +341,8 @@ interface AppDependencies {
   loadOpeningInventory: OpeningInventoryLoader
   recordOpeningInventory: OpeningInventoryRecorder
   previewInventoryImport: InventoryImportPreviewer
+  postInventoryImport: InventoryImportPoster
+  reconcileInventoryImport: InventoryImportReconciler
   loadApprovalCenter: ApprovalCenterLoader
   updateApprovalPolicy: ApprovalPolicyUpdater
   decideApprovalRequest: ApprovalRequestDecider
@@ -416,6 +425,8 @@ const defaultDependencies: AppDependencies = {
   loadOpeningInventory: loadOpeningInventoryFromPostgres,
   recordOpeningInventory: recordOpeningInventoryInPostgres,
   previewInventoryImport: previewInventoryImportInPostgres,
+  postInventoryImport: postInventoryImportInPostgres,
+  reconcileInventoryImport: reconcileInventoryImportInPostgres,
   loadApprovalCenter: loadApprovalCenterFromPostgres,
   updateApprovalPolicy: updateApprovalPolicyInPostgres,
   decideApprovalRequest: decideApprovalRequestInPostgres,
@@ -3350,6 +3361,17 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
         }),
         409,
       )
+    if (code === 'HCSC0')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVENTORY_CUTOVER_REQUIRED',
+            message: 'Opening inventory must be posted and reconciled before sales can begin at this location.',
+            requestId,
+          },
+        }),
+        409,
+      )
     if (code && ['HCS91', 'HCS94', 'HCS97', 'HCS99'].includes(code))
       return context.json(
         apiErrorResponseSchema.parse({
@@ -5436,6 +5458,280 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
             },
           }),
           400,
+        )
+      }
+      throw error
+    }
+  })
+
+  app.post('/v1/inventory/imports/:batchId/post', async (context) => {
+    const accessToken = readBearerToken(context.req.header('authorization'))
+    if (!accessToken) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Sign in before posting opening inventory.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+    const user = await dependencies.verifyAccessToken(accessToken, context.env)
+    if (!user) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_ACCESS_TOKEN',
+            message: 'The access token is invalid or expired.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+    const idempotencyKey = context.req.header('idempotency-key')
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_REQUIRED',
+            message: 'A valid Idempotency-Key is required.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    const tenants = await dependencies.loadSessionAccess(user.userId, context.env)
+    const requestedTenantId = context.req.header('x-tenant-id')
+    const tenant = requestedTenantId ? tenants.find((entry) => entry.tenantId === requestedTenantId) : tenants[0]
+    if (!tenant) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVENTORY_ACCESS_DENIED',
+            message: 'You do not have access to this business inventory.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    }
+    const command = inventoryImportBatchCommandRequestSchema.safeParse({ batchId: context.req.param('batchId') })
+    if (!command.success) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_INVENTORY_IMPORT',
+            message: 'The inventory import batch is invalid.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    try {
+      const response = await dependencies.postInventoryImport(
+        user.userId,
+        tenant.tenantId,
+        command.data.batchId,
+        idempotencyKey,
+        await requestHash(command.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(inventoryImportPostResponseSchema.parse(response))
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS08') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'IDEMPOTENCY_KEY_CONFLICT',
+              message: 'This request key was already used for another inventory command.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      }
+      if (code === 'HCS32') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVENTORY_IMPORT_NOT_FOUND',
+              message: 'The inventory import batch was not found.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          404,
+        )
+      }
+      if (code === 'HCS33' || code === 'HCS34' || code === 'HCS35') {
+        const messages = {
+          HCS33: 'This inventory import is no longer available for posting.',
+          HCS34: 'Resolve every rejected row and preview the file again before posting.',
+          HCS35: 'Inventory changed after preview. Upload and validate a new file.',
+        } as const
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVENTORY_IMPORT_NOT_POSTABLE',
+              message: messages[code],
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      }
+      if (code === 'HCS17' || code === 'HCS18') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS18' ? 'INVENTORY_UNAVAILABLE' : 'INVENTORY_ACCESS_DENIED',
+              message: code === 'HCS18' ? 'The inventory module is not enabled.' : 'You cannot manage this inventory.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      }
+      throw error
+    }
+  })
+
+  app.post('/v1/inventory/imports/:batchId/reconcile', async (context) => {
+    const accessToken = readBearerToken(context.req.header('authorization'))
+    if (!accessToken) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Sign in before reconciling opening inventory.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+    const user = await dependencies.verifyAccessToken(accessToken, context.env)
+    if (!user) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_ACCESS_TOKEN',
+            message: 'The access token is invalid or expired.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    }
+    const idempotencyKey = context.req.header('idempotency-key')
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_REQUIRED',
+            message: 'A valid Idempotency-Key is required.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    const tenants = await dependencies.loadSessionAccess(user.userId, context.env)
+    const requestedTenantId = context.req.header('x-tenant-id')
+    const tenant = requestedTenantId ? tenants.find((entry) => entry.tenantId === requestedTenantId) : tenants[0]
+    if (!tenant) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVENTORY_ACCESS_DENIED',
+            message: 'You do not have access to this business inventory.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    }
+    const command = inventoryImportBatchCommandRequestSchema.safeParse({ batchId: context.req.param('batchId') })
+    if (!command.success) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_INVENTORY_IMPORT',
+            message: 'The inventory import batch is invalid.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    }
+    try {
+      const response = await dependencies.reconcileInventoryImport(
+        user.userId,
+        tenant.tenantId,
+        command.data.batchId,
+        idempotencyKey,
+        await requestHash(command.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(inventoryImportReconcileResponseSchema.parse(response))
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS08') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'IDEMPOTENCY_KEY_CONFLICT',
+              message: 'This request key was already used for another inventory command.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      }
+      if (code === 'HCS32') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVENTORY_IMPORT_NOT_FOUND',
+              message: 'The inventory import batch was not found.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          404,
+        )
+      }
+      if (code === 'HCS36' || code === 'HCS37') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVENTORY_RECONCILIATION_FAILED',
+              message:
+                code === 'HCS36'
+                  ? 'Post the opening inventory before reconciliation.'
+                  : 'The posted balances do not match the approved import totals.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      }
+      if (code === 'HCS17') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVENTORY_ACCESS_DENIED',
+              message: 'You cannot manage this inventory.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
         )
       }
       throw error

@@ -157,6 +157,35 @@ export const inventoryImportPreviewResponseSchema = z.object({
   ),
 })
 
+export const inventoryImportBatchCommandRequestSchema = z.strictObject({
+  batchId: identifierSchema,
+})
+
+export const inventoryImportPostResponseSchema = z.object({
+  batchId: identifierSchema,
+  status: z.literal('posted'),
+  postedAt: z.iso.datetime({ offset: true }),
+  movementCount: z.number().int().min(0),
+  balanceCount: z.number().int().positive(),
+  summary: z.object({
+    rowCount: z.number().int().positive(),
+    totalQuantityMilli: quantityMilliSchema,
+    totalValuationMinor: moneyMinorSchema,
+  }),
+})
+
+export const inventoryImportReconcileResponseSchema = z.object({
+  batchId: identifierSchema,
+  status: z.literal('reconciled'),
+  reconciledAt: z.iso.datetime({ offset: true }),
+  matches: z.literal(true),
+  rowCount: z.number().int().positive(),
+  expectedQuantityMilli: quantityMilliSchema,
+  actualQuantityMilli: quantityMilliSchema,
+  expectedValuationMinor: moneyMinorSchema,
+  actualValuationMinor: moneyMinorSchema,
+})
+
 export const openingInventoryContextSchema = z.object({
   locations: z.array(inventoryLocationSchema),
   selectedLocationId: identifierSchema,
@@ -230,6 +259,9 @@ export type InventoryReorderLevelUpdateRequest = z.infer<typeof inventoryReorder
 export type InventoryReorderLevelUpdateResponse = z.infer<typeof inventoryReorderLevelUpdateResponseSchema>
 export type InventoryImportPreviewRequest = z.infer<typeof inventoryImportPreviewRequestSchema>
 export type InventoryImportPreviewResponse = z.infer<typeof inventoryImportPreviewResponseSchema>
+export type InventoryImportBatchCommandRequest = z.infer<typeof inventoryImportBatchCommandRequestSchema>
+export type InventoryImportPostResponse = z.infer<typeof inventoryImportPostResponseSchema>
+export type InventoryImportReconcileResponse = z.infer<typeof inventoryImportReconcileResponseSchema>
 export type OpeningInventoryContext = z.infer<typeof openingInventoryContextSchema>
 export type InventoryStockContext = z.infer<typeof inventoryStockContextSchema>
 export type InventoryMovementContext = z.infer<typeof inventoryMovementContextSchema>

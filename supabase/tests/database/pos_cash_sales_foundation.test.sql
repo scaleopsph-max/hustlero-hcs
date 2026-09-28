@@ -7,7 +7,7 @@ select has_table('app', 'sales', 'sales table exists');
 select has_table('app', 'sale_lines', 'sale lines table exists');
 select has_table('app', 'sale_payments', 'sale payments table exists');
 select has_function('app', 'complete_pos_cash_sale', array['text','jsonb','bigint','text','text','text'], 'atomic POS sale command exists');
-select ok(has_function_privilege('hcs_hyperdrive','app.complete_pos_cash_sale(text,jsonb,bigint,text,text,text)','execute'), 'API login can execute POS sales');
+select ok(not has_function_privilege('hcs_hyperdrive','app.complete_pos_cash_sale(text,jsonb,bigint,text,text,text)','execute'), 'API login cannot bypass the customer-aware POS command and cutover gate');
 select ok(not has_table_privilege('hcs_hyperdrive','app.sales','select'), 'API login cannot read sales directly');
 
 insert into auth.users (id,email,aud,role,email_confirmed_at) values ('19000000-0000-4000-8000-000000000001','pos-sale-owner@example.invalid','authenticated','authenticated',now());

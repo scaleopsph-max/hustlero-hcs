@@ -1,14 +1,27 @@
 'use client'
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, Loader2, Upload } from 'lucide-react'
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Database,
+  Download,
+  FileSpreadsheet,
+  Loader2,
+  ShieldCheck,
+  Upload,
+} from 'lucide-react'
 import Papa from 'papaparse'
 import { useEffect, useMemo, useState } from 'react'
 import {
   inventoryImportPreviewResponseSchema,
+  inventoryImportPostResponseSchema,
+  inventoryImportReconcileResponseSchema,
   sessionContextResponseSchema,
   type InventoryImportPreviewRequest,
   type InventoryImportPreviewResponse,
+  type InventoryImportPostResponse,
+  type InventoryImportReconcileResponse,
 } from '@hcs/contracts'
 import { Button, Glass } from '@hcs/ui'
 import { selectActiveTenant } from '@/lib/active-tenant'
@@ -77,6 +90,8 @@ export function InventoryImportPreview() {
   const [file, setFile] = useState<File | null>(null)
   const [cutoverAt, setCutoverAt] = useState(localCutoverValue)
   const [preview, setPreview] = useState<InventoryImportPreviewResponse | null>(null)
+  const [posted, setPosted] = useState<InventoryImportPostResponse | null>(null)
+  const [reconciled, setReconciled] = useState<InventoryImportReconcileResponse | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -141,6 +156,8 @@ export function InventoryImportPreview() {
     setBusy(true)
     setError(null)
     setPreview(null)
+    setPosted(null)
+    setReconciled(null)
     try {
       const rows = await parseFile(file)
       const request: InventoryImportPreviewRequest = {
@@ -179,6 +196,50 @@ export function InventoryImportPreview() {
       setPreview(inventoryImportPreviewResponseSchema.parse(body))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Inventory preview failed.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function runBatchCommand(action: 'post' | 'reconcile') {
+    if (!preview || !token || !tenantId || !auth || !apiUrl) return
+    if (
+      action === 'post' &&
+      !window.confirm('Post these opening balances permanently? This cannot be edited or deleted.')
+    )
+      return
+    setBusy(true)
+    setError(null)
+    try {
+      const storageKey = `hcs:inventory-import-${action}:${tenantId}:${preview.batchId}`
+      const idempotencyKey = window.localStorage.getItem(storageKey) ?? crypto.randomUUID()
+      window.localStorage.setItem(storageKey, idempotencyKey)
+      const send = (accessToken: string) =>
+        fetch(`${apiUrl.replace(/\/$/, '')}/v1/inventory/imports/${preview.batchId}/${action}`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Idempotency-Key': idempotencyKey,
+            'X-Tenant-Id': tenantId,
+          },
+        })
+      let response = await send(token)
+      if (response.status === 401) {
+        const refreshed = await auth.auth.refreshSession()
+        if (refreshed.data.session?.access_token) {
+          setToken(refreshed.data.session.access_token)
+          response = await send(refreshed.data.session.access_token)
+        }
+      }
+      const body: unknown = await response.json()
+      if (!response.ok) {
+        const apiError = body as { error?: { message?: string } }
+        throw new Error(apiError.error?.message ?? `Inventory ${action} failed.`)
+      }
+      if (action === 'post') setPosted(inventoryImportPostResponseSchema.parse(body))
+      else setReconciled(inventoryImportReconcileResponseSchema.parse(body))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : `Inventory ${action} failed.`)
     } finally {
       setBusy(false)
     }
@@ -233,6 +294,8 @@ export function InventoryImportPreview() {
               onChange={(event) => {
                 setFile(event.target.files?.[0] ?? null)
                 setPreview(null)
+                setPosted(null)
+                setReconciled(null)
                 setError(null)
               }}
             />
@@ -247,6 +310,8 @@ export function InventoryImportPreview() {
             onChange={(event) => {
               setCutoverAt(event.target.value)
               setPreview(null)
+              setPosted(null)
+              setReconciled(null)
             }}
           />
         </label>
@@ -327,13 +392,65 @@ export function InventoryImportPreview() {
             </table>
           </div>
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-ink-900/10 pt-4">
-            <p className="text-sm text-ink-600">Preview only. No inventory movement or balance has been posted.</p>
-            {rejectedRows.length > 0 ? (
-              <Button type="button" variant="secondary" size="sm" onClick={downloadRejectedRows}>
-                <Download size={17} className="mr-2" /> Error rows
-              </Button>
-            ) : null}
+            <p className="text-sm text-ink-600">
+              {reconciled
+                ? 'Reconciled. Opening balances match the approved file and POS cutover is ready.'
+                : posted
+                  ? 'Posted permanently. Run reconciliation to unlock this cutover for POS.'
+                  : 'Preview only. No inventory movement or balance has been posted.'}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {rejectedRows.length > 0 ? (
+                <Button type="button" variant="secondary" size="sm" onClick={downloadRejectedRows}>
+                  <Download size={17} className="mr-2" /> Error rows
+                </Button>
+              ) : null}
+              {rejectedRows.length === 0 && !posted ? (
+                <Button
+                  type="button"
+                  variant="confirm"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void runBatchCommand('post')}
+                >
+                  {busy ? <Loader2 size={17} className="mr-2 animate-spin" /> : <Database size={17} className="mr-2" />}
+                  Post opening balances
+                </Button>
+              ) : null}
+              {posted && !reconciled ? (
+                <Button
+                  type="button"
+                  variant="confirm"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void runBatchCommand('reconcile')}
+                >
+                  {busy ? (
+                    <Loader2 size={17} className="mr-2 animate-spin" />
+                  ) : (
+                    <ShieldCheck size={17} className="mr-2" />
+                  )}
+                  Reconcile and unlock POS
+                </Button>
+              ) : null}
+            </div>
           </div>
+          {reconciled ? (
+            <div className="mt-4 grid gap-3 border-l-2 border-emerald-600 bg-emerald-50 p-4 text-sm sm:grid-cols-3">
+              <div>
+                <span className="block text-xs font-semibold uppercase text-emerald-800">Rows matched</span>
+                {reconciled.rowCount}
+              </div>
+              <div>
+                <span className="block text-xs font-semibold uppercase text-emerald-800">Quantity matched</span>
+                {formatQuantity(reconciled.actualQuantityMilli)}
+              </div>
+              <div>
+                <span className="block text-xs font-semibold uppercase text-emerald-800">Valuation matched</span>
+                {formatMoney(reconciled.actualValuationMinor)}
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </Glass>
