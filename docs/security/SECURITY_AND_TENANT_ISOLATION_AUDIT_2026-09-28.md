@@ -2,7 +2,7 @@
 
 ## Decision
 
-The Phase 5 application and database security audit is complete for the current development scope. No critical or high application vulnerability was found. GitHub CI run `36366081437` passed the application and fresh-database jobs. Staging/pilot remains blocked on the owner-controlled Supabase leaked-password-protection setting.
+The Phase 5 application and database security audit is complete for the current development scope. No critical or high application vulnerability was found. GitHub CI runs `36366081437` and `36366648024` passed the application and fresh-database jobs. Staging/pilot remains blocked on Supabase leaked-password protection: the `HUSTLERO (HCS)` organization is on the Free plan, while Supabase makes this control available only on Pro and above.
 
 ## Scope and evidence
 
@@ -32,7 +32,7 @@ The Phase 5 application and database security audit is complete for the current 
 | SEC-001 | Medium | Resolved | Inventory import post/reconcile silently selected the first membership when a multi-business user omitted `X-Tenant-ID`. Both commands now return `TENANT_SELECTION_REQUIRED`; regression coverage verifies no database command is reached. |
 | SEC-002 | Medium | Resolved | Dependency and committed-secret checks were documented but not enforced. CI now runs the high-severity npm audit and the local tracked-file secret scan. |
 | SEC-003 | Low | Resolved | Back Office modules instantiated concurrent GoTrue clients under one storage key. A shared browser client now owns session refresh; browser reload produced no new multiple-client warning. |
-| SEC-004 | Medium | Owner gate | Supabase leaked-password protection is disabled. Enable it in Auth password security before staging/pilot user invitations. [Supabase remediation](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection). |
+| SEC-004 | Medium | Plan blocked | Supabase leaked-password protection is disabled. The organization was verified on `tier_free`, and Supabase documents this control as Pro-plan-and-above. Upgrade the staging organization/project, enable the control, and rerun the Security Advisor before staging/pilot user invitations. [Supabase remediation](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection). |
 | PERF-001 | Informational | Backlog | Supabase reports 25 pre-existing unindexed foreign keys. This is a performance and lock-contention follow-up, not a demonstrated tenant-isolation defect. Review against workload before adding indexes. [Advisor guidance](https://supabase.com/docs/guides/database/database-linter?lint=0001_unindexed_foreign_keys). |
 
 The 57 RLS-without-policy advisor notices are intentional deny-all defense in depth for private, non-Data-API schemas. The application uses restricted server functions and explicit execution grants instead of browser table policies. [Advisor guidance](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy).
@@ -45,5 +45,6 @@ The 57 RLS-without-policy advisor notices are intentional deny-all defense in de
 
 ## Residual risk
 
-- Local pgTAP execution is unavailable because Docker/Podman is not installed; GitHub CI run `36366081437` supplied the required fresh-database verification and passed.
+- Local pgTAP execution is unavailable because Docker/Podman is not installed; GitHub CI runs `36366081437` and `36366648024` supplied the required fresh-database verification and passed.
+- Leaked-password protection cannot be enabled on the current Free-plan project. This is a release gate, not an application-code defect.
 - Staging and production do not exist yet. This audit does not replace staging penetration, rate-limit, upload-malware, recovery, or load testing.

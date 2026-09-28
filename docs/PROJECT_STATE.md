@@ -194,10 +194,13 @@ Last updated: 2026-09-28
 - Supabase advisors report only the established intentional private RLS-without-policy notices, one leaked-password-protection warning, and informational performance findings. Leaked-password protection remains an explicit owner-controlled pre-pilot gate. Full evidence is recorded in `docs/security/SECURITY_AND_TENANT_ISOLATION_AUDIT_2026-09-28.md`.
 - GitHub CI run `36366081437` passed the high-severity dependency audit, tracked-file secret scan, formatting, lint, strict typecheck, 83 Vitest cases, all standard and Cloudflare builds, a fresh Supabase reset, and every pgTAP suite including the new 10-assertion security posture audit.
 - Development API Worker version `52eb0a4a-03de-432e-97a0-42b4bd0dc8ef` is deployed with the multi-business cutover tenant-selection hardening. Live health returned 200 and unauthenticated inventory posting returned 401.
+- Supabase plan verification confirmed that the `HUSTLERO (HCS)` organization is on `tier_free`. Leaked-password protection is available only on Pro and above, so the setting cannot be enabled truthfully on the current project and remains a pre-pilot plan gate.
+- Staging readiness is documented in `docs/operations/STAGING_READINESS.md` with the provisioning order, environment configuration, UAT scope, release exit criteria, and explicit separation from production. No staging or production resource was created.
+- GitHub CI run `36366648024` passed both the application verification job and the fresh Supabase migration/pgTAP database job after the hardening documentation update.
 
 ## Next safe action
 
-Pass the fresh GitHub CI database run, enable Supabase leaked-password protection, then prepare the staging environment and execute owner UAT.
+Obtain explicit owner approval for the recurring Supabase Pro cost, create an isolated staging project, enable leaked-password protection, replay and verify migrations, then provision staging Hyperdrive and application deployments for owner UAT.
 
 ## Production state
 
