@@ -1,10 +1,10 @@
 # Project State
 
-Last updated: 2026-09-27
+Last updated: 2026-09-28
 
 ## Phase
 
-`PHASE 4 - CUSTOMERS, CONTROLS, AND REPORTING`
+`PHASE 5 - HARDENING AND PILOT`
 
 ## Completed and verified
 
@@ -183,11 +183,15 @@ Last updated: 2026-09-27
 - Inventory import migration `20260927131014` and API Worker version `feb56654-4a5b-40cc-b39a-94a6860516f5` are deployed to development. GitHub CI run `36321275116` passed the complete application check, a fresh Supabase reset, all database suites, and the 25 new inventory-import assertions; live health and unauthenticated preview smoke tests returned 200 and 401 respectively. Post-migration advisers found no new blocking security or performance issue; the private staging tables intentionally retain the established RLS-without-browser-policy posture.
 - Core reporting views are complete in development: Sales, Payment Type, Discounts & Taxes, Inventory, and Shifts & Receipts share the same tenant-authorized date/location/channel scope and provide focused CSV exports. Shift reporting uses register-session opening business dates and reconciles immutable sales/refunds plus cash variance; receipts continue to open the immutable Sales archive.
 - Reporting migration `20260927133224` and API Worker version `7ce46298-32f5-4587-afe9-7a3568590bb6` are deployed to development. GitHub CI run `36322556756` passed the full application check, fresh Supabase reset, and all pgTAP suites including the expanded 31-assertion reporting suite. Browser validation loaded all five report views, one live open shift, the PHP 6,200.00 inventory valuation, no page-level horizontal overflow, and no console errors.
+- Inventory cutover posting and reconciliation are implemented end to end. A validated batch posts branch-variant opening balances, positive opening movements, reserved/damaged/in-transit quantities, and reorder policies atomically and idempotently; posted rows are immutable, and reconciliation must match quantity and valuation before the branch is eligible for POS sales.
+- The POS API now exposes only the customer-aware gated sale command to the Hyperdrive role. Branches with a staged import require a reconciled batch, while pre-cutover development branches with existing inventory history remain compatible.
+- Inventory cutover migration `20260928005534` and API Worker version `0c757775-9dac-4246-aaec-11009ce2e42b` are deployed to development. GitHub CI run `36363813826` passed the complete application check, fresh database reset, all pgTAP suites including 27 cutover assertions, 83 Vitest cases, and every standard and Cloudflare build. Live health returned 200 and unauthenticated posting returned 401.
+- Post-cutover Supabase advisors found no new blocking issue or unindexed cutover foreign key. The established private-schema RLS-without-browser-policy notices, immediately-unused development indexes, leaked-password warning, and prior supporting-index backlog remain tracked for Phase 5.
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
 
 ## Next safe action
 
-Build atomic opening-balance batch posting, reconciliation, and the cutover go-live gate defined in `docs/product/INVENTORY_MIGRATION_AND_CUTOVER.md`.
+Run owner-controlled opening-inventory cutover validation in Back Office, then begin the Phase 5 security and tenant-isolation audit before staging/UAT.
 
 ## Production state
 

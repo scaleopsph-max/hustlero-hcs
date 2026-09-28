@@ -52,7 +52,7 @@ Quantity uses integer thousandths at the API boundary. Money uses integer centav
 ## Posting semantics
 
 - The confirmed batch is atomic and idempotent.
-- Every accepted row posts an immutable `OPENING_BALANCE` movement.
+- Every accepted row with positive opening stock posts an immutable `OPENING_BALANCE` movement. An accepted zero-quantity row creates a zero balance and optional reorder configuration without inventing a zero-value ledger movement.
 - Balance rows are projections created from the posted movements, never direct source-of-truth overrides.
 - Reorder levels are configuration records, not inventory movements.
 - Retrying the same batch and content returns the stored result without duplicate stock.
@@ -83,6 +83,10 @@ POS activation may be prepared earlier, but sale completion remains blocked unti
 3. Atomic opening-balance posting with audit, outbox, and idempotency.
 4. Reconciliation summary and go-live readiness gate.
 5. Product-form handoff to opening stock and downloadable migration templates.
+
+## Implementation status
+
+Slices 1-4 are deployed to the development environment. The Back Office preview now requires an explicit irreversible posting confirmation, followed by server-side reconciliation. POS sale completion remains locked per branch until reconciliation succeeds. Slice 5 product-form handoff remains a post-cutover usability enhancement and does not block the controlled pilot because manual entry and the downloadable CSV flow are available.
 
 ## Acceptance
 
