@@ -10,7 +10,7 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "build:cloudflare": "npm run build:vinext --workspaces --if-present",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run build:cloudflare",
+    "check": "npm run security:secrets && npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run build:cloudflare",
     "dev:admin": "npm run dev -w @hcs/admin",
     "dev:api": "npm run dev -w @hcs/api",
     "dev:backoffice": "npm run dev -w @hcs/backoffice",
@@ -19,6 +19,8 @@
     "format": "prettier --write \"apps/**/*.{ts,tsx,js,mjs,json,jsonc,css}\" \"packages/**/*.{ts,tsx,js,mjs,json,css}\" \"*.{ts,js,mjs,json,jsonc}\" \".github/**/*.yml\"",
     "format:check": "prettier --check \"apps/**/*.{ts,tsx,js,mjs,json,jsonc,css}\" \"packages/**/*.{ts,tsx,js,mjs,json,css}\" \"*.{ts,js,mjs,json,jsonc}\" \".github/**/*.yml\"",
     "lint": "eslint apps packages",
+    "security:dependencies": "npm audit --audit-level=high",
+    "security:secrets": "node scripts/secret-scan.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "npm run typecheck --workspaces --if-present"

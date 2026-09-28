@@ -2,7 +2,7 @@
 
 import { selectActiveTenant } from '@/lib/active-tenant'
 
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@/lib/supabase-browser'
 import { Check, Loader2, ShieldCheck, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {

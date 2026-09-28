@@ -188,10 +188,14 @@ Last updated: 2026-09-28
 - Inventory cutover migration `20260928005534` and API Worker version `0c757775-9dac-4246-aaec-11009ce2e42b` are deployed to development. GitHub CI run `36363813826` passed the complete application check, fresh database reset, all pgTAP suites including 27 cutover assertions, 83 Vitest cases, and every standard and Cloudflare build. Live health returned 200 and unauthenticated posting returned 401.
 - Post-cutover Supabase advisors found no new blocking issue or unindexed cutover foreign key. The established private-schema RLS-without-browser-policy notices, immediately-unused development indexes, leaked-password warning, and prior supporting-index backlog remain tracked for Phase 5.
 - Supabase hardening follow-up: leaked-password protection and advisor-reported supporting indexes will be handled as dedicated security/performance work
+- Controlled opening-inventory cutover validation passed against the permanent `SCALEOPS PH` test tenant. Batch `53c97505-8e61-46d8-89d9-227e4695c99f` accepted one fresh SKU, posted quantity 7 at PHP 50.00, reconciled PHP 350.00, preserved reserved/damaged/in-transit values and reorder level 3, emitted the expected audit/outbox events, and left the branch free of pending cutover blockers. Evidence is recorded in `docs/qa/INVENTORY_CUTOVER_VALIDATION_2026-09-28.md`.
+- Phase 5 security and tenant-isolation audit completed for the current development scope. Live posture checks found RLS on all private business/platform tables, zero browser-role private-table DML, zero browser/public execution of private security-definer functions, and zero direct Hyperdrive private-table DML.
+- Security hardening now requires explicit tenant selection for inventory post/reconcile commands used by multi-business accounts, shares one Supabase browser client across Back Office modules, runs a tracked-file secret scan in the main check, and runs a high-severity npm dependency audit in CI.
+- Supabase advisors report only the established intentional private RLS-without-policy notices, one leaked-password-protection warning, and informational performance findings. Leaked-password protection remains an explicit owner-controlled pre-pilot gate. Full evidence is recorded in `docs/security/SECURITY_AND_TENANT_ISOLATION_AUDIT_2026-09-28.md`.
 
 ## Next safe action
 
-Run owner-controlled opening-inventory cutover validation in Back Office, then begin the Phase 5 security and tenant-isolation audit before staging/UAT.
+Pass the fresh GitHub CI database run, enable Supabase leaked-password protection, then prepare the staging environment and execute owner UAT.
 
 ## Production state
 

@@ -2,7 +2,7 @@
 
 import { selectActiveTenant } from '@/lib/active-tenant'
 
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@/lib/supabase-browser'
 import { ArrowRightLeft, Plus, Truck } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {

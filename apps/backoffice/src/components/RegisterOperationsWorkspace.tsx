@@ -2,7 +2,7 @@
 
 import { selectActiveTenant } from '@/lib/active-tenant'
 
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase-browser'
 import { CircleDollarSign, LockKeyhole, Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {

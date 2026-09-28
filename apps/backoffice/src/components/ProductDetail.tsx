@@ -1,6 +1,6 @@
 'use client'
 
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@/lib/supabase-browser'
 import { ArrowLeft, Check, Pencil, Plus, Trash2, X } from 'lucide-react'
 import Link from 'next/link'
 import { Fragment, useCallback, useEffect, useState, type FormEvent } from 'react'

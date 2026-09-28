@@ -5506,6 +5506,18 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
     }
     const tenants = await dependencies.loadSessionAccess(user.userId, context.env)
     const requestedTenantId = context.req.header('x-tenant-id')
+    if (!requestedTenantId && tenants.length > 1) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'TENANT_SELECTION_REQUIRED',
+            message: 'Select a business before posting opening inventory.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        409,
+      )
+    }
     const tenant = requestedTenantId ? tenants.find((entry) => entry.tenantId === requestedTenantId) : tenants[0]
     if (!tenant) {
       return context.json(
@@ -5644,6 +5656,18 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
     }
     const tenants = await dependencies.loadSessionAccess(user.userId, context.env)
     const requestedTenantId = context.req.header('x-tenant-id')
+    if (!requestedTenantId && tenants.length > 1) {
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'TENANT_SELECTION_REQUIRED',
+            message: 'Select a business before reconciling opening inventory.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        409,
+      )
+    }
     const tenant = requestedTenantId ? tenants.find((entry) => entry.tenantId === requestedTenantId) : tenants[0]
     if (!tenant) {
       return context.json(

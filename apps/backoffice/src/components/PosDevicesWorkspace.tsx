@@ -2,7 +2,7 @@
 
 import { selectActiveTenant } from '@/lib/active-tenant'
 
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase-browser'
 import { Copy, KeyRound, Plus, Smartphone } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {

@@ -1,6 +1,6 @@
 'use client'
 
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@/lib/supabase-browser'
 import {
   AlertTriangle,
   CheckCircle2,

@@ -1543,6 +1543,26 @@ describe('API', () => {
     )
     expect(response.status).toBe(409)
     expect(apiErrorResponseSchema.parse(await response.json()).error.code).toBe('TENANT_SELECTION_REQUIRED')
+
+    postInventoryImport.mockClear()
+    reconcileInventoryImport.mockClear()
+    for (const action of ['post', 'reconcile'] as const) {
+      const cutoverResponse = await multiTenantApp.request(
+        `/v1/inventory/imports/5a000000-0000-4000-8000-000000000001/${action}`,
+        {
+          method: 'POST',
+          headers: {
+            authorization: 'Bearer valid-token',
+            'idempotency-key': `inventory-multi-tenant-${action}`,
+          },
+        },
+        bindings,
+      )
+      expect(cutoverResponse.status).toBe(409)
+      expect(apiErrorResponseSchema.parse(await cutoverResponse.json()).error.code).toBe('TENANT_SELECTION_REQUIRED')
+    }
+    expect(postInventoryImport).not.toHaveBeenCalled()
+    expect(reconcileInventoryImport).not.toHaveBeenCalled()
   })
 
   it('does not allow non-owners to view owner setup', async () => {

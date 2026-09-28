@@ -2,7 +2,7 @@
 
 import { selectActiveTenant } from '@/lib/active-tenant'
 
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase-browser'
 import { Plus, Search, Users } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
