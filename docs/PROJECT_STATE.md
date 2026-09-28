@@ -192,6 +192,7 @@ Last updated: 2026-09-28
 - Phase 5 security and tenant-isolation audit completed for the current development scope. Live posture checks found RLS on all private business/platform tables, zero browser-role private-table DML, zero browser/public execution of private security-definer functions, and zero direct Hyperdrive private-table DML.
 - Security hardening now requires explicit tenant selection for inventory post/reconcile commands used by multi-business accounts, shares one Supabase browser client across Back Office modules, runs a tracked-file secret scan in the main check, and runs a high-severity npm dependency audit in CI.
 - Supabase advisors report only the established intentional private RLS-without-policy notices, one leaked-password-protection warning, and informational performance findings. Leaked-password protection remains an explicit owner-controlled pre-pilot gate. Full evidence is recorded in `docs/security/SECURITY_AND_TENANT_ISOLATION_AUDIT_2026-09-28.md`.
+- GitHub CI run `36366081437` passed the high-severity dependency audit, tracked-file secret scan, formatting, lint, strict typecheck, 83 Vitest cases, all standard and Cloudflare builds, a fresh Supabase reset, and every pgTAP suite including the new 10-assertion security posture audit.
 
 ## Next safe action
 

@@ -2,7 +2,7 @@
 
 ## Decision
 
-The Phase 5 application and database security audit is complete for the current development scope. No critical or high application vulnerability was found. Staging/pilot remains blocked on the owner-controlled Supabase leaked-password-protection setting and a green CI run for this hardening change.
+The Phase 5 application and database security audit is complete for the current development scope. No critical or high application vulnerability was found. GitHub CI run `36366081437` passed the application and fresh-database jobs. Staging/pilot remains blocked on the owner-controlled Supabase leaked-password-protection setting.
 
 ## Scope and evidence
 
@@ -45,5 +45,5 @@ The 57 RLS-without-policy advisor notices are intentional deny-all defense in de
 
 ## Residual risk
 
-- Local pgTAP execution is unavailable because Docker/Podman is not installed; the fresh-database suite must pass in GitHub CI before this change is accepted.
+- Local pgTAP execution is unavailable because Docker/Podman is not installed; GitHub CI run `36366081437` supplied the required fresh-database verification and passed.
 - Staging and production do not exist yet. This audit does not replace staging penetration, rate-limit, upload-malware, recovery, or load testing.
