@@ -197,15 +197,26 @@ Last updated: 2026-09-28
 - Supabase plan verification confirmed that the `HUSTLERO (HCS)` organization is on `tier_free`. Leaked-password protection is available only on Pro and above, so the setting cannot be enabled truthfully on the current project and remains a pre-pilot plan gate.
 - Staging readiness is documented in `docs/operations/STAGING_READINESS.md` with the provisioning order, environment configuration, UAT scope, release exit criteria, and explicit separation from production. No staging or production resource was created.
 - GitHub CI run `36366648024` passed both the application verification job and the fresh Supabase migration/pgTAP database job after the hardening documentation update.
+- Staging Supabase project `HUSTLERO HCS Staging` (`sdfwdhbryjyfufgtfqmf`) was created in Singapore at the confirmed $0/month project cost and reached `ACTIVE_HEALTHY`.
+- The staging database was reset cleanly and all 46 committed migrations replayed with exact repository versions. Direct staging posture checks confirmed private-table RLS, zero browser/private-table DML, zero direct Hyperdrive table DML, restricted security-definer execution, the gated POS sale command, and 13 reviewed policies.
+- Staging Hyperdrive `hustlero-hcs-staging` (`008f24430d3e433eb478caaa52787fea`) was created with a generated staging-only restricted login, SSL required, a 20-connection origin limit, and query caching disabled. The credential is not stored in the repository.
+- The Supabase staging Auth dashboard independently confirms leaked-password protection is disabled and available only on Pro and above. This remains a pilot gate even though the new-project Security Advisor has not emitted the warning yet.
+- Staging API Worker version `334918bb-c38c-4374-b3fa-31c9890a21dd` is deployed at `https://hustlero-hcs-api-staging.scaleopsph.workers.dev`; health returned 200, unauthenticated cutover posting returned 401, and the staging Back Office CORS preflight returned 204.
+- Staging Back Office version `eefeb035-2dd1-4c36-a729-4ec68aba7818`, POS version `5cd5a760-199d-4f56-a2bd-3d412c7c5c83`, and Super Admin version `b969c720-9d84-482e-a9cf-a689cdc50ba9` are deployed at their isolated `*-staging.scaleopsph.workers.dev` URLs. All returned 200 and rendered the expected account, device-activation, and MFA sign-in entry states.
+- Staging Supabase Auth uses the Back Office staging URL as its site URL and allowlists Back Office and Super Admin staging redirects. A vinext config-redirection quirk ignored `--env staging` during the first Back Office upload; the correct explicit staging deployment was completed and the newly created base-name Worker was deleted, leaving no production deployment.
 
 ## Next safe action
 
-Obtain explicit owner approval for the recurring Supabase Pro cost, create an isolated staging project, enable leaked-password protection, replay and verify migrations, then provision staging Hyperdrive and application deployments for owner UAT.
+Upgrade Supabase to Pro and enable leaked-password protection, then create a controlled staging owner account and execute the authenticated end-to-end owner UAT checklist with generated data only.
 
 ## Production state
 
 - Production URL: none
 - Development API URL: `https://hustlero-hcs-api-development.scaleopsph.workers.dev`
+- Staging API URL: `https://hustlero-hcs-api-staging.scaleopsph.workers.dev`
+- Staging Back Office URL: `https://hustlero-hcs-backoffice-staging.scaleopsph.workers.dev`
+- Staging POS URL: `https://hustlero-hcs-pos-staging.scaleopsph.workers.dev`
+- Staging Super Admin URL: `https://hustlero-hcs-admin-staging.scaleopsph.workers.dev`
 - Production data: none
 - Production deployment: none
 - Rollback point: not applicable

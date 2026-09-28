@@ -31,7 +31,17 @@
       "name": "hustlero-hcs-api-staging",
       "vars": {
         "ENVIRONMENT": "staging",
+        "SUPABASE_URL": "https://sdfwdhbryjyfufgtfqmf.supabase.co",
+        "BACKOFFICE_ORIGIN": "https://hustlero-hcs-backoffice-staging.scaleopsph.workers.dev",
+        "POS_ORIGIN": "https://hustlero-hcs-pos-staging.scaleopsph.workers.dev",
+        "ADMIN_ORIGIN": "https://hustlero-hcs-admin-staging.scaleopsph.workers.dev",
       },
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "008f24430d3e433eb478caaa52787fea",
+        },
+      ],
     },
     "production": {
       "name": "hustlero-hcs-api",
