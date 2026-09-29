@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-09-28
+Last updated: 2026-09-29
 
 ## Phase
 
@@ -148,7 +148,6 @@ Last updated: 2026-09-28
 
 ## Not started
 
-- Non-cash and split tender implementation
 - Cross-session cash refunds after the original register has closed
 - Staging and production environments
 
@@ -204,6 +203,10 @@ Last updated: 2026-09-28
 - Staging API Worker version `334918bb-c38c-4374-b3fa-31c9890a21dd` is deployed at `https://hustlero-hcs-api-staging.scaleopsph.workers.dev`; health returned 200, unauthenticated cutover posting returned 401, and the staging Back Office CORS preflight returned 204.
 - Staging Back Office version `eefeb035-2dd1-4c36-a729-4ec68aba7818`, POS version `5cd5a760-199d-4f56-a2bd-3d412c7c5c83`, and Super Admin version `b969c720-9d84-482e-a9cf-a689cdc50ba9` are deployed at their isolated `*-staging.scaleopsph.workers.dev` URLs. All returned 200 and rendered the expected account, device-activation, and MFA sign-in entry states.
 - Staging Supabase Auth uses the Back Office staging URL as its site URL and allowlists Back Office and Super Admin staging redirects. A vinext config-redirection quirk ignored `--env staging` during the first Back Office upload; the correct explicit staging deployment was completed and the newly created base-name Worker was deleted, leaving no production deployment.
+- POS multi-tender payments are implemented for one to ten cash, e-wallet, bank-transfer, card-terminal, or other allocations. The server requires allocations to match its calculated total, permits change only on cash, records only the cash portion in the cash ledger, and blocks split/non-cash reversals until a dedicated payment-return allocation flow exists.
+- Multi-tender migration `20260928140928` is applied to staging with the exact repository version; development records the same named migration as managed migration `20260929005458`. Direct checks in both environments confirmed the new Hyperdrive-only sale function, browser-role denial, receipt access, and removal of Hyperdrive execute access from the superseded signature.
+- GitHub CI run `36502871749` passed the full application job and fresh-database migration/pgTAP job for the multi-tender candidate. Staging API Worker version `286f8d46-b29d-46de-8c27-22635a6cbb95` and POS version `ba723e6b-4146-4134-8af9-da0d43f9cdb2` are deployed; API health returned 200, unauthenticated checkout returned 401, POS-origin CORS returned 204, and the POS entry page returned 200.
+- Post-migration Supabase advisors reported no new warning attributable to multi-tender payments. The established private-schema RLS-without-policy posture, supporting-index backlog, unused staging indexes, and development leaked-password warning remain tracked.
 
 ## Next safe action
 
