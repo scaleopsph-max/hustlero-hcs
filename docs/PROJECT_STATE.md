@@ -211,10 +211,11 @@ Last updated: 2026-09-29
 - Pre/post-transfer checks matched the application-schema fingerprint and exact business/Auth/Storage row counts. Both environments retain the same ordered 47 migration names, and the live staging API, POS, Back Office, and Super Admin endpoints returned 200 after transfer; checkout authentication and CORS guards returned 401 and 204 respectively.
 - Supabase reported an incremental compute cost of USD 10 per transferred project, approximately USD 20/month total. Transfer evidence is recorded in `docs/operations/SUPABASE_ORGANIZATION_TRANSFER_2026-09-29.md`.
 - Leaked-password protection is enabled for the email provider in both transferred Pro projects. Fresh Development and Staging Security Advisor checks no longer report the leaked-password warning; only the expected informational private-schema RLS-without-browser-policy notices remain.
+- A controlled Staging Auth owner invitation was sent and the generated Auth record is present. Account acceptance and password creation remain owner-controlled; no account identifier or credential is stored in the public repository.
 
 ## Next safe action
 
-Create a controlled staging owner account and execute the authenticated end-to-end owner UAT checklist with generated data only.
+Complete the pending controlled Staging owner invitation, then execute the authenticated end-to-end owner UAT checklist with generated data only.
 
 ## Production state
 
