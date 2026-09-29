@@ -149,7 +149,7 @@ Last updated: 2026-09-29
 ## Not started
 
 - Cross-session cash refunds after the original register has closed
-- Staging and production environments
+- Production environment
 
 ## Current blockers/gates
 
@@ -207,10 +207,13 @@ Last updated: 2026-09-29
 - Multi-tender migration `20260928140928` is applied to staging with the exact repository version; development records the same named migration as managed migration `20260929005458`. Direct checks in both environments confirmed the new Hyperdrive-only sale function, browser-role denial, receipt access, and removal of Hyperdrive execute access from the superseded signature.
 - GitHub CI run `36502871749` passed the full application job and fresh-database migration/pgTAP job for the multi-tender candidate. Staging API Worker version `286f8d46-b29d-46de-8c27-22635a6cbb95` and POS version `ba723e6b-4146-4134-8af9-da0d43f9cdb2` are deployed; API health returned 200, unauthenticated checkout returned 401, POS-origin CORS returned 204, and the POS entry page returned 200.
 - Post-migration Supabase advisors reported no new warning attributable to multi-tender payments. The established private-schema RLS-without-policy posture, supporting-index backlog, unused staging indexes, and development leaked-password warning remain tracked.
+- Supabase Development `nlrzdgcxydmcvhushzwv` and Staging `sdfwdhbryjyfufgtfqmf` were transferred from the Free `HUSTLERO (HCS)` organization to the existing Pro `scaleopsph-max's Org` organization. Both remain `ACTIVE_HEALTHY` in Singapore with unchanged project references and database hosts.
+- Pre/post-transfer checks matched the application-schema fingerprint and exact business/Auth/Storage row counts. Both environments retain the same ordered 47 migration names, and the live staging API, POS, Back Office, and Super Admin endpoints returned 200 after transfer; checkout authentication and CORS guards returned 401 and 204 respectively.
+- Supabase reported an incremental compute cost of USD 10 per transferred project, approximately USD 20/month total. Transfer evidence is recorded in `docs/operations/SUPABASE_ORGANIZATION_TRANSFER_2026-09-29.md`.
 
 ## Next safe action
 
-Upgrade Supabase to Pro and enable leaked-password protection, then create a controlled staging owner account and execute the authenticated end-to-end owner UAT checklist with generated data only.
+Enable and verify Supabase leaked-password protection for the transferred Pro projects, then create a controlled staging owner account and execute the authenticated end-to-end owner UAT checklist with generated data only.
 
 ## Production state
 
