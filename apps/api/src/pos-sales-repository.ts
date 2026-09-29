@@ -1,12 +1,12 @@
 import {
-  posCashSaleCompleteResponseSchema,
+  posSaleCompleteResponseSchema,
   posRegisterOpenResponseSchema,
   posSalesContextSchema,
   salesContextSchema,
   saleReceiptDetailSchema,
   saleReversalResponseSchema,
-  type PosCashSaleCompleteRequest,
-  type PosCashSaleCompleteResponse,
+  type PosSaleCompleteRequest,
+  type PosSaleCompleteResponse,
   type PosRegisterOpenRequest,
   type PosRegisterOpenResponse,
   type PosSalesContext,
@@ -28,14 +28,14 @@ export type PosRegisterSessionOpener = (
   requestId: string,
   bindings: Bindings,
 ) => Promise<PosRegisterOpenResponse>
-export type PosCashSaleCompleter = (
+export type PosSaleCompleter = (
   sessionTokenHash: string,
-  request: PosCashSaleCompleteRequest,
+  request: PosSaleCompleteRequest,
   idempotencyKey: string,
   requestHash: string,
   requestId: string,
   bindings: Bindings,
-) => Promise<PosCashSaleCompleteResponse>
+) => Promise<PosSaleCompleteResponse>
 export type SalesLoader = (userId: string, tenantId: string, bindings: Bindings) => Promise<SalesContext>
 export type SaleReceiptLoader = (
   userId: string,
@@ -98,7 +98,7 @@ export const openPosRegisterSessionInPostgres: PosRegisterSessionOpener = async 
     ).rows[0]?.response,
   )
 
-export const completePosCashSaleInPostgres: PosCashSaleCompleter = async (
+export const completePosSaleInPostgres: PosSaleCompleter = async (
   sessionTokenHash,
   request,
   idempotencyKey,
@@ -106,15 +106,15 @@ export const completePosCashSaleInPostgres: PosCashSaleCompleter = async (
   requestId,
   bindings,
 ) =>
-  posCashSaleCompleteResponseSchema.parse(
+  posSaleCompleteResponseSchema.parse(
     (
       await query(
         bindings,
-        'select app.complete_pos_cash_sale_with_customer($1::text,$2::jsonb,$3::bigint,$4::uuid,$5::text,$6::text,$7::text) response',
+        'select app.complete_pos_sale_with_customer($1::text,$2::jsonb,$3::jsonb,$4::uuid,$5::text,$6::text,$7::text) response',
         [
           sessionTokenHash,
           JSON.stringify(request.lines),
-          request.cashReceivedCentavos,
+          JSON.stringify(request.payments),
           request.customerId ?? null,
           idempotencyKey,
           requestHash,

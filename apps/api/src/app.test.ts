@@ -31,7 +31,7 @@ import {
   posDeviceActivationCreateResponseSchema,
   posDeviceContextSchema,
   posPinLoginResponseSchema,
-  posCashSaleCompleteResponseSchema,
+  posSaleCompleteResponseSchema,
   posRegisterOpenResponseSchema,
   posSalesContextSchema,
   salesContextSchema,
@@ -465,7 +465,7 @@ const openPosRegisterSession = vi.fn(async () => ({
   openedAt: '2026-09-25T02:00:00.000Z',
   openingCashCentavos: 100000,
 }))
-const completePosCashSale = vi.fn(async () => ({
+const completePosSale = vi.fn(async () => ({
   saleId: '12000000-0000-4000-8000-000000000001',
   receiptNumber: 'MAIN-20260925-000001',
   status: 'completed' as const,
@@ -473,6 +473,16 @@ const completePosCashSale = vi.fn(async () => ({
   totalCentavos: 89900,
   cashReceivedCentavos: 100000,
   changeCentavos: 10100,
+  payments: [
+    {
+      paymentMethodId: 'e0000000-0000-4000-8000-000000000001',
+      methodName: 'Cash',
+      methodType: 'cash' as const,
+      amountCentavos: 89_900,
+      tenderedCentavos: 100_000,
+      changeCentavos: 10_100,
+    },
+  ],
   completedAt: '2026-09-25T02:05:00.000Z',
   loyaltyEarnedPoints: 0,
   loyaltyBalancePoints: null,
@@ -1006,7 +1016,7 @@ const authenticatedApp = createApp({
   authenticatePosEmployee,
   loadPosSalesContext,
   openPosRegisterSession,
-  completePosCashSale,
+  completePosSale,
   loadSales,
   loadSaleReceipt,
   refundSale,
@@ -1498,7 +1508,7 @@ describe('API', () => {
       authenticatePosEmployee,
       loadPosSalesContext,
       openPosRegisterSession,
-      completePosCashSale,
+      completePosSale,
       loadSales,
       loadSaleReceipt,
       refundSale,
@@ -1624,7 +1634,7 @@ describe('API', () => {
       authenticatePosEmployee,
       loadPosSalesContext,
       openPosRegisterSession,
-      completePosCashSale,
+      completePosSale,
       loadSales,
       loadSaleReceipt,
       refundSale,
@@ -2854,11 +2864,22 @@ describe('API', () => {
     )
   })
 
-  it('completes a cash sale without accepting client prices or totals', async () => {
-    completePosCashSale.mockClear()
+  it('completes a payment sale without accepting client prices or totals', async () => {
+    completePosSale.mockClear()
     const request = {
       lines: [{ variantId: '50000000-0000-4000-8000-000000000001', quantityMilli: 1000 }],
-      cashReceivedCentavos: 100_000,
+      payments: [
+        {
+          paymentMethodId: 'e0000000-0000-4000-8000-000000000001',
+          amountCentavos: 40_000,
+          tenderedCentavos: 50_000,
+        },
+        {
+          paymentMethodId: 'e0000000-0000-4000-8000-000000000002',
+          amountCentavos: 49_900,
+          tenderedCentavos: 49_900,
+        },
+      ],
     }
     const response = await authenticatedApp.request(
       '/v1/pos/sales/complete',
@@ -2874,8 +2895,8 @@ describe('API', () => {
       bindings,
     )
     expect(response.status).toBe(201)
-    expect(posCashSaleCompleteResponseSchema.safeParse(await response.json()).success).toBe(true)
-    expect(completePosCashSale).toHaveBeenCalledWith(
+    expect(posSaleCompleteResponseSchema.safeParse(await response.json()).success).toBe(true)
+    expect(completePosSale).toHaveBeenCalledWith(
       expect.stringMatching(/^[a-f0-9]{64}$/),
       request,
       'pos-cash-sale-0001',
@@ -2886,7 +2907,7 @@ describe('API', () => {
   })
 
   it('returns a clear POS error while opening inventory cutover is incomplete', async () => {
-    completePosCashSale.mockRejectedValueOnce(
+    completePosSale.mockRejectedValueOnce(
       Object.assign(new Error('Opening inventory must be posted and reconciled before sales can begin'), {
         code: 'HCSC0',
       }),
@@ -2902,7 +2923,13 @@ describe('API', () => {
         },
         body: JSON.stringify({
           lines: [{ variantId: '50000000-0000-4000-8000-000000000001', quantityMilli: 1000 }],
-          cashReceivedCentavos: 100_000,
+          payments: [
+            {
+              paymentMethodId: 'e0000000-0000-4000-8000-000000000001',
+              amountCentavos: 89_900,
+              tenderedCentavos: 100_000,
+            },
+          ],
         }),
       },
       bindings,

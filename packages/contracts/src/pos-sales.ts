@@ -50,17 +50,30 @@ export const posRegisterOpenResponseSchema = z.object({
   openingCashCentavos: z.number().int().nonnegative(),
 })
 
-export const posCashSaleCompleteRequestSchema = z.object({
+export const posSalePaymentRequestSchema = z.object({
+  paymentMethodId: id,
+  amountCentavos: z.number().int().positive(),
+  tenderedCentavos: z.number().int().positive(),
+})
+
+export const posSaleCompleteRequestSchema = z.object({
   lines: z
     .array(z.object({ variantId: id, quantityMilli: z.number().int().positive() }))
     .min(1)
     .max(200)
     .refine((lines) => new Set(lines.map((line) => line.variantId)).size === lines.length, 'Duplicate variants'),
-  cashReceivedCentavos: z.number().int().nonnegative(),
+  payments: z
+    .array(posSalePaymentRequestSchema)
+    .min(1)
+    .max(10)
+    .refine(
+      (payments) => new Set(payments.map((payment) => payment.paymentMethodId)).size === payments.length,
+      'Duplicate payment methods',
+    ),
   customerId: id.nullable().optional(),
 })
 
-export const posCashSaleCompleteResponseSchema = z.object({
+export const posSaleCompleteResponseSchema = z.object({
   saleId: id,
   receiptNumber: z.string(),
   status: z.literal('completed'),
@@ -68,12 +81,26 @@ export const posCashSaleCompleteResponseSchema = z.object({
   totalCentavos: z.number().int().nonnegative(),
   cashReceivedCentavos: z.number().int().nonnegative(),
   changeCentavos: z.number().int().nonnegative(),
+  payments: z.array(
+    z.object({
+      paymentMethodId: id,
+      methodName: z.string(),
+      methodType: z.enum(['cash', 'e_wallet', 'bank_transfer', 'card_terminal', 'other']),
+      amountCentavos: z.number().int().positive(),
+      tenderedCentavos: z.number().int().positive(),
+      changeCentavos: z.number().int().nonnegative(),
+    }),
+  ),
   completedAt: timestamp,
   customerId: id.nullable().optional(),
   customerName: z.string().nullable().optional(),
   loyaltyEarnedPoints: z.number().int().nonnegative().default(0),
   loyaltyBalancePoints: z.number().int().nonnegative().nullable().default(null),
 })
+
+// Compatibility aliases for consumers migrating from the original cash-only contract.
+export const posCashSaleCompleteRequestSchema = posSaleCompleteRequestSchema
+export const posCashSaleCompleteResponseSchema = posSaleCompleteResponseSchema
 
 export const salesContextSchema = z.object({
   sales: z.array(
@@ -179,8 +206,11 @@ export const saleReversalResponseSchema = z.object({
 export type PosSalesContext = z.infer<typeof posSalesContextSchema>
 export type PosRegisterOpenRequest = z.infer<typeof posRegisterOpenRequestSchema>
 export type PosRegisterOpenResponse = z.infer<typeof posRegisterOpenResponseSchema>
-export type PosCashSaleCompleteRequest = z.infer<typeof posCashSaleCompleteRequestSchema>
-export type PosCashSaleCompleteResponse = z.infer<typeof posCashSaleCompleteResponseSchema>
+export type PosSalePaymentRequest = z.infer<typeof posSalePaymentRequestSchema>
+export type PosSaleCompleteRequest = z.infer<typeof posSaleCompleteRequestSchema>
+export type PosSaleCompleteResponse = z.infer<typeof posSaleCompleteResponseSchema>
+export type PosCashSaleCompleteRequest = PosSaleCompleteRequest
+export type PosCashSaleCompleteResponse = PosSaleCompleteResponse
 export type SalesContext = z.infer<typeof salesContextSchema>
 export type SaleReceiptDetail = z.infer<typeof saleReceiptDetailSchema>
 export type SaleRefundRequest = z.infer<typeof saleRefundRequestSchema>

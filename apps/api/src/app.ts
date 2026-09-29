@@ -34,8 +34,8 @@ import {
   posDeviceContextSchema,
   posPinLoginRequestSchema,
   posPinLoginResponseSchema,
-  posCashSaleCompleteRequestSchema,
-  posCashSaleCompleteResponseSchema,
+  posSaleCompleteRequestSchema,
+  posSaleCompleteResponseSchema,
   posRegisterOpenRequestSchema,
   posRegisterOpenResponseSchema,
   posSalesContextSchema,
@@ -140,14 +140,14 @@ import {
   type PosEmployeePinAuthenticator,
 } from './pos-auth-repository'
 import {
-  completePosCashSaleInPostgres,
+  completePosSaleInPostgres,
   loadPosSalesContextFromPostgres,
   loadSalesFromPostgres,
   loadSaleReceiptFromPostgres,
   refundSaleInPostgres,
   voidSaleInPostgres,
   openPosRegisterSessionInPostgres,
-  type PosCashSaleCompleter,
+  type PosSaleCompleter,
   type PosRegisterSessionOpener,
   type PosSalesContextLoader,
   type SalesLoader,
@@ -369,7 +369,7 @@ interface AppDependencies {
   authenticatePosEmployee: PosEmployeePinAuthenticator
   loadPosSalesContext: PosSalesContextLoader
   openPosRegisterSession: PosRegisterSessionOpener
-  completePosCashSale: PosCashSaleCompleter
+  completePosSale: PosSaleCompleter
   loadSales: SalesLoader
   loadSaleReceipt: SaleReceiptLoader
   refundSale: SaleRefunder
@@ -453,7 +453,7 @@ const defaultDependencies: AppDependencies = {
   authenticatePosEmployee: authenticatePosEmployeeInPostgres,
   loadPosSalesContext: loadPosSalesContextFromPostgres,
   openPosRegisterSession: openPosRegisterSessionInPostgres,
-  completePosCashSale: completePosCashSaleInPostgres,
+  completePosSale: completePosSaleInPostgres,
   loadSales: loadSalesFromPostgres,
   loadSaleReceipt: loadSaleReceiptFromPostgres,
   refundSale: refundSaleInPostgres,
@@ -3387,8 +3387,8 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
       return context.json(
         apiErrorResponseSchema.parse({
           error: {
-            code: 'CASH_PAYMENT_UNAVAILABLE',
-            message: 'Configure an active cash payment method first.',
+            code: 'PAYMENT_METHOD_UNAVAILABLE',
+            message: 'One or more selected payment methods are unavailable.',
             requestId,
           },
         }),
@@ -3530,7 +3530,7 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
   app.post('/v1/pos/sales/complete', async (context) => {
     const sessionHash = await readPosSessionHash(context)
     const idempotencyKey = context.req.header('idempotency-key')
-    const parsed = posCashSaleCompleteRequestSchema.safeParse(await context.req.json().catch(() => null))
+    const parsed = posSaleCompleteRequestSchema.safeParse(await context.req.json().catch(() => null))
     if (!sessionHash)
       return context.json(
         apiErrorResponseSchema.parse({
@@ -3547,14 +3547,14 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
         apiErrorResponseSchema.parse({
           error: {
             code: 'INVALID_POS_SALE',
-            message: 'Check the cart and cash received.',
+            message: 'Check the cart and payment allocation.',
             requestId: context.get('requestId'),
           },
         }),
         400,
       )
     try {
-      const response = await dependencies.completePosCashSale(
+      const response = await dependencies.completePosSale(
         sessionHash,
         parsed.data,
         idempotencyKey,
@@ -3562,7 +3562,7 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
         context.get('requestId'),
         context.env,
       )
-      return context.json(posCashSaleCompleteResponseSchema.parse(response), 201)
+      return context.json(posSaleCompleteResponseSchema.parse(response), 201)
     } catch (error) {
       return posError(context, error)
     }

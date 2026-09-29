@@ -148,17 +148,18 @@ Current POS identity foundation:
 - `POST /v1/pos/sessions/pin-login` requires the device token in `X-POS-Device-Token`, an active employee code assigned to that device branch, and a valid 4-6 digit PIN. Five failed PIN attempts lock that employee credential for 15 minutes.
 - A successful PIN login revokes the device's previous employee session and returns a new opaque 12-hour session token. Only its hash is stored. Future sales commands derive tenant, branch, register, and employee from this session instead of accepting those identifiers from the POS client.
 
-Current POS cash-sales implementation:
+Current POS sales implementation:
 
 - `GET /v1/pos/context` requires `X-POS-Session-Token` and returns only the server-resolved employee, activated device, branch, register, current register session, active branch catalog, availability, and configured payment methods.
 - `POST /v1/pos/register-sessions/open` requires the POS session and `Idempotency-Key`; the request contains only integer-centavo opening cash. The employee, register, location, and tenant come from the POS session.
-- `POST /v1/pos/sales/complete` currently accepts cash sales with unique lines containing only `variantId` and positive integer-thousandth `quantityMilli`, plus integer-centavo `cashReceivedCentavos`. Client prices and totals are ignored by the strict contract.
-- PostgreSQL locks the register session, variants, and inventory balances; recalculates retail totals; rejects unavailable stock; and atomically writes the sale, immutable line snapshots, payment tender/change, inventory and cash ledger rows, audit event, outbox event, and branch daily receipt number.
+- `POST /v1/pos/sales/complete` accepts unique lines containing only `variantId` and positive integer-thousandth `quantityMilli`, plus one to ten active payment-method allocations. Every allocation contains a server-known `paymentMethodId`, integer-centavo amount, and integer-centavo tendered amount. Client prices and totals are ignored by the strict contract.
+- Payment allocations must equal the server-calculated sale total exactly. Cash may be tendered above its allocated amount and produces change; manual e-wallet, bank-transfer, card-terminal, and other tenders must equal their allocated amount. Only the cash allocation affects the immutable register cash ledger.
+- PostgreSQL locks the register session, variants, payment methods, and inventory balances; recalculates retail totals; rejects unavailable stock or invalid payment allocation; and atomically writes the sale, immutable line snapshots, one payment row per tender, inventory and cash ledger rows, audit event, outbox event, and branch daily receipt number.
 - Identical retries return the stored receipt. Reusing a key with a different request returns 409. Expired POS sessions return 401; closed registers and insufficient stock return 409.
 - `GET /v1/sales` requires a bearer-authenticated server-resolved tenant with `sales.read` access and returns the latest 100 tenant receipts for Back Office.
 - `GET /v1/sales/{id}` returns immutable receipt, line, payment, and linked reversal snapshots plus server-computed remaining refundable quantities.
 - `POST /v1/sales/{id}/refunds` accepts only sale-line IDs, integer-thousandth quantities, return-to-stock choices, and a reason. PostgreSQL calculates the amount from the original sale snapshots and atomically appends the refund, item, payment, inventory, cash, audit, and outbox records.
-- `POST /v1/sales/{id}/void` accepts only a reason and reverses every remaining line of a completed cash sale. The original receipt is retained and marked `voided`.
+- `POST /v1/sales/{id}/void` accepts only a reason and reverses every remaining line of a completed cash sale. The original receipt is retained and marked `voided`. Split and non-cash receipts remain immutable but do not expose reversal actions until a dedicated payment-return allocation contract is approved and implemented.
 - Cash refunds and voids currently require the original register session to remain open. A closed register is never silently changed after reconciliation; cross-session refund settlement is a later explicit workflow.
 - Back Office receipt reprint uses the immutable receipt detail and a print-specific layout. Printing never edits the original sale.
 
