@@ -41,6 +41,6 @@ Both projects now report organization ID `vxspwhtwaonuxgarurep`.
 
 The Supabase transfer preview reported an additional USD 10 per month for each transferred project because the target Pro organization already had active projects. The expected incremental compute cost is therefore approximately USD 20 per month for Development and Staging together, before usage overages or optional add-ons.
 
-## Remaining security action
+## Security follow-up completed
 
-Development still reports the tracked leaked-password-protection warning. Now that both projects are under Pro, leaked-password protection must be enabled and re-verified before controlled staging owner UAT. The informational private-schema `RLS enabled, no policy` notices remain expected because browser roles intentionally have no direct access to private application tables.
+Leaked-password protection was enabled for the email provider in both Development and Staging after transfer. Fresh Security Advisor checks no longer report the leaked-password warning in either project. The remaining informational private-schema `RLS enabled, no policy` notices are expected because browser roles intentionally have no direct access to private application tables.

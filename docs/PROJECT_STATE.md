@@ -210,10 +210,11 @@ Last updated: 2026-09-29
 - Supabase Development `nlrzdgcxydmcvhushzwv` and Staging `sdfwdhbryjyfufgtfqmf` were transferred from the Free `HUSTLERO (HCS)` organization to the existing Pro `scaleopsph-max's Org` organization. Both remain `ACTIVE_HEALTHY` in Singapore with unchanged project references and database hosts.
 - Pre/post-transfer checks matched the application-schema fingerprint and exact business/Auth/Storage row counts. Both environments retain the same ordered 47 migration names, and the live staging API, POS, Back Office, and Super Admin endpoints returned 200 after transfer; checkout authentication and CORS guards returned 401 and 204 respectively.
 - Supabase reported an incremental compute cost of USD 10 per transferred project, approximately USD 20/month total. Transfer evidence is recorded in `docs/operations/SUPABASE_ORGANIZATION_TRANSFER_2026-09-29.md`.
+- Leaked-password protection is enabled for the email provider in both transferred Pro projects. Fresh Development and Staging Security Advisor checks no longer report the leaked-password warning; only the expected informational private-schema RLS-without-browser-policy notices remain.
 
 ## Next safe action
 
-Enable and verify Supabase leaked-password protection for the transferred Pro projects, then create a controlled staging owner account and execute the authenticated end-to-end owner UAT checklist with generated data only.
+Create a controlled staging owner account and execute the authenticated end-to-end owner UAT checklist with generated data only.
 
 ## Production state
 
