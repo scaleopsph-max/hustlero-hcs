@@ -212,10 +212,11 @@ Last updated: 2026-09-29
 - Supabase reported an incremental compute cost of USD 10 per transferred project, approximately USD 20/month total. Transfer evidence is recorded in `docs/operations/SUPABASE_ORGANIZATION_TRANSFER_2026-09-29.md`.
 - Leaked-password protection is enabled for the email provider in both transferred Pro projects. Fresh Development and Staging Security Advisor checks no longer report the leaked-password warning; only the expected informational private-schema RLS-without-browser-policy notices remain.
 - A controlled Staging Auth owner invitation was sent and the generated Auth record is present. Account acceptance and password creation remain owner-controlled; no account identifier or credential is stored in the public repository.
+- Staging Back Office version `90e26f9f-cc2b-40f2-ada8-cfafd9136277` adds the complete owner password-recovery flow: forgot-password request, expired-link guidance, recovery-session password confirmation, and return to sign-in after a successful update. The staging candidate contains zero Development Supabase/API references, passed Cloudflare dry run, and the deployed reset and expired-link screens were smoke-tested.
 
 ## Next safe action
 
-Complete the pending controlled Staging owner invitation, then execute the authenticated end-to-end owner UAT checklist with generated data only.
+Complete the owner-controlled Staging password reset using a fresh recovery email, then execute the authenticated end-to-end owner UAT checklist with generated data only.
 
 ## Production state
 

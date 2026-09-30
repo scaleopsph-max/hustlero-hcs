@@ -42,6 +42,7 @@ const stepHrefs: Partial<Record<OnboardingResponse['steps'][number]['code'], str
 }
 
 type Business = { tenantId: string; tenantName: string; isOwner: boolean }
+type AuthMode = 'sign-in' | 'sign-up' | 'forgot-password' | 'update-password'
 
 function client(): SupabaseClient | null {
   return supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null
@@ -66,9 +67,10 @@ export default function SetupPage() {
   const [auth] = useState(client)
   const [user, setUser] = useState<User | null>(null)
   const [token, setToken] = useState<string | null>(null)
-  const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-up')
+  const [mode, setMode] = useState<AuthMode>('sign-up')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [businesses, setBusinesses] = useState<Business[]>([])
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null)
   const [onboarding, setOnboarding] = useState<OnboardingResponse | null>(null)
@@ -127,7 +129,21 @@ export default function SetupPage() {
       return
     }
 
-    const { data: listener } = auth.auth.onAuthStateChange((_event, session) => {
+    const hashParameters = new URLSearchParams(window.location.hash.slice(1))
+    if (hashParameters.get('error_code') === 'otp_expired') {
+      setMode('forgot-password')
+      setError(
+        'This password reset link is invalid or expired. Request a new link below and use only the newest email.',
+      )
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
+    }
+
+    const { data: listener } = auth.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setMode('update-password')
+        setError(null)
+        setNotice('Recovery link verified. Create a new password to continue.')
+      }
       setUser(session?.user ?? null)
       setToken(session?.access_token ?? null)
       if (!session) {
@@ -149,11 +165,11 @@ export default function SetupPage() {
   }, [auth])
 
   useEffect(() => {
-    if (!token) return
+    if (!token || mode === 'update-password') return
     void loadBusinesses(token).catch((cause: unknown) =>
       setError(cause instanceof Error ? cause.message : 'Could not load businesses.'),
     )
-  }, [token, loadBusinesses])
+  }, [token, mode, loadBusinesses])
 
   useEffect(() => {
     if (!token || !selectedTenantId) {
@@ -172,7 +188,25 @@ export default function SetupPage() {
     setError(null)
     setNotice(null)
     try {
-      if (mode === 'sign-up') {
+      if (mode === 'forgot-password') {
+        const { error: authError } = await auth.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/setup?recovery=1`,
+        })
+        if (authError) throw authError
+        setNotice(
+          'If an account exists for this email, a password reset link has been sent. Use only the newest email.',
+        )
+      } else if (mode === 'update-password') {
+        if (!user) throw new Error('The recovery session is missing or expired. Request a new password reset link.')
+        if (password !== confirmPassword) throw new Error('The passwords do not match.')
+        const { error: authError } = await auth.auth.updateUser({ password })
+        if (authError) throw authError
+        await auth.auth.signOut({ scope: 'local' })
+        setPassword('')
+        setConfirmPassword('')
+        setMode('sign-in')
+        setNotice('Password updated. Sign in with your new password.')
+      } else if (mode === 'sign-up') {
         const { data, error: authError } = await auth.auth.signUp({
           email,
           password,
@@ -283,7 +317,7 @@ export default function SetupPage() {
           <span className="font-display text-xl font-bold">HUSTLERO</span>
           <span className="text-sm text-ink-500">Business setup</span>
         </div>
-        {user && auth ? (
+        {user && auth && mode !== 'update-password' ? (
           <button
             type="button"
             onClick={() => void auth.auth.signOut()}
@@ -319,55 +353,121 @@ export default function SetupPage() {
             </p>
           ) : null}
 
-          {!loading && !user && auth ? (
+          {!loading && auth && (!user || mode === 'update-password') ? (
             <>
               <h1 className="font-display text-3xl font-bold">
-                {mode === 'sign-up' ? 'Create your account' : 'Welcome back'}
+                {mode === 'sign-up'
+                  ? 'Create your account'
+                  : mode === 'forgot-password'
+                    ? 'Reset your password'
+                    : mode === 'update-password'
+                      ? 'Create a new password'
+                      : 'Welcome back'}
               </h1>
+              {mode === 'forgot-password' ? (
+                <p className="mt-2 max-w-md text-sm leading-6 text-ink-500">
+                  Enter your account email. The newest recovery link replaces older links.
+                </p>
+              ) : null}
               <form onSubmit={(event) => void submitAuth(event)} className="mt-7 flex max-w-md flex-col gap-4">
-                <label className="flex flex-col gap-1.5 text-sm font-medium">
-                  Email
-                  <input
-                    className={inputClass}
-                    type="email"
-                    autoComplete="email"
-                    required
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                  />
-                </label>
-                <label className="flex flex-col gap-1.5 text-sm font-medium">
-                  Password
-                  <input
-                    className={inputClass}
-                    type="password"
-                    autoComplete={mode === 'sign-up' ? 'new-password' : 'current-password'}
-                    minLength={6}
-                    required
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                  />
-                </label>
+                {mode !== 'update-password' ? (
+                  <label className="flex flex-col gap-1.5 text-sm font-medium">
+                    Email
+                    <input
+                      className={inputClass}
+                      type="email"
+                      autoComplete="email"
+                      required
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                    />
+                  </label>
+                ) : null}
+                {mode !== 'forgot-password' ? (
+                  <label className="flex flex-col gap-1.5 text-sm font-medium">
+                    {mode === 'update-password' ? 'New password' : 'Password'}
+                    <input
+                      className={inputClass}
+                      type="password"
+                      autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'}
+                      minLength={6}
+                      required
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                    />
+                  </label>
+                ) : null}
+                {mode === 'update-password' ? (
+                  <label className="flex flex-col gap-1.5 text-sm font-medium">
+                    Confirm new password
+                    <input
+                      className={inputClass}
+                      type="password"
+                      autoComplete="new-password"
+                      minLength={6}
+                      required
+                      value={confirmPassword}
+                      onChange={(event) => setConfirmPassword(event.target.value)}
+                    />
+                  </label>
+                ) : null}
                 <button type="submit" disabled={busy} className={buttonClass}>
                   {busy ? <Loader2 size={18} className="animate-spin" /> : null}
-                  {mode === 'sign-up' ? 'Create account' : 'Sign in'}
+                  {mode === 'sign-up'
+                    ? 'Create account'
+                    : mode === 'forgot-password'
+                      ? 'Send reset link'
+                      : mode === 'update-password'
+                        ? 'Save new password'
+                        : 'Sign in'}
                   <ArrowRight size={17} />
                 </button>
               </form>
-              <button
-                type="button"
-                className="mt-5 text-sm font-semibold underline"
-                onClick={() => {
-                  setMode(mode === 'sign-up' ? 'sign-in' : 'sign-up')
-                  setError(null)
-                }}
-              >
-                {mode === 'sign-up' ? 'Already have an account? Sign in' : 'New to HUSTLERO? Create an account'}
-              </button>
+              {mode !== 'update-password' ? (
+                <div className="mt-5 flex flex-wrap gap-x-5 gap-y-3 text-sm font-semibold">
+                  <button
+                    type="button"
+                    className="underline"
+                    onClick={() => {
+                      setMode(mode === 'sign-up' ? 'sign-in' : 'sign-up')
+                      setError(null)
+                      setNotice(null)
+                    }}
+                  >
+                    {mode === 'sign-up' ? 'Already have an account? Sign in' : 'New to HUSTLERO? Create an account'}
+                  </button>
+                  {mode === 'sign-in' ? (
+                    <button
+                      type="button"
+                      className="underline"
+                      onClick={() => {
+                        setMode('forgot-password')
+                        setError(null)
+                        setNotice(null)
+                      }}
+                    >
+                      Forgot password?
+                    </button>
+                  ) : null}
+                  {mode === 'forgot-password' ? (
+                    <button
+                      type="button"
+                      className="underline"
+                      onClick={() => {
+                        setMode('sign-in')
+                        setError(null)
+                        setNotice(null)
+                      }}
+                    >
+                      Back to sign in
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
             </>
           ) : null}
 
-          {user && !selectedTenantId ? (
+          {user && mode !== 'update-password' && !selectedTenantId ? (
             <>
               <h1 className="font-display text-3xl font-bold">Create your business</h1>
               <p className="mt-2 text-sm text-ink-500">
@@ -439,7 +539,7 @@ export default function SetupPage() {
             </>
           ) : null}
 
-          {user && selectedTenantId ? (
+          {user && mode !== 'update-password' && selectedTenantId ? (
             <>
               <h1 className="font-display text-3xl font-bold">
                 {businesses.find((item) => item.tenantId === selectedTenantId)?.tenantName ?? 'Business setup'}
