@@ -57,4 +57,6 @@ The Back Office sidebar previously displayed `PABL0 / 0 locations` because it us
 
 The guided Staging POS path passed from device activation through cashier sign-in, register opening, sale completion, immutable ledger posting, reporting, and balanced register close. The evidence confirms that the generated transaction remained tenant- and branch-scoped and reconciled across the operational projections and append-only records checked above.
 
-This report does not sign off the complete pilot. Refund validation, broader module UAT, backup restore, Worker rollback, and final owner release approval remain separate gates.
+Same-session full cash refund validation subsequently passed and is recorded in `docs/qa/STAGING_REFUND_UAT_2026-10-01.md`.
+
+This report does not sign off the complete pilot. Broader module UAT, backup restore, Worker rollback, and final owner release approval remain separate gates.
