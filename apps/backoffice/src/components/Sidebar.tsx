@@ -7,7 +7,7 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { sessionContextResponseSchema, type TenantAccess } from '@hcs/contracts'
 import { Glass, Logo, cn } from '@hcs/ui'
-import { saveActiveTenant, selectActiveTenant } from '@/lib/active-tenant'
+import { formatLocationCount, saveActiveTenant, selectActiveTenant } from '@/lib/active-tenant'
 import { NAV_CONTEXT, navGroups, resolveNav } from '@/mock/nav'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -84,9 +84,7 @@ export function Sidebar({ className, onNavigate }: { className?: string; onNavig
           <span className="flex min-w-0 flex-col">
             <span className="truncate text-sm font-semibold">{activeTenant?.tenantName ?? 'Loading business...'}</span>
             <span className="text-xs text-ink-300">
-              {activeTenant
-                ? `${activeTenant.locationIds.length} location${activeTenant.locationIds.length === 1 ? '' : 's'}`
-                : 'Please wait'}
+              {activeTenant ? formatLocationCount(activeTenant) : 'Please wait'}
             </span>
           </span>
           <ChevronDown
@@ -116,9 +114,7 @@ export function Sidebar({ className, onNavigate }: { className?: string; onNavig
               >
                 <span className="min-w-0">
                   <span className="block truncate font-semibold">{tenant.tenantName}</span>
-                  <span className="block text-xs text-ink-300">
-                    {tenant.locationIds.length} location{tenant.locationIds.length === 1 ? '' : 's'}
-                  </span>
+                  <span className="block text-xs text-ink-300">{formatLocationCount(tenant)}</span>
                 </span>
                 {tenant.tenantId === activeTenant?.tenantId ? <span className="text-xs">Active</span> : null}
               </button>

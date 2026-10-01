@@ -2,6 +2,10 @@ const activeTenantStorageKey = 'hcs:backoffice:active-tenant'
 
 type TenantChoice = { tenantId: string; isOwner: boolean }
 
+export function formatLocationCount({ locationCount }: { locationCount: number }): string {
+  return `${locationCount} location${locationCount === 1 ? '' : 's'}`
+}
+
 export function selectActiveTenant<T extends TenantChoice>(tenants: T[]): T | undefined {
   if (typeof window !== 'undefined') {
     const storedTenantId = window.localStorage.getItem(activeTenantStorageKey)

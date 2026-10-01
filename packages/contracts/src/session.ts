@@ -9,6 +9,7 @@ export const tenantAccessSchema = z.object({
   isOwner: z.boolean(),
   employeeId: identifierSchema.nullable(),
   locationIds: z.array(identifierSchema),
+  locationCount: z.number().int().nonnegative(),
   permissions: z.array(z.string().min(1)),
   entitlements: z.array(z.string().min(1)),
 })

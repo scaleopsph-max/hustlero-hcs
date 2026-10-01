@@ -13,6 +13,7 @@ const tenantRowSchema = z.object({
   is_owner: z.boolean(),
   employee_id: z.string().uuid().nullable(),
   location_ids: z.array(z.string().uuid()),
+  location_count: z.number().int().nonnegative(),
   permissions: z.array(z.string()),
   entitlements: z.array(z.string()),
 })
@@ -25,6 +26,12 @@ const sessionAccessSql = `
     membership.is_owner,
     employee.id as employee_id,
     coalesce(location_access.location_ids, array[]::uuid[]) as location_ids,
+    (
+      select count(*)::integer
+      from app.locations tenant_location
+      where tenant_location.tenant_id = membership.tenant_id
+        and tenant_location.is_active
+    ) as location_count,
     coalesce(permission_access.permissions, array[]::text[]) as permissions,
     coalesce(entitlement_access.entitlements, array[]::text[]) as entitlements
   from app.tenant_memberships membership
@@ -89,6 +96,7 @@ export const loadSessionAccessFromPostgres: SessionAccessLoader = async (userId,
         isOwner: parsed.is_owner,
         employeeId: parsed.employee_id,
         locationIds: parsed.location_ids,
+        locationCount: parsed.location_count,
         permissions: parsed.permissions,
         entitlements: parsed.entitlements,
       })
