@@ -224,10 +224,11 @@ Last updated: 2026-10-01
 - API Worker version `1f099099-8a16-4203-9b7d-610e99c9885a` and Back Office Worker version `e61b47e8-a317-4281-bfc8-fdc7402d6781` contain the fix. Full `npm run check`, deployment dry runs, API health/auth/CORS smoke tests, and authenticated browser validation passed. The sidebar selector and expanded business menu both show `PABL0 / 1 location`, while the Locations page still shows Main Store and Main Register.
 - Controlled Staging same-session cash refund UAT passed for receipt `MAIN-20261001-000002`. One P-00001 sale and its PHP 999.00 full refund each posted exactly once; stock moved `9 -> 8 -> 9`, session cash returned to PHP 1,000.00, sales and payment reports reconciled, and the register closed at PHP 1,000.00 expected/count with zero variance. Refund, payment reversal, inventory movement, cash movement, audit, outbox, and register-close evidence is recorded in `docs/qa/STAGING_REFUND_UAT_2026-10-01.md`.
 - The supported refund boundary was confirmed: the original register session must remain open. The closed-session receipt correctly blocks reversal, and cross-session cash refunds remain not started.
+- Controlled Staging purchasing and receiving UAT passed for `PO-UAT-20261001-001`. One generated supplier, one PHP 900.00 PO line, send transition, and full goods receipt each posted exactly once. P-00002 stock moved `10 -> 12`, its weighted average cost moved `PHP 499.00 -> PHP 490.83`, total inventory valuation reconciled at PHP 10,380.96, and all supplier/PO/receipt audit and outbox records matched. Evidence is recorded in `docs/qa/STAGING_PURCHASING_UAT_2026-10-01.md`.
 
 ## Next safe action
 
-Continue broader module UAT, then complete backup restore, Worker rollback, and final owner release approval gates.
+Continue broader module UAT with branch transfers, then complete backup restore, Worker rollback, and final owner release approval gates.
 
 ## Production state
 
