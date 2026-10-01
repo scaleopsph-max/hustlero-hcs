@@ -1,10 +1,10 @@
 # Staging Readiness
 
-Last reviewed: 2026-09-30
+Last reviewed: 2026-10-01
 
 ## Decision
 
-Staging infrastructure provisioning and public deployment smoke testing are complete, but staging is not ready for pilot invitations yet. The isolated Supabase project, Hyperdrive configuration, API, Back Office, POS, and Super Admin deployments exist; all committed migrations were replayed; and no production resource remains deployed. Leaked-password protection remains a pre-pilot security gate and is available only on Pro and above.
+Staging infrastructure provisioning and public deployment smoke testing are complete, but staging is not ready for pilot invitations yet. The isolated Supabase project, Hyperdrive configuration, API, Back Office, POS, and Super Admin deployments exist; all committed migrations were replayed; and no production resource remains deployed. Both Supabase projects are now in the Pro organization and leaked-password protection is enabled.
 
 ## Current gate status
 
@@ -16,14 +16,14 @@ Staging infrastructure provisioning and public deployment smoke testing are comp
 | Development smoke test | Pass | Worker health is 200 and unauthenticated protected inventory posting is 401. |
 | Tenant isolation | Pass | Database posture audit and tenant-selection regressions are recorded in the security audit. |
 | Inventory cutover | Pass | Controlled preview, post, reconcile, ledger, audit, and outbox validation passed on the permanent test tenant. |
-| Supabase leaked-password protection | Blocked | The organization is `tier_free`; the staging dashboard confirms this switch is available only on Pro and above. |
+| Supabase leaked-password protection | Pass | Development and Staging are in the Pro organization; leaked-password protection is enabled and fresh Security Advisor checks no longer report the warning. |
 | Staging Supabase project | Provisioned | `HUSTLERO HCS Staging` (`sdfwdhbryjyfufgtfqmf`) is healthy in Singapore at the confirmed $0/month project cost. |
 | Staging migration replay | Pass | All 47 committed migrations are recorded with exact repository versions, including multi-tender migration `20260928140928`. Direct posture checks passed; local invocation of remote pgTAP remains unavailable without Docker, while CI run `36502871749` passed the fresh replay and all pgTAP suites. |
 | Staging Hyperdrive and credentials | Provisioned | `hustlero-hcs-staging` (`008f24430d3e433eb478caaa52787fea`) uses a staging-only restricted login, SSL required, 20 origin connections, and caching disabled. |
 | Staging API Worker | Pass | `hustlero-hcs-api-staging` version `286f8d46-b29d-46de-8c27-22635a6cbb95` passed dry run, health 200, unauthenticated checkout 401, and POS-origin CORS 204. |
 | Staging web applications | Pass | Back Office `6c0e7192-74cb-4e8b-9b1f-82f9aa07fd1c`, POS `ba723e6b-4146-4134-8af9-da0d43f9cdb2`, and Admin `b969c720-9d84-482e-a9cf-a689cdc50ba9` each returned 200 and rendered their expected entry state. Back Office includes verified password recovery and fresh-session POS activation commands. The POS candidate contains the staging API origin and multi-tender checkout UI. |
 | Staging Auth URLs | Pass | Back Office is the site URL; Back Office and Super Admin staging wildcard redirects are allowlisted. |
-| Owner UAT | Not started | Begins only after staging smoke, security-advisor, and data-isolation gates pass. |
+| Owner UAT | In progress | Generated staging business, catalog, opening inventory, funds, employee, register, and POS device setup are verified. The `Front counter POS` is active for Main Store / Main Register; cashier sign-in and the guided test sale remain. |
 | Production | Not started | Production remains a separate manual promotion after UAT and recovery verification. |
 
 ## Provisioning order
