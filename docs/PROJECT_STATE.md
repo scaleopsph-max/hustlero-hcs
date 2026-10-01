@@ -218,10 +218,12 @@ Last updated: 2026-10-01
 - The owner-confirmed `Front counter POS` activation completed against the isolated Staging POS on 2026-10-01. The device is active for Main Store / Main Register, the one-time activation hash and expiry were cleared, a valid SHA-256 device-token hash is stored, and exactly one activation audit event exists. No raw activation code or device token is recorded in the repository.
 - The owner-confirmed staging cashier sign-in for `EMP-001` completed on `Front counter POS`. The resulting employee session is active and unexpired, its credential is stored only as a valid SHA-256 hash, failed PIN attempts remain zero, the credential is unlocked, and exactly one session-start audit event exists. The POS is waiting for Main Register opening cash before the guided sale.
 - The owner-confirmed Staging Main Register opening completed with PHP 1,000.00 generated starting cash. Exactly one register session is open for `EMP-001`, with one matching immutable opening-cash movement and one `register.opened` audit event. The POS catalog shows both generated `P SHIRT` variants with 10 units available each and is ready for the guided sale.
+- The owner-confirmed guided Staging POS sale completed as receipt `MAIN-20261001-000001`: one `P-00001` unit at PHP 999.00, PHP 1,000.00 cash tendered, and PHP 1.00 change. The completed sale, payment, decrement to 9 units on hand, cash movement, audit event, and outbox event each exist exactly once. Sales and Reports UIs show one transaction, PHP 999.00 net sales, PHP 499.00 COGS, PHP 500.00 gross profit, and the correct immutable receipt detail.
+- Non-blocking Staging UAT defect: the Back Office sidebar business summary displays `PABL0 / 0 locations` even though Main Store is present in location filters and is correctly linked to the receipt, inventory, register, and reports. Correct the summary count before pilot sign-off.
 
 ## Next safe action
 
-Complete the owner-confirmed guided Staging POS sale with generated product and payment data, then reconcile the resulting receipt, inventory, cash, audit, and reporting records.
+Close and reconcile the Staging Main Register with owner-confirmed counted cash, verify the shift report, then address the incorrect sidebar location count before continuing broader module UAT.
 
 ## Production state
 
