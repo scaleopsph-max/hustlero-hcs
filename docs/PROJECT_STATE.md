@@ -216,10 +216,11 @@ Last updated: 2026-10-01
 - Controlled owner UAT setup for `PABL0` now includes two inventory-tracked `P SHIRT` variants, immutable opening balances of 10 units each at PHP 499.00, two standard fund accounts, active cashier `EMP-001` assigned to Main Store with a hashed POS PIN, and active Main Register `REG-001`. Inventory balances, audit/outbox evidence, role and location assignments, and hashed credential storage were verified directly.
 - Staging Back Office version `6c0e7192-74cb-4e8b-9b1f-82f9aa07fd1c` refreshes the Supabase session immediately before the sensitive POS activation-code command, preventing an overnight stale browser token from producing a false missing-business denial. The candidate contains zero Development references.
 - The owner-confirmed `Front counter POS` activation completed against the isolated Staging POS on 2026-10-01. The device is active for Main Store / Main Register, the one-time activation hash and expiry were cleared, a valid SHA-256 device-token hash is stored, and exactly one activation audit event exists. No raw activation code or device token is recorded in the repository.
+- The owner-confirmed staging cashier sign-in for `EMP-001` completed on `Front counter POS`. The resulting employee session is active and unexpired, its credential is stored only as a valid SHA-256 hash, failed PIN attempts remain zero, the credential is unlocked, and exactly one session-start audit event exists. The POS is waiting for Main Register opening cash before the guided sale.
 
 ## Next safe action
 
-Verify staging cashier `EMP-001` PIN sign-in, then complete the guided test sale with generated data only.
+Open the staging Main Register with owner-confirmed generated starting cash, then complete the guided test sale with generated data only.
 
 ## Production state
 

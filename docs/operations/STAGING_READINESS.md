@@ -23,7 +23,7 @@ Staging infrastructure provisioning and public deployment smoke testing are comp
 | Staging API Worker | Pass | `hustlero-hcs-api-staging` version `286f8d46-b29d-46de-8c27-22635a6cbb95` passed dry run, health 200, unauthenticated checkout 401, and POS-origin CORS 204. |
 | Staging web applications | Pass | Back Office `6c0e7192-74cb-4e8b-9b1f-82f9aa07fd1c`, POS `ba723e6b-4146-4134-8af9-da0d43f9cdb2`, and Admin `b969c720-9d84-482e-a9cf-a689cdc50ba9` each returned 200 and rendered their expected entry state. Back Office includes verified password recovery and fresh-session POS activation commands. The POS candidate contains the staging API origin and multi-tender checkout UI. |
 | Staging Auth URLs | Pass | Back Office is the site URL; Back Office and Super Admin staging wildcard redirects are allowlisted. |
-| Owner UAT | In progress | Generated staging business, catalog, opening inventory, funds, employee, register, and POS device setup are verified. The `Front counter POS` is active for Main Store / Main Register; cashier sign-in and the guided test sale remain. |
+| Owner UAT | In progress | Generated staging business, catalog, opening inventory, funds, employee, register, and POS device setup are verified. The `Front counter POS` is active and `EMP-001` has an active audited session for Main Store / Main Register; register opening and the guided test sale remain. |
 | Production | Not started | Production remains a separate manual promotion after UAT and recovery verification. |
 
 ## Provisioning order
