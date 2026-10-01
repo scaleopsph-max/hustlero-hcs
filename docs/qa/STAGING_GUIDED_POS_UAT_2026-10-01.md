@@ -49,12 +49,12 @@ Controlled end-to-end validation against the isolated `HUSTLERO HCS Staging` env
 | Shift reporting | Passed: one closed session, zero open, zero exceptions, one transaction, PHP 999.00 net sales, zero variance |
 | Secret scan | Passed: no tracked credential was introduced |
 
-## Defect Found
+## Resolved Follow-up
 
-The Back Office sidebar business summary displays `PABL0 / 0 locations` even though Main Store is present in location filters and is correctly linked to inventory, register, receipt, and report records. This is non-blocking for the validated transaction but must be corrected before pilot sign-off.
+The Back Office sidebar previously displayed `PABL0 / 0 locations` because it used the owner's employee-assignment scope instead of the tenant's active-location total. The session contract and repository now expose an independently derived `locationCount`, with regression coverage for owner accounts that have no linked employee record. API Worker `1f099099-8a16-4203-9b7d-610e99c9885a` and Back Office Worker `e61b47e8-a317-4281-bfc8-fdc7402d6781` were deployed to Staging. Authenticated browser validation confirmed `PABL0 / 1 location` in both the selector and expanded menu, while Main Store and Main Register remained present on the Locations page.
 
 ## Conclusion
 
 The guided Staging POS path passed from device activation through cashier sign-in, register opening, sale completion, immutable ledger posting, reporting, and balanced register close. The evidence confirms that the generated transaction remained tenant- and branch-scoped and reconciled across the operational projections and append-only records checked above.
 
-This report does not sign off the complete pilot. Refund validation, the sidebar location-count correction, broader module UAT, backup restore, Worker rollback, and final owner release approval remain separate gates.
+This report does not sign off the complete pilot. Refund validation, broader module UAT, backup restore, Worker rollback, and final owner release approval remain separate gates.

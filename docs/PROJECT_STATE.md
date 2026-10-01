@@ -220,11 +220,12 @@ Last updated: 2026-10-01
 - The owner-confirmed Staging Main Register opening completed with PHP 1,000.00 generated starting cash. Exactly one register session is open for `EMP-001`, with one matching immutable opening-cash movement and one `register.opened` audit event. The POS catalog shows both generated `P SHIRT` variants with 10 units available each and is ready for the guided sale.
 - The owner-confirmed guided Staging POS sale completed as receipt `MAIN-20261001-000001`: one `P-00001` unit at PHP 999.00, PHP 1,000.00 cash tendered, and PHP 1.00 change. The completed sale, payment, decrement to 9 units on hand, cash movement, audit event, and outbox event each exist exactly once. Sales and Reports UIs show one transaction, PHP 999.00 net sales, PHP 499.00 COGS, PHP 500.00 gross profit, and the correct immutable receipt detail.
 - The Staging Main Register was closed and reconciled with PHP 1,999.00 expected and counted cash, zero variance, no variance movement, and exactly one close audit and outbox event. The Shifts & Receipts UI reports one closed session, zero exceptions, one transaction, PHP 999.00 net sales, and zero variance. Consolidated evidence is recorded in `docs/qa/STAGING_GUIDED_POS_UAT_2026-10-01.md`.
-- Non-blocking Staging UAT defect: the Back Office sidebar business summary displays `PABL0 / 0 locations` even though Main Store is present in location filters and is correctly linked to the receipt, inventory, register, and reports. Correct the summary count before pilot sign-off.
+- The Staging Back Office sidebar location-count defect is resolved. The summary had incorrectly used the authenticated employee's assigned-location authorization scope, which is empty for an owner without an employee record, instead of the tenant's active-location total. `/v1/me` now returns an independently derived `locationCount`; regression coverage confirms an owner with no employee location assignments still sees the correct business total.
+- API Worker version `1f099099-8a16-4203-9b7d-610e99c9885a` and Back Office Worker version `e61b47e8-a317-4281-bfc8-fdc7402d6781` contain the fix. Full `npm run check`, deployment dry runs, API health/auth/CORS smoke tests, and authenticated browser validation passed. The sidebar selector and expanded business menu both show `PABL0 / 1 location`, while the Locations page still shows Main Store and Main Register.
 
 ## Next safe action
 
-Correct the Back Office sidebar location count, add regression coverage, deploy the verified fix to Staging, and then continue refund and broader module UAT.
+Continue refund and broader module UAT, then complete backup restore, Worker rollback, and final owner release approval gates.
 
 ## Production state
 
