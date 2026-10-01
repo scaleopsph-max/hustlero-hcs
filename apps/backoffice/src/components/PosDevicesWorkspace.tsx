@@ -75,20 +75,26 @@ export function PosDevicesWorkspace() {
 
   async function createActivation(event: FormEvent) {
     event.preventDefault()
-    if (!token || !tenantId) return
+    if (!token || !tenantId || !auth) return
     setBusy(true)
     setError(null)
     setActivation(null)
     try {
+      const { data: refreshed, error: refreshError } = await auth.auth.refreshSession()
+      if (refreshError || !refreshed.session?.access_token) {
+        throw refreshError ?? new Error('Your session expired. Sign in again before creating a device activation.')
+      }
+      const requestToken = refreshed.session.access_token
+      setToken(requestToken)
       const created = posDeviceActivationCreateResponseSchema.parse(
-        await call('/v1/pos/devices/activation-codes', token, tenantId, {
+        await call('/v1/pos/devices/activation-codes', requestToken, tenantId, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ registerId, name: deviceName }),
         }),
       )
       setActivation({ code: created.activationCode, expiresAt: created.activationExpiresAt })
-      await load(token, tenantId)
+      await load(requestToken, tenantId)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not create a device activation.')
     } finally {

@@ -213,10 +213,12 @@ Last updated: 2026-09-29
 - Leaked-password protection is enabled for the email provider in both transferred Pro projects. Fresh Development and Staging Security Advisor checks no longer report the leaked-password warning; only the expected informational private-schema RLS-without-browser-policy notices remain.
 - The controlled Staging owner account is confirmed, its owner-controlled password recovery completed, and a fresh authenticated sign-in was verified on 2026-09-30. The Back Office loaded the `PABL0` tenant and its onboarding state; no credential is stored in the public repository.
 - Staging Back Office version `90e26f9f-cc2b-40f2-ada8-cfafd9136277` adds the complete owner password-recovery flow: forgot-password request, expired-link guidance, recovery-session password confirmation, and return to sign-in after a successful update. The staging candidate contains zero Development Supabase/API references, passed Cloudflare dry run, and the deployed reset and expired-link screens were smoke-tested.
+- Controlled owner UAT setup for `PABL0` now includes two inventory-tracked `P SHIRT` variants, immutable opening balances of 10 units each at PHP 499.00, two standard fund accounts, active cashier `EMP-001` assigned to Main Store with a hashed POS PIN, and active Main Register `REG-001`. Inventory balances, audit/outbox evidence, role and location assignments, and hashed credential storage were verified directly.
+- Staging Back Office version `6c0e7192-74cb-4e8b-9b1f-82f9aa07fd1c` refreshes the Supabase session immediately before the sensitive POS activation-code command, preventing an overnight stale browser token from producing a false missing-business denial. The candidate contains zero Development references and a pending `Front counter POS` activation was verified with only a SHA-256 code hash stored and no device token issued.
 
 ## Next safe action
 
-Execute the authenticated end-to-end owner UAT checklist with generated data only, beginning with the remaining onboarding steps for the `PABL0` tenant.
+Activate the pending `Front counter POS` through the isolated Staging POS, verify cashier PIN sign-in, and complete the guided test sale with generated data only.
 
 ## Production state
 
