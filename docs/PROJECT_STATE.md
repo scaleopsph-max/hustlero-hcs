@@ -217,10 +217,11 @@ Last updated: 2026-10-01
 - Staging Back Office version `6c0e7192-74cb-4e8b-9b1f-82f9aa07fd1c` refreshes the Supabase session immediately before the sensitive POS activation-code command, preventing an overnight stale browser token from producing a false missing-business denial. The candidate contains zero Development references.
 - The owner-confirmed `Front counter POS` activation completed against the isolated Staging POS on 2026-10-01. The device is active for Main Store / Main Register, the one-time activation hash and expiry were cleared, a valid SHA-256 device-token hash is stored, and exactly one activation audit event exists. No raw activation code or device token is recorded in the repository.
 - The owner-confirmed staging cashier sign-in for `EMP-001` completed on `Front counter POS`. The resulting employee session is active and unexpired, its credential is stored only as a valid SHA-256 hash, failed PIN attempts remain zero, the credential is unlocked, and exactly one session-start audit event exists. The POS is waiting for Main Register opening cash before the guided sale.
+- The owner-confirmed Staging Main Register opening completed with PHP 1,000.00 generated starting cash. Exactly one register session is open for `EMP-001`, with one matching immutable opening-cash movement and one `register.opened` audit event. The POS catalog shows both generated `P SHIRT` variants with 10 units available each and is ready for the guided sale.
 
 ## Next safe action
 
-Open the staging Main Register with owner-confirmed generated starting cash, then complete the guided test sale with generated data only.
+Complete the owner-confirmed guided Staging POS sale with generated product and payment data, then reconcile the resulting receipt, inventory, cash, audit, and reporting records.
 
 ## Production state
 
