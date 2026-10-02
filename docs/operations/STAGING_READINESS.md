@@ -1,6 +1,6 @@
 # Staging Readiness
 
-Last reviewed: 2026-10-01
+Last reviewed: 2026-10-02
 
 ## Decision
 
@@ -23,7 +23,7 @@ Staging infrastructure provisioning and public deployment smoke testing are comp
 | Staging API Worker | Pass | `hustlero-hcs-api-staging` version `1f099099-8a16-4203-9b7d-610e99c9885a` passed dry run, health 200, unauthenticated `/v1/me` 401, and Back Office-origin CORS 204. |
 | Staging web applications | Pass | Back Office `e61b47e8-a317-4281-bfc8-fdc7402d6781`, POS `ba723e6b-4146-4134-8af9-da0d43f9cdb2`, and Admin `b969c720-9d84-482e-a9cf-a689cdc50ba9` each returned 200 and rendered their expected entry state. Back Office includes verified password recovery, fresh-session POS activation commands, and the corrected active-location summary. The POS candidate contains the staging API origin and multi-tender checkout UI. |
 | Staging Auth URLs | Pass | Back Office is the site URL; Back Office and Super Admin staging wildcard redirects are allowlisted. |
-| Owner UAT | In progress | Generated staging business, catalog, opening inventory, funds, employee, register, POS device, guided sale, same-session full cash refund, balanced register closes, purchasing/receiving, and branch transfers are verified end to end. Receipt, reversal, purchase receipt, transfer, inventory, cost, cash, audit/outbox, alert/notification, sales, payment, valuation, and shift reports reconcile. The sidebar location summary is fixed; the generated second branch is also reflected consistently across branch-aware views. Customer/loyalty and broader module UAT remain. |
+| Owner UAT | In progress | Generated staging business, catalog, opening inventory, funds, employee, register, POS device, guided sale, same-session full cash refunds, balanced register closes, purchasing/receiving, branch transfers, and customer/loyalty are verified end to end. Receipt, reversal, purchase receipt, transfer, inventory, cost, cash, customer, loyalty, audit/outbox, alert/notification, sales, payment, valuation, and shift views reconcile. The sidebar location summary is fixed; the generated second branch is also reflected consistently across branch-aware views. Broader module and recovery UAT remain. |
 | Production | Not started | Production remains a separate manual promotion after UAT and recovery verification. |
 
 ## Provisioning order
