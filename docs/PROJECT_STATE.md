@@ -233,19 +233,29 @@ Last updated: 2026-10-02
 - Supabase physical-backup recovery passed from backup `2026-10-01 16:03:50+00` into isolated project `HUSTLERO HCS Recovery Drill 2026-10-02` (`fliglpvhqtkstpnczfnq`). The recovered project reached `ACTIVE_HEALTHY`; all 47 migrations, schema counts, Auth-user count, RLS posture, constraints, 57 timestamped business-table counts at the recovery point, tenant ownership, inventory, sales, payments, refunds, register, audit, and outbox checks reconciled. Evidence is recorded in `docs/qa/STAGING_RECOVERY_DRILL_2026-10-02.md`.
 - The owner explicitly confirmed recovery-drill cleanup. Supabase successfully deleted isolated project `fliglpvhqtkstpnczfnq`, and the Pro organization returned to its four original projects without changing Staging.
 - Final release verification passed on 2026-10-02: tracked-file secret scan, formatting, lint, strict typecheck, 85 Vitest cases, all standard builds, and all Cloudflare builds completed successfully. Staging remained `ACTIVE_HEALTHY`; Security Advisor returned only the established informational private-schema notices; API health/auth/CORS returned 200/401/204; and API release-candidate version `1f099099-8a16-4203-9b7d-610e99c9885a` remains at 100% traffic.
+- The owner approved the Staging release candidate for Production foundation provisioning. The isolated `HUSTLERO HCS Production` Supabase project (`gmprhuzbisfylidjpfob`) is active in Singapore and all 47 committed migrations are recorded as applied.
+- Production database posture verification found 67 business tables with RLS enabled, 13 explicit policies, and 130 routines. The only unvalidated constraint belongs to the Supabase-managed Realtime schema; no application-schema constraint is left unvalidated.
+- Production Hyperdrive `hustlero-hcs-production` (`a611fc9b39974b59a887529621440b6c`) uses a dedicated restricted login, SSL required, 20 origin connections, and caching disabled. The generated credential was rotated immediately after terminal-title exposure and is not stored in the repository.
+- Production API Worker version `180681b0-d9f2-4c2c-8b9b-38241c0f2cb1` is deployed at `https://hustlero-hcs-api.scaleopsph.workers.dev`; health, unauthenticated access rejection, and Back Office/POS CORS smoke checks returned 200/401/204.
+- Production Back Office version `afaf999e-7c52-4500-bf0a-3d22165c390b`, POS version `c4f70120-2818-4ce8-8a27-2d56528796a8`, and Super Admin version `84603dd8-2346-4103-92ff-d5fe99d19457` are deployed and returned 200 from their production Workers URLs. Generated bundles contain the Production API and Supabase references and no Development or Staging references.
+- Production Supabase Auth uses the active asymmetric ECC P-256 signing key. The Back Office site URL and Back Office/Super Admin wildcard redirects are saved, leaked-password protection is enabled, and the fresh Security Advisor result contains only the 57 expected informational private-schema no-policy notices.
+- Production remains empty of tenants and Auth users. No owner account, tenant data, catalog, inventory, register, or transaction has been created; authenticated Production bootstrap and UAT are the next controlled gate.
 
 ## Next safe action
 
-Request final owner release approval before provisioning or promoting any production resource.
+Create the owner-confirmed Production identity, bootstrap the first tenant through the deployed Back Office, then run the controlled authenticated Production smoke/UAT checklist before admitting live data.
 
 ## Production state
 
-- Production URL: none
+- Production API URL: `https://hustlero-hcs-api.scaleopsph.workers.dev`
+- Production Back Office URL: `https://hustlero-hcs-backoffice.scaleopsph.workers.dev`
+- Production POS URL: `https://hustlero-hcs-pos.scaleopsph.workers.dev`
+- Production Super Admin URL: `https://hustlero-hcs-admin.scaleopsph.workers.dev`
 - Development API URL: `https://hustlero-hcs-api-development.scaleopsph.workers.dev`
 - Staging API URL: `https://hustlero-hcs-api-staging.scaleopsph.workers.dev`
 - Staging Back Office URL: `https://hustlero-hcs-backoffice-staging.scaleopsph.workers.dev`
 - Staging POS URL: `https://hustlero-hcs-pos-staging.scaleopsph.workers.dev`
 - Staging Super Admin URL: `https://hustlero-hcs-admin-staging.scaleopsph.workers.dev`
-- Production data: none
-- Production deployment: none
-- Rollback point: not applicable
+- Production data: no tenants or Auth users; foundation only
+- Production deployment: provisioned and unauthenticated smoke-tested
+- Rollback point: previous immutable Worker versions remain available; database recovery follows `docs/operations/RECOVERY_RUNBOOK.md`

@@ -47,7 +47,17 @@
       "name": "hustlero-hcs-api",
       "vars": {
         "ENVIRONMENT": "production",
+        "SUPABASE_URL": "https://gmprhuzbisfylidjpfob.supabase.co",
+        "BACKOFFICE_ORIGIN": "https://hustlero-hcs-backoffice.scaleopsph.workers.dev",
+        "POS_ORIGIN": "https://hustlero-hcs-pos.scaleopsph.workers.dev",
+        "ADMIN_ORIGIN": "https://hustlero-hcs-admin.scaleopsph.workers.dev",
       },
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "a611fc9b39974b59a887529621440b6c",
+        },
+      ],
     },
   },
 }
