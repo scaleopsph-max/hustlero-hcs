@@ -227,10 +227,11 @@ Last updated: 2026-10-02
 - Controlled Staging purchasing and receiving UAT passed for `PO-UAT-20261001-001`. One generated supplier, one PHP 900.00 PO line, send transition, and full goods receipt each posted exactly once. P-00002 stock moved `10 -> 12`, its weighted average cost moved `PHP 499.00 -> PHP 490.83`, total inventory valuation reconciled at PHP 10,380.96, and all supplier/PO/receipt audit and outbox records matched. Evidence is recorded in `docs/qa/STAGING_PURCHASING_UAT_2026-10-01.md`.
 - Controlled Staging branch-transfer UAT passed for `TR-UAT-20261001-001`. Dispatch moved two P-00002 units from Main Store into destination transit; receipt posted them to generated `UAT Branch 2`, leaving source 10, destination 2, transit zero, and combined inventory unchanged at 12. Average cost remained PHP 490.83 at both branches, total valuation stayed PHP 10,380.96, all transfer audit/outbox records matched, and the destination out-of-stock alert automatically resolved while notification history remained preserved. Evidence is recorded in `docs/qa/STAGING_TRANSFER_UAT_2026-10-01.md`.
 - Controlled Staging customer and loyalty UAT passed for generated customer `CUST-000001` and receipt `MAIN-20261002-000001`. The customer-linked PHP 999.00 cash sale earned 9 points at the exact PHP 100.00 rate; its same-session full refund appended a `-9` reversal, restored P-00001 stock to 9, returned customer net spend and point balance to zero, and left one retained visit. The register closed at PHP 1,000.00 expected/count with zero variance, and all sale, customer-link, loyalty, refund, register, audit, and outbox evidence reconciled exactly once. Evidence is recorded in `docs/qa/STAGING_CUSTOMER_LOYALTY_UAT_2026-10-02.md`.
+- The owner-confirmed existing Staging owner identity is provisioned as the single active `super_admin` allowlist entry. Its tenant-owner membership remains active and unchanged; subscription plans, assignments, overrides, and support grants remain empty. Super Admin TOTP enrollment is still required before subscription and support-access UAT.
 
 ## Next safe action
 
-Complete the remaining broader-module staging UAT, then verify backup restore, Worker rollback, and the final owner release approval gates.
+Complete the owner-controlled Staging Super Admin sign-in and TOTP enrollment, then validate subscription controls and time-boxed support access before the recovery and final release gates.
 
 ## Production state
 
