@@ -2,7 +2,7 @@
 
 ## Result
 
-Pass, with drill-project cleanup pending owner confirmation.
+Pass. The drill-only recovery project was deleted after owner confirmation.
 
 ## Database restore
 
@@ -46,5 +46,5 @@ No bound resource or database migration was changed by the Worker rollback.
 
 ## Follow-up
 
-Delete the drill-only recovery project after explicit owner confirmation. Then run the final repository verification and release-security checks before requesting production approval.
+The owner explicitly confirmed deletion, Supabase reported successful removal, and the organization returned to its four original projects. Run the final repository verification and release-security checks before requesting production approval.
 

@@ -4,13 +4,13 @@ Last reviewed: 2026-10-02
 
 ## Decision
 
-Staging infrastructure provisioning and public deployment smoke testing are complete, but staging is not ready for pilot invitations yet. The isolated Supabase project, Hyperdrive configuration, API, Back Office, POS, and Super Admin deployments exist; all committed migrations were replayed; and no production resource remains deployed. Both Supabase projects are now in the Pro organization and leaked-password protection is enabled.
+All technical Staging gates are complete. The isolated Supabase project, Hyperdrive configuration, API, Back Office, POS, and Super Admin deployments exist; all committed migrations were replayed; owner UAT and recovery verification passed; and no production resource is deployed. Both Supabase projects are in the Pro organization and leaked-password protection is enabled. Pilot or production promotion now requires final owner release approval.
 
 ## Current gate status
 
 | Gate | Status | Evidence or next action |
 | --- | --- | --- |
-| Application check | Pass | Formatting, lint, strict typecheck, 83 Vitest cases, standard builds, and Cloudflare builds passed locally. |
+| Application check | Pass | Secret scan, formatting, lint, strict typecheck, 85 Vitest cases, standard builds, and Cloudflare builds passed locally on 2 Oct. |
 | Fresh database replay | Pass | GitHub CI replays migrations and pgTAP suites from a fresh Supabase stack. |
 | Dependency and secret scan | Pass | High-severity npm audit and tracked-file secret scan are CI gates. |
 | Development smoke test | Pass | Worker health is 200 and unauthenticated protected inventory posting is 401. |
@@ -25,7 +25,8 @@ Staging infrastructure provisioning and public deployment smoke testing are comp
 | Staging Auth URLs | Pass | Back Office is the site URL; Back Office and Super Admin staging wildcard redirects are allowlisted. |
 | Staging platform operator | Pass | The owner-confirmed existing Staging owner identity is the single active `super_admin` allowlist entry. Isolated Super Admin sign-in and TOTP enrollment passed, tenant membership remains unchanged, and the session reached AAL2. |
 | Owner UAT | Pass | Generated staging business, catalog, opening inventory, funds, employee, register, POS device, guided sale, same-session full cash refunds, balanced register closes, purchasing/receiving, branch transfers, customer/loyalty, subscription controls, and time-boxed support access are verified end to end. Operational, customer, loyalty, subscription, support, audit/outbox, reporting, alert, notification, and branch-aware views reconcile. |
-| Recovery verification | Pass | The 1 Oct physical backup restored to isolated project `fliglpvhqtkstpnczfnq`; migrations, schema, Auth, 57 timestamped table counts, tenant ownership, and business ledgers reconciled. API Worker rollback to `286f8d46-b29d-46de-8c27-22635a6cbb95` passed smoke checks and current version `1f099099-8a16-4203-9b7d-610e99c9885a` was restored to 100% traffic. Cleanup is pending owner confirmation. |
+| Recovery verification | Pass | The 1 Oct physical backup restored to isolated project `fliglpvhqtkstpnczfnq`; migrations, schema, Auth, 57 timestamped table counts, tenant ownership, and business ledgers reconciled. API Worker rollback to `286f8d46-b29d-46de-8c27-22635a6cbb95` passed smoke checks and current version `1f099099-8a16-4203-9b7d-610e99c9885a` was restored to 100% traffic. The drill project was deleted after owner confirmation. |
+| Final release checks | Pass | Staging remained `ACTIVE_HEALTHY`; Security Advisor reported only the established informational private-schema notices; API health/auth/CORS returned 200/401/204; and release-candidate API version `1f099099-8a16-4203-9b7d-610e99c9885a` receives 100% traffic. |
 | Production | Not started | Production remains a separate manual promotion after UAT and recovery verification. |
 
 ## Provisioning order
