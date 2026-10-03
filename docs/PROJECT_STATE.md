@@ -244,10 +244,12 @@ Last updated: 2026-10-03
 - The controlled Production tenant profile and all 8 feature entitlements are configured. Catalog bootstrap contains `SAH SOCKS V1 / WHITE` (`SAH-00001`) at PHP 499.00 retail and PHP 250.00 unit cost, with an immutable 100-unit Main Store opening balance. The Capital/COGS and Operating fund accounts are active with zero balances.
 - Production workforce and register bootstrap contains active cashier `EMP-001` assigned to Main Store, active `Main Register / REG-001`, and one active `Front counter POS`. The first unused activation code expired and its device record was safely revoked before a fresh one-time code activated the current device; no raw PIN, activation code, or device token is recorded.
 - The owner-confirmed Production guided sale completed as receipt `MAIN-20261003-000001`: one `SAH-00001` unit at PHP 499.00, PHP 500.00 tendered, and PHP 1.00 change. Stock moved `100 -> 99`, the register cash ledger moved `PHP 1,000.00 -> PHP 1,499.00`, and the sale, payment, inventory movement, cash movement, audit, and outbox records each exist exactly once. Evidence is recorded in `docs/qa/PRODUCTION_GUIDED_POS_UAT_2026-10-03.md`.
+- The owner-confirmed same-session full refund for `MAIN-20261003-000001` completed with return-to-stock enabled. The receipt is `refunded`, stock restored `99 -> 100`, register cash returned `PHP 1,499.00 -> PHP 1,000.00`, and the refund, payment reversal, inventory movement, cash movement, audit, and outbox records each exist exactly once.
+- The owner-confirmed Production Main Register close completed with PHP 1,000.00 expected and counted cash, PHP 0.00 variance, no variance movement, one close audit event, one close outbox event, and zero open register sessions. Reports show one closed session, zero open sessions, zero exceptions, and PHP 0.00 net sales after the full refund. Evidence is recorded in `docs/qa/PRODUCTION_GUIDED_POS_UAT_2026-10-03.md`.
 
 ## Next safe action
 
-Validate the Production receipt and reporting surfaces for `MAIN-20261003-000001`, run an owner-confirmed same-session full refund and reconciliation, close the register at its verified expected cash, then complete Production rollback validation and final go-live approval before admitting live operations.
+Complete Production rollback/release validation and final go-live approval review before admitting live operations.
 
 ## Production state
 

@@ -34,10 +34,12 @@ The approved Staging release candidate has been provisioned as an isolated Produ
 - The auto-slug regression is covered by unit tests and fixed in Production Back Office version `81742123-7a31-41af-bedb-7d8cdc30faed`; the build passed production-reference isolation, Cloudflare dry run, deployment, HTTP 200, and authenticated setup-state checks.
 - Controlled bootstrap includes one tracked product variant, an immutable 100-unit opening balance, two zero-balance fund accounts, active cashier `EMP-001`, active Main Register, and one active Front counter POS. The expired unused activation record was revoked before the current device was activated, and no raw credential is retained in this report or the repository.
 - Guided receipt `MAIN-20261003-000001` completed for one `SAH-00001` unit at PHP 499.00 with PHP 500.00 cash tender and PHP 1.00 change. The inventory balance is 99 units, the open register's expected cash is PHP 1,499.00, and every sale-side business record, audit event, and outbox event reconciled exactly once.
+- The owner-confirmed same-session full refund completed for the guided receipt with return-to-stock enabled. The receipt is `refunded`, inventory returned to 100 units, register expected cash returned to PHP 1,000.00, and refund/payment-reversal/inventory/cash/audit/outbox records reconciled exactly once.
+- The owner-confirmed register close completed at PHP 1,000.00 counted cash against PHP 1,000.00 expected cash. Variance is PHP 0.00, no close-variance movement exists, one close audit and one close outbox event exist, and the final report shows zero open sessions and zero exceptions.
 
 ## Release boundary
 
-The foundation is in controlled bootstrap, not general availability. Tenant setup, catalog, opening inventory, workforce, POS activation, and the initial guided cash sale have passed. The next gate requires receipt/report validation, an owner-confirmed same-session refund and register reconciliation, Production rollback confirmation, and final go-live approval. Do not copy Staging credentials or generated UAT records into Production.
+The foundation is in controlled bootstrap, not general availability. Tenant setup, catalog, opening inventory, workforce, POS activation, guided cash sale, full refund, reporting reconciliation, and zero-variance register close have passed. The next gate is Production rollback/release validation followed by final go-live approval. Do not copy Staging credentials or generated UAT records into Production.
 
 ## Rollback and recovery
 
