@@ -248,10 +248,11 @@ Last updated: 2026-10-03
 - The owner-confirmed Production Main Register close completed with PHP 1,000.00 expected and counted cash, PHP 0.00 variance, no variance movement, one close audit event, one close outbox event, and zero open register sessions. Reports show one closed session, zero open sessions, zero exceptions, and PHP 0.00 net sales after the full refund. Evidence is recorded in `docs/qa/PRODUCTION_GUIDED_POS_UAT_2026-10-03.md`.
 - Production release smoke validation after the controlled UAT returned API health 200, unauthenticated `/v1/me` 401, Back Office-origin CORS 204, Back Office 200, and POS 200. Wrangler deployment inventory shows only one listed version for Production API, POS, and Super Admin; Back Office has an older version, but there is no matching previous full-stack release set for a safe traffic-switch rollback drill. No Production traffic was switched.
 - The owner approved the documented single-version rollback exception. Final go-live review passed: Production is `ACTIVE_HEALTHY`, all 47 migrations are present, Security Advisor reports only the established 57 informational private-schema notices, the tracked-file secret scan passes, and the controlled transaction state is fully reversed with a balanced closed register. Technical readiness is complete; owner go-live approval remains the only release decision.
+- The owner approved `HUSTLERO PRODUCTION GO-LIVE FOR SAH RESTORATION` on 2026-10-03. Production is now approved for live pilot operations; the controlled UAT sale/refund remains retained as immutable audit evidence, and the register remains closed until the operator intentionally opens it for a live shift.
 
 ## Next safe action
 
-Obtain the owner's final go-live approval before admitting live operations; keep the single-version rollback exception and recovery runbook attached to the release record.
+Begin the first live operating shift from the Production Back Office/POS URLs, with the operator opening the register and recording starting cash intentionally. Keep the single-version rollback exception and recovery runbook attached to the release record.
 
 ## Production state
 
@@ -265,5 +266,5 @@ Obtain the owner's final go-live approval before admitting live operations; keep
 - Staging POS URL: `https://hustlero-hcs-pos-staging.scaleopsph.workers.dev`
 - Staging Super Admin URL: `https://hustlero-hcs-admin-staging.scaleopsph.workers.dev`
 - Production data: one controlled owner, one configured pilot tenant, one catalog variant, one opening balance, one cashier, one register, one active POS device, and one controlled guided-sale receipt
-- Production deployment: provisioned, smoke-tested, and guided cash-sale validated; refund, register close, reporting reconciliation, rollback, and final go-live approval remain gated
+- Production deployment: provisioned, smoke-tested, UAT sale/refund/reconciliation validated, rollback exception approved, and live pilot go-live approved; register remains intentionally closed pending the first live shift
 - Rollback point: previous immutable Worker versions remain available; database recovery follows `docs/operations/RECOVERY_RUNBOOK.md`

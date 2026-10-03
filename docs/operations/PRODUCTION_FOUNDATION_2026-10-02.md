@@ -38,10 +38,11 @@ The approved Staging release candidate has been provisioned as an isolated Produ
 - The owner-confirmed register close completed at PHP 1,000.00 counted cash against PHP 1,000.00 expected cash. Variance is PHP 0.00, no close-variance movement exists, one close audit and one close outbox event exist, and the final report shows zero open sessions and zero exceptions.
 - Post-UAT release smoke checks returned API health 200, unauthenticated `/v1/me` 401, Back Office-origin CORS 204, Back Office 200, and POS 200. The deployment inventory currently has one listed version for Production API, POS, and Super Admin; Back Office has an older version, but no matching previous full-stack release set exists for a safe rollback drill. No Production traffic was switched.
 - The owner approved the single-version rollback exception. Final technical go-live review passed with Production `ACTIVE_HEALTHY`, all 47 migrations present, only the established 57 informational private-schema Security Advisor notices, a passing tracked-file secret scan, and fully reversed controlled UAT data. Technical readiness is complete; final owner go-live approval is still required before live operations.
+- The owner approved `HUSTLERO PRODUCTION GO-LIVE FOR SAH RESTORATION` on 2026-10-03. The Production pilot is approved for live operations. The controlled UAT sale/refund remains as immutable audit evidence; the register is intentionally closed and must be opened deliberately for the first live shift.
 
 ## Release boundary
 
-The foundation is technically ready but remains gated from general availability until the owner gives final go-live approval. Tenant setup, catalog, opening inventory, workforce, POS activation, guided cash sale, full refund, reporting reconciliation, and zero-variance register close have passed. The single-version rollback exception and recovery runbook remain part of the release record. Do not copy Staging credentials or generated UAT records into Production.
+The Production pilot is approved for live operations after owner sign-off. Tenant setup, catalog, opening inventory, workforce, POS activation, guided cash sale, full refund, reporting reconciliation, and zero-variance register close have passed. The single-version rollback exception and recovery runbook remain part of the release record. Do not copy Staging credentials or generated UAT records into Production.
 
 ## Rollback and recovery
 

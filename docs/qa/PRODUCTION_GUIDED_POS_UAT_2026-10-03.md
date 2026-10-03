@@ -32,6 +32,6 @@ The owner-confirmed register close completed with PHP 1,000.00 expected and coun
 
 ## Remaining gate
 
-Receipt, Sales, Payments, Inventory, and Shifts & receipts reports were validated after the sale and after the refund. Production smoke checks returned API 200, unauthenticated API access 401, CORS 204, Back Office 200, and POS 200. The owner approved the single-version rollback exception. Remaining gate: final owner go-live approval.
+Receipt, Sales, Payments, Inventory, and Shifts & receipts reports were validated after the sale and after the refund. Production smoke checks returned API 200, unauthenticated API access 401, CORS 204, Back Office 200, and POS 200. The owner approved the single-version rollback exception and approved Production go-live for `SAH RESTORATION` on 2026-10-03. The register remains intentionally closed pending the first live shift.
 
 No raw PIN, activation code, device token, access token, or database credential is included in this evidence.
