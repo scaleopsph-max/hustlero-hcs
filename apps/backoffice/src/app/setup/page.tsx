@@ -12,6 +12,7 @@ import {
   type OnboardingResponse,
 } from '@hcs/contracts'
 import { saveActiveTenant, selectActiveTenant } from '@/lib/active-tenant'
+import { businessSlugFromName } from '@/lib/business-slug'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
@@ -76,6 +77,7 @@ export default function SetupPage() {
   const [onboarding, setOnboarding] = useState<OnboardingResponse | null>(null)
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
+  const [slugEdited, setSlugEdited] = useState(false)
   const [locationName, setLocationName] = useState('Main Store')
   const [locationCode, setLocationCode] = useState('MAIN')
   const [businessType, setBusinessType] = useState<'retail' | 'food_and_beverage' | 'services' | 'mixed'>('retail')
@@ -486,14 +488,9 @@ export default function SetupPage() {
                     maxLength={120}
                     value={name}
                     onChange={(event) => {
-                      setName(event.target.value)
-                      if (!slug)
-                        setSlug(
-                          event.target.value
-                            .toLowerCase()
-                            .replace(/[^a-z0-9]+/g, '-')
-                            .replace(/^-|-$/g, ''),
-                        )
+                      const nextName = event.target.value
+                      setName(nextName)
+                      if (!slugEdited) setSlug(businessSlugFromName(nextName))
                     }}
                   />
                 </label>
@@ -505,7 +502,10 @@ export default function SetupPage() {
                     pattern="[a-z0-9]+(-[a-z0-9]+)*"
                     maxLength={60}
                     value={slug}
-                    onChange={(event) => setSlug(event.target.value.toLowerCase())}
+                    onChange={(event) => {
+                      setSlugEdited(true)
+                      setSlug(event.target.value.toLowerCase())
+                    }}
                   />
                 </label>
                 <label className="flex flex-col gap-1.5 text-sm font-medium">

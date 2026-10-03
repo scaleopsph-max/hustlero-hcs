@@ -239,11 +239,12 @@ Last updated: 2026-10-02
 - Production API Worker version `180681b0-d9f2-4c2c-8b9b-38241c0f2cb1` is deployed at `https://hustlero-hcs-api.scaleopsph.workers.dev`; health, unauthenticated access rejection, and Back Office/POS CORS smoke checks returned 200/401/204.
 - Production Back Office version `afaf999e-7c52-4500-bf0a-3d22165c390b`, POS version `c4f70120-2818-4ce8-8a27-2d56528796a8`, and Super Admin version `84603dd8-2346-4103-92ff-d5fe99d19457` are deployed and returned 200 from their production Workers URLs. Generated bundles contain the Production API and Supabase references and no Development or Staging references.
 - Production Supabase Auth uses the active asymmetric ECC P-256 signing key. The Back Office site URL and Back Office/Super Admin wildcard redirects are saved, leaked-password protection is enabled, and the fresh Security Advisor result contains only the 57 expected informational private-schema no-policy notices.
-- Production remains empty of tenants and Auth users. No owner account, tenant data, catalog, inventory, register, or transaction has been created; authenticated Production bootstrap and UAT are the next controlled gate.
+- The owner-confirmed Production identity is active and the first controlled tenant, `SAH RESTORATION`, was bootstrapped with one active owner and `Main Store / MAIN`. Its canonical slug is `sah-restoration`; no catalog, opening inventory, employee, register, POS device, or transaction has been created yet.
+- Initial Production onboarding exposed a form defect where auto-slug generation stopped after the first business-name keystroke. The duplicated leading character was corrected atomically with one audit and one outbox event, regression coverage was added, and Production Back Office version `81742123-7a31-41af-bedb-7d8cdc30faed` passed build isolation, dry-run deployment, HTTP 200, and authenticated setup-state checks.
 
 ## Next safe action
 
-Create the owner-confirmed Production identity, bootstrap the first tenant through the deployed Back Office, then run the controlled authenticated Production smoke/UAT checklist before admitting live data.
+Complete the owner-confirmed `SAH RESTORATION` setup profile and feature selection, then proceed through controlled catalog, opening-inventory, workforce, register, POS, reporting, and rollback validation before admitting live data.
 
 ## Production state
 
@@ -256,6 +257,6 @@ Create the owner-confirmed Production identity, bootstrap the first tenant throu
 - Staging Back Office URL: `https://hustlero-hcs-backoffice-staging.scaleopsph.workers.dev`
 - Staging POS URL: `https://hustlero-hcs-pos-staging.scaleopsph.workers.dev`
 - Staging Super Admin URL: `https://hustlero-hcs-admin-staging.scaleopsph.workers.dev`
-- Production data: no tenants or Auth users; foundation only
+- Production data: one controlled owner and one setup-stage tenant; no live catalog, inventory, or transaction data
 - Production deployment: provisioned and unauthenticated smoke-tested
 - Rollback point: previous immutable Worker versions remain available; database recovery follows `docs/operations/RECOVERY_RUNBOOK.md`

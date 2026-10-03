@@ -4,7 +4,7 @@ Date: 2026-10-02
 
 ## Decision
 
-The approved Staging release candidate has been provisioned as an isolated Production foundation. Infrastructure, database migrations, restricted connectivity, public application bundles, authentication URLs, and baseline security controls are deployed and verified. Production remains empty of tenants and users; live business onboarding is not yet authorized by this report.
+The approved Staging release candidate has been provisioned as an isolated Production foundation. Infrastructure, database migrations, restricted connectivity, public application bundles, authentication URLs, and baseline security controls are deployed and verified. The controlled owner identity and first setup-stage tenant now exist; live business operations are not yet authorized by this report.
 
 ## Provisioned resources
 
@@ -29,11 +29,13 @@ The approved Staging release candidate has been provisioned as an isolated Produ
 - Supabase Auth uses an active asymmetric ECC P-256 signing key.
 - Auth site URL is the Production Back Office URL. Back Office and Super Admin Production wildcard redirects are allowlisted.
 - Leaked-password protection is enabled. A fresh Security Advisor run reports only 57 `INFO` findings for intentionally policy-free, deny-all private-schema tables; it reports no warning or error.
-- Production currently contains zero tenants and zero Auth users.
+- Production contains one owner-confirmed Auth identity and one setup-stage tenant, `SAH RESTORATION`, with one active `Main Store / MAIN` location. It contains no catalog, opening inventory, employee, register, POS device, or transaction data.
+- The tenant slug is `sah-restoration`. A duplicated leading character introduced by the initial form's auto-slug defect was corrected atomically with exactly one audit and one outbox event.
+- The auto-slug regression is covered by unit tests and fixed in Production Back Office version `81742123-7a31-41af-bedb-7d8cdc30faed`; the build passed production-reference isolation, Cloudflare dry run, deployment, HTTP 200, and authenticated setup-state checks.
 
 ## Release boundary
 
-The foundation is ready for controlled bootstrap, not general availability. The next gate requires an owner-confirmed Production account, first-tenant bootstrap, authenticated API checks, POS activation and guided transaction validation, reporting reconciliation, rollback confirmation, and final go-live approval. Do not copy Staging credentials or generated UAT records into Production.
+The foundation is in controlled bootstrap, not general availability. The next gate requires completion of the tenant setup profile and feature selection, authenticated API checks, catalog and opening inventory, POS activation and guided transaction validation, reporting reconciliation, rollback confirmation, and final go-live approval. Do not copy Staging credentials or generated UAT records into Production.
 
 ## Rollback and recovery
 
