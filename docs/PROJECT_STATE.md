@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-02
+Last updated: 2026-10-03
 
 ## Phase
 
@@ -239,12 +239,15 @@ Last updated: 2026-10-02
 - Production API Worker version `180681b0-d9f2-4c2c-8b9b-38241c0f2cb1` is deployed at `https://hustlero-hcs-api.scaleopsph.workers.dev`; health, unauthenticated access rejection, and Back Office/POS CORS smoke checks returned 200/401/204.
 - Production Back Office version `afaf999e-7c52-4500-bf0a-3d22165c390b`, POS version `c4f70120-2818-4ce8-8a27-2d56528796a8`, and Super Admin version `84603dd8-2346-4103-92ff-d5fe99d19457` are deployed and returned 200 from their production Workers URLs. Generated bundles contain the Production API and Supabase references and no Development or Staging references.
 - Production Supabase Auth uses the active asymmetric ECC P-256 signing key. The Back Office site URL and Back Office/Super Admin wildcard redirects are saved, leaked-password protection is enabled, and the fresh Security Advisor result contains only the 57 expected informational private-schema no-policy notices.
-- The owner-confirmed Production identity is active and the first controlled tenant, `SAH RESTORATION`, was bootstrapped with one active owner and `Main Store / MAIN`. Its canonical slug is `sah-restoration`; no catalog, opening inventory, employee, register, POS device, or transaction has been created yet.
+- The owner-confirmed Production identity is active and the first controlled tenant, `SAH RESTORATION`, was bootstrapped with one active owner and `Main Store / MAIN`. Its canonical slug is `sah-restoration`.
 - Initial Production onboarding exposed a form defect where auto-slug generation stopped after the first business-name keystroke. The duplicated leading character was corrected atomically with one audit and one outbox event, regression coverage was added, and Production Back Office version `81742123-7a31-41af-bedb-7d8cdc30faed` passed build isolation, dry-run deployment, HTTP 200, and authenticated setup-state checks.
+- The controlled Production tenant profile and all 8 feature entitlements are configured. Catalog bootstrap contains `SAH SOCKS V1 / WHITE` (`SAH-00001`) at PHP 499.00 retail and PHP 250.00 unit cost, with an immutable 100-unit Main Store opening balance. The Capital/COGS and Operating fund accounts are active with zero balances.
+- Production workforce and register bootstrap contains active cashier `EMP-001` assigned to Main Store, active `Main Register / REG-001`, and one active `Front counter POS`. The first unused activation code expired and its device record was safely revoked before a fresh one-time code activated the current device; no raw PIN, activation code, or device token is recorded.
+- The owner-confirmed Production guided sale completed as receipt `MAIN-20261003-000001`: one `SAH-00001` unit at PHP 499.00, PHP 500.00 tendered, and PHP 1.00 change. Stock moved `100 -> 99`, the register cash ledger moved `PHP 1,000.00 -> PHP 1,499.00`, and the sale, payment, inventory movement, cash movement, audit, and outbox records each exist exactly once. Evidence is recorded in `docs/qa/PRODUCTION_GUIDED_POS_UAT_2026-10-03.md`.
 
 ## Next safe action
 
-Complete the owner-confirmed `SAH RESTORATION` setup profile and feature selection, then proceed through controlled catalog, opening-inventory, workforce, register, POS, reporting, and rollback validation before admitting live data.
+Validate the Production receipt and reporting surfaces for `MAIN-20261003-000001`, run an owner-confirmed same-session full refund and reconciliation, close the register at its verified expected cash, then complete Production rollback validation and final go-live approval before admitting live operations.
 
 ## Production state
 
@@ -257,6 +260,6 @@ Complete the owner-confirmed `SAH RESTORATION` setup profile and feature selecti
 - Staging Back Office URL: `https://hustlero-hcs-backoffice-staging.scaleopsph.workers.dev`
 - Staging POS URL: `https://hustlero-hcs-pos-staging.scaleopsph.workers.dev`
 - Staging Super Admin URL: `https://hustlero-hcs-admin-staging.scaleopsph.workers.dev`
-- Production data: one controlled owner and one setup-stage tenant; no live catalog, inventory, or transaction data
-- Production deployment: provisioned and unauthenticated smoke-tested
+- Production data: one controlled owner, one configured pilot tenant, one catalog variant, one opening balance, one cashier, one register, one active POS device, and one controlled guided-sale receipt
+- Production deployment: provisioned, smoke-tested, and guided cash-sale validated; refund, register close, reporting reconciliation, rollback, and final go-live approval remain gated
 - Rollback point: previous immutable Worker versions remain available; database recovery follows `docs/operations/RECOVERY_RUNBOOK.md`
