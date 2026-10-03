@@ -246,10 +246,11 @@ Last updated: 2026-10-03
 - The owner-confirmed Production guided sale completed as receipt `MAIN-20261003-000001`: one `SAH-00001` unit at PHP 499.00, PHP 500.00 tendered, and PHP 1.00 change. Stock moved `100 -> 99`, the register cash ledger moved `PHP 1,000.00 -> PHP 1,499.00`, and the sale, payment, inventory movement, cash movement, audit, and outbox records each exist exactly once. Evidence is recorded in `docs/qa/PRODUCTION_GUIDED_POS_UAT_2026-10-03.md`.
 - The owner-confirmed same-session full refund for `MAIN-20261003-000001` completed with return-to-stock enabled. The receipt is `refunded`, stock restored `99 -> 100`, register cash returned `PHP 1,499.00 -> PHP 1,000.00`, and the refund, payment reversal, inventory movement, cash movement, audit, and outbox records each exist exactly once.
 - The owner-confirmed Production Main Register close completed with PHP 1,000.00 expected and counted cash, PHP 0.00 variance, no variance movement, one close audit event, one close outbox event, and zero open register sessions. Reports show one closed session, zero open sessions, zero exceptions, and PHP 0.00 net sales after the full refund. Evidence is recorded in `docs/qa/PRODUCTION_GUIDED_POS_UAT_2026-10-03.md`.
+- Production release smoke validation after the controlled UAT returned API health 200, unauthenticated `/v1/me` 401, Back Office-origin CORS 204, Back Office 200, and POS 200. Wrangler deployment inventory shows only one listed version for Production API, POS, and Super Admin; Back Office has an older version, but there is no matching previous full-stack release set for a safe traffic-switch rollback drill. No Production traffic was switched.
 
 ## Next safe action
 
-Complete Production rollback/release validation and final go-live approval review before admitting live operations.
+Obtain explicit owner approval for a reversible Production rollback drill or record the single-version limitation as a release exception, then complete final go-live approval review before admitting live operations.
 
 ## Production state
 

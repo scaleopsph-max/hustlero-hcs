@@ -32,6 +32,6 @@ The owner-confirmed register close completed with PHP 1,000.00 expected and coun
 
 ## Remaining gate
 
-Receipt, Sales, Payments, Inventory, and Shifts & receipts reports were validated after the sale and after the refund. Remaining gate: Production rollback/release validation and final go-live approval.
+Receipt, Sales, Payments, Inventory, and Shifts & receipts reports were validated after the sale and after the refund. Production smoke checks returned API 200, unauthenticated API access 401, CORS 204, Back Office 200, and POS 200. Remaining gate: an explicitly approved reversible rollback drill or documented single-version release exception, followed by final go-live approval.
 
 No raw PIN, activation code, device token, access token, or database credential is included in this evidence.
