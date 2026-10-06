@@ -75,10 +75,23 @@ async function query(bindings: Bindings, text: string, values: unknown[]) {
   }
 }
 
-export const loadPosSalesContextFromPostgres: PosSalesContextLoader = async (sessionTokenHash, bindings) =>
-  posSalesContextSchema.parse(
-    (await query(bindings, 'select app.load_pos_sales_context($1::text) context', [sessionTokenHash])).rows[0]?.context,
+export const loadPosSalesContextFromPostgres: PosSalesContextLoader = async (sessionTokenHash, bindings) => {
+  const result = await query(
+    bindings,
+    'select app.load_pos_sales_context($1::text) context, app.load_pos_pricing_options($1::text) pricing_options',
+    [sessionTokenHash],
   )
+  const context = result.rows[0]?.context as { items?: Array<{ variantId: string }> }
+  const options = (result.rows[0]?.pricing_options ?? []) as Array<{ variantId: string }>
+  const byVariant = new Map<string, Array<Omit<(typeof options)[number], 'variantId'>>>()
+  for (const { variantId, ...option } of options) {
+    byVariant.set(variantId, [...(byVariant.get(variantId) ?? []), option])
+  }
+  return posSalesContextSchema.parse({
+    ...context,
+    items: (context.items ?? []).map((item) => ({ ...item, pricingOptions: byVariant.get(item.variantId) ?? [] })),
+  })
+}
 
 export const openPosRegisterSessionInPostgres: PosRegisterSessionOpener = async (
   sessionTokenHash,
@@ -110,12 +123,13 @@ export const completePosSaleInPostgres: PosSaleCompleter = async (
     (
       await query(
         bindings,
-        'select app.complete_pos_sale_with_customer($1::text,$2::jsonb,$3::jsonb,$4::uuid,$5::text,$6::text,$7::text) response',
+        'select app.complete_pos_priced_sale($1::text,$2::jsonb,$3::jsonb,$4::uuid,$5::text,$6::text,$7::text,$8::text) response',
         [
           sessionTokenHash,
           JSON.stringify(request.lines),
           JSON.stringify(request.payments),
           request.customerId ?? null,
+          request.pricingType,
           idempotencyKey,
           requestHash,
           requestId,

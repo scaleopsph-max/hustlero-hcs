@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-03
+Last updated: 2026-10-06
 
 ## Phase
 
@@ -158,6 +158,9 @@ Last updated: 2026-10-03
 
 ## In progress
 
+- Advanced Wholesale blueprint approved by the owner with `APPROVED ADVANCED WHOLESALE BLUEPRINT - PROCEED AW1`. AW1 local implementation now includes tenant-private sales-order headers and lines, an append-only reservation ledger, draft/save/confirm/cancel commands, shared branch-variant inventory reservation, server-authoritative price and threshold revalidation, idempotency, audit/outbox records, API contracts/routes, and the Back Office `/wholesale` workspace.
+- AW1 local verification passes: secret scan, formatting, lint, all workspace typechecks, all 93 Vitest tests, every standard production build, and every Cloudflare/vinext build completed successfully. The new database suite contains 44 assertions covering entitlement, tenant isolation, draft behavior, threshold and stock guards, reservation/release, retries, snapshots, audit/outbox, and append-only enforcement. Local pgTAP execution remains blocked because Docker/Podman is not installed; no remote migration or deployment has been performed.
+
 - Owner completed the business-question and feature-selection forms for `LOCAL RECIPE`
 - Manual catalog/product vertical slice: private Product → Variant → SKU → Barcode schema, tenant-safe/idempotent API commands, product-grain list, editable product detail, and nested add/edit/deactivate variant flow are implemented and verified in development
 - Opening inventory per branch and variant is implemented and connected to the onboarding checklist; the authenticated `/inventory/opening` screen was verified with the saved `LOCAL RECIPE` catalog without mutating stock
@@ -248,11 +251,14 @@ Last updated: 2026-10-03
 - The owner-confirmed Production Main Register close completed with PHP 1,000.00 expected and counted cash, PHP 0.00 variance, no variance movement, one close audit event, one close outbox event, and zero open register sessions. Reports show one closed session, zero open sessions, zero exceptions, and PHP 0.00 net sales after the full refund. Evidence is recorded in `docs/qa/PRODUCTION_GUIDED_POS_UAT_2026-10-03.md`.
 - Production release smoke validation after the controlled UAT returned API health 200, unauthenticated `/v1/me` 401, Back Office-origin CORS 204, Back Office 200, and POS 200. Wrangler deployment inventory shows only one listed version for Production API, POS, and Super Admin; Back Office has an older version, but there is no matching previous full-stack release set for a safe traffic-switch rollback drill. No Production traffic was switched.
 - The owner approved the documented single-version rollback exception. Final go-live review passed: Production is `ACTIVE_HEALTHY`, all 47 migrations are present, Security Advisor reports only the established 57 informational private-schema notices, the tracked-file secret scan passes, and the controlled transaction state is fully reversed with a balanced closed register. Technical readiness is complete; owner go-live approval remains the only release decision.
-- The owner approved `HUSTLERO PRODUCTION GO-LIVE FOR SAH RESTORATION` on 2026-10-03. Production is now approved for live pilot operations; the controlled UAT sale/refund remains retained as immutable audit evidence, and the register remains closed until the operator intentionally opens it for a live shift.
+- The owner approved `HUSTLERO PRODUCTION GO-LIVE FOR SAH RESTORATION` on 2026-10-03. Production is now approved for live pilot operations; the controlled UAT sale/refund remains retained as immutable audit evidence.
+- The first live operating shift was intentionally opened with PHP 1,000.00 starting cash. The owner-confirmed live sale `MAIN-20261003-000002` completed for five `SAH-00001` units at PHP 2,495.00 cash tendered from PHP 2,500.00, with PHP 5.00 change. Stock moved `100 -> 95`, the cash ledger recorded one PHP 2,495.00 `cash_sale` movement, and sale, audit, and outbox records each exist exactly once. The shift then closed at PHP 3,495.00 expected and counted cash with zero variance, no variance movement, and one close audit/outbox pair. Evidence is recorded in `docs/qa/PRODUCTION_LIVE_PILOT_2026-10-03.md`.
+- The owner approved the Production Basic Wholesale release. Migration `20261003055709` is recorded as the 48th Production migration; the Security Advisor has no warning- or error-level findings and the Performance Advisor has no error-level findings. Production API `5c82d179-84bb-4145-8055-bd826da7cfaa`, Back Office `a8753db5-c0c1-4e93-8091-3ffd78f2dadc`, and POS `9ea9e392-1e58-4de7-80e7-55492b62c032` are deployed with Production-only references. Health/auth/CORS/page checks returned 200/401/204/200, and the authenticated owner session loaded the new Wholesale Pricing workspace for `SAH RESTORATION`. No Production price list, sale, or inventory movement was created during deployment. The temporary Supabase CLI token was revoked and the account token list was verified empty. Evidence is recorded in `docs/qa/PRODUCTION_WHOLESALE_RELEASE_2026-10-05.md`.
+- Production Basic Wholesale activation and controlled UAT passed. Active Wholesale pricing requires 10 units at PHP 450.00 each; active Dealer pricing requires 50 units at PHP 399.00 each. Reseller gating and sub-threshold Charge blocking were verified. Exact-cash receipts `MAIN-20261005-000001` (PHP 4,500.00) and `MAIN-20261005-000002` (PHP 19,950.00) each posted once and were fully refunded with return-to-stock enabled. Shared inventory returned to 95 on hand and available, customer net spend returned to PHP 0.00, and both append-only reversal histories are preserved. On 2026-10-06 the owner supplied the PHP 1,000.00 physical count; the Main Register closed at PHP 1,000.00 expected and counted cash with zero variance, leaving zero open sessions. Evidence is recorded in `docs/qa/PRODUCTION_WHOLESALE_UAT_2026-10-05.md`.
 
 ## Next safe action
 
-Begin the first live operating shift from the Production Back Office/POS URLs, with the operator opening the register and recording starting cash intentionally. Keep the single-version rollback exception and recovery runbook attached to the release record.
+Basic Wholesale and Dealer pricing are configured and controlled Production UAT is complete. Both UAT receipts are fully reversed, shared inventory is back at the 95-unit baseline, the reseller has zero net spend, and the Main Register is closed with zero variance. The Advanced Wholesale blueprint is approved, AW1 is implemented locally, and application checks/builds pass. The next safe action is a fresh database migration and all pgTAP suites in CI; only after that evidence passes should AW1 receive a separate Staging migration/deployment approval. Online Store remains a separate later add-on.
 
 ## Production state
 
@@ -265,6 +271,6 @@ Begin the first live operating shift from the Production Back Office/POS URLs, w
 - Staging Back Office URL: `https://hustlero-hcs-backoffice-staging.scaleopsph.workers.dev`
 - Staging POS URL: `https://hustlero-hcs-pos-staging.scaleopsph.workers.dev`
 - Staging Super Admin URL: `https://hustlero-hcs-admin-staging.scaleopsph.workers.dev`
-- Production data: one controlled owner, one configured pilot tenant, one catalog variant, one opening balance, one cashier, one register, one active POS device, and one controlled guided-sale receipt
-- Production deployment: provisioned, smoke-tested, UAT sale/refund/reconciliation validated, rollback exception approved, and live pilot go-live approved; register remains intentionally closed pending the first live shift
+- Production data: one controlled owner, one configured pilot tenant, one catalog variant, one opening balance, one cashier, one register, one active POS device, four controlled UAT receipts, one live-pilot receipt, two active Basic Wholesale price lists, and one controlled reseller profile
+- Production deployment: provisioned, smoke-tested, UAT sale/refund/reconciliation validated, rollback exception approved, live pilot go-live approved, first live shift transaction plus zero-variance close validated, and Basic Wholesale/Dealer activation UAT completed with both receipts fully reversed and its register reconciled at zero variance; no register session is open
 - Rollback point: previous immutable Worker versions remain available; database recovery follows `docs/operations/RECOVERY_RUNBOOK.md`

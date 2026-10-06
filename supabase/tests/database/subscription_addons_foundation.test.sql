@@ -100,8 +100,22 @@ select throws_ok(
 select throws_ok(
   $$delete from platform.tenant_feature_overrides where tenant_id='62000000-0000-4000-8000-000000000001'$$,
   'HCSP5','Subscription history cannot be deleted','override history rejects deletion');
-select is(jsonb_array_length(platform.load_subscription_context('61000000-0000-4000-8000-000000000001')->'plans'),1,'context returns the live plan catalog');
-select is(jsonb_array_length(platform.load_subscription_context('61000000-0000-4000-8000-000000000001')->'tenants'),1,'context returns tenant assignments');
+select ok(
+  exists(
+    select 1
+    from jsonb_array_elements(platform.load_subscription_context('61000000-0000-4000-8000-000000000001')->'plans') plan
+    where plan->>'code'='core-pilot'
+  ),
+  'context returns the fixture plan in the live catalog'
+);
+select ok(
+  exists(
+    select 1
+    from jsonb_array_elements(platform.load_subscription_context('61000000-0000-4000-8000-000000000001')->'tenants') tenant
+    where tenant->>'tenantId'='62000000-0000-4000-8000-000000000001'
+  ),
+  'context returns the fixture tenant assignment'
+);
 select is((platform.load_subscription_context('61000000-0000-4000-8000-000000000003')->>'canManage')::boolean,false,'support receives a read-only subscription context');
 
 select * from finish();

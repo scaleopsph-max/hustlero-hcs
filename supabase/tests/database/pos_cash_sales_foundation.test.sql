@@ -30,21 +30,21 @@ insert into app.inventory_balances (tenant_id,location_id,variant_id,on_hand,ave
 
 select lives_ok($$select app.open_pos_register_session(repeat('b',64),100000,'test-register-open','open-hash','open-request')$$, 'cashier opens assigned register');
 select lives_ok($$select app.complete_pos_cash_sale(repeat('b',64),jsonb_build_array(jsonb_build_object('variantId','89000000-0000-4000-8000-000000000001','quantityMilli',2000)),200000,'test-sale-001','sale-hash','sale-request')$$, 'cash sale completes atomically');
-select is((select count(*)::integer from app.sales),1,'one sale is recorded');
-select is((select receipt_number from app.sales),'MAIN-'||to_char((now() at time zone 'Asia/Manila')::date,'YYYYMMDD')||'-000001','branch daily receipt number is generated');
-select is((select total from app.sales),1798.00::numeric,'total uses the server variant price');
-select is((select quantity from app.sale_lines),2.000::numeric,'sale line stores exact quantity');
-select is((select tendered_amount from app.sale_payments),2000.00::numeric,'payment stores cash tendered');
-select is((select change_amount from app.sale_payments),202.00::numeric,'payment stores change');
-select is((select on_hand from app.inventory_balances),8.000::numeric,'inventory balance is decremented');
-select is((select count(*)::integer from app.inventory_movements where movement_type='SALE'),1,'sale appends one inventory movement');
-select is((select count(*)::integer from app.cash_movements where movement_type='cash_sale'),1,'sale appends one cash movement');
-select is((select count(*)::integer from audit.audit_events where action='sale.completed'),1,'sale completion is audited');
-select is((select count(*)::integer from integration.event_outbox where topic='sale.completed'),1,'sale completion emits an outbox event');
+select is((select count(*)::integer from app.sales where tenant_id='29000000-0000-4000-8000-000000000001'),1,'one sale is recorded');
+select is((select receipt_number from app.sales where tenant_id='29000000-0000-4000-8000-000000000001'),'MAIN-'||to_char((now() at time zone 'Asia/Manila')::date,'YYYYMMDD')||'-000001','branch daily receipt number is generated');
+select is((select total from app.sales where tenant_id='29000000-0000-4000-8000-000000000001'),1798.00::numeric,'total uses the server variant price');
+select is((select quantity from app.sale_lines where tenant_id='29000000-0000-4000-8000-000000000001'),2.000::numeric,'sale line stores exact quantity');
+select is((select tendered_amount from app.sale_payments where tenant_id='29000000-0000-4000-8000-000000000001'),2000.00::numeric,'payment stores cash tendered');
+select is((select change_amount from app.sale_payments where tenant_id='29000000-0000-4000-8000-000000000001'),202.00::numeric,'payment stores change');
+select is((select on_hand from app.inventory_balances where tenant_id='29000000-0000-4000-8000-000000000001'),8.000::numeric,'inventory balance is decremented');
+select is((select count(*)::integer from app.inventory_movements where tenant_id='29000000-0000-4000-8000-000000000001' and movement_type='SALE'),1,'sale appends one inventory movement');
+select is((select count(*)::integer from app.cash_movements where tenant_id='29000000-0000-4000-8000-000000000001' and movement_type='cash_sale'),1,'sale appends one cash movement');
+select is((select count(*)::integer from audit.audit_events where tenant_id='29000000-0000-4000-8000-000000000001' and action='sale.completed'),1,'sale completion is audited');
+select is((select count(*)::integer from integration.event_outbox where tenant_id='29000000-0000-4000-8000-000000000001' and topic='sale.completed'),1,'sale completion emits an outbox event');
 select lives_ok($$select app.complete_pos_cash_sale(repeat('b',64),jsonb_build_array(jsonb_build_object('variantId','89000000-0000-4000-8000-000000000001','quantityMilli',2000)),200000,'test-sale-001','sale-hash','sale-retry')$$, 'identical retry returns stored response');
-select is((select count(*)::integer from app.sales),1,'idempotent retry creates no second sale');
+select is((select count(*)::integer from app.sales where tenant_id='29000000-0000-4000-8000-000000000001'),1,'idempotent retry creates no second sale');
 select throws_ok($$select app.complete_pos_cash_sale(repeat('b',64),jsonb_build_array(jsonb_build_object('variantId','89000000-0000-4000-8000-000000000001','quantityMilli',9000)),900000,'test-sale-002','stock-hash','stock-request')$$,'HCS98','Insufficient available stock','insufficient stock rolls back the sale');
-select is((select count(*)::integer from app.sales),1,'failed stock check leaves sale count unchanged');
+select is((select count(*)::integer from app.sales where tenant_id='29000000-0000-4000-8000-000000000001'),1,'failed stock check leaves sale count unchanged');
 
 select lives_ok($$
   select app.complete_pos_sale_with_customer(
@@ -68,26 +68,26 @@ select lives_ok($$
     'split-sale-request'
   )
 $$, 'split cash and e-wallet sale completes atomically');
-select is((select count(*)::integer from app.sales),2,'split sale creates one additional sale');
-select is((select count(*)::integer from app.sale_payments),3,'split sale stores one row per payment method');
+select is((select count(*)::integer from app.sales where tenant_id='29000000-0000-4000-8000-000000000001'),2,'split sale creates one additional sale');
+select is((select count(*)::integer from app.sale_payments where tenant_id='29000000-0000-4000-8000-000000000001'),3,'split sale stores one row per payment method');
 select is(
-  (select amount from app.sale_payments payment join app.payment_methods method on method.tenant_id=payment.tenant_id and method.id=payment.payment_method_id where payment.sale_id=(select sale_id from app.sale_payments group by sale_id having count(*)=2) and method.code='cash'),
+  (select amount from app.sale_payments payment join app.payment_methods method on method.tenant_id=payment.tenant_id and method.id=payment.payment_method_id where payment.tenant_id='29000000-0000-4000-8000-000000000001' and payment.sale_id=(select sale_id from app.sale_payments where tenant_id='29000000-0000-4000-8000-000000000001' group by sale_id having count(*)=2) and method.code='cash'),
   400.00::numeric,
   'split sale stores the allocated cash amount'
 );
 select is(
-  (select change_amount from app.sale_payments payment join app.payment_methods method on method.tenant_id=payment.tenant_id and method.id=payment.payment_method_id where payment.sale_id=(select sale_id from app.sale_payments group by sale_id having count(*)=2) and method.code='cash'),
+  (select change_amount from app.sale_payments payment join app.payment_methods method on method.tenant_id=payment.tenant_id and method.id=payment.payment_method_id where payment.tenant_id='29000000-0000-4000-8000-000000000001' and payment.sale_id=(select sale_id from app.sale_payments where tenant_id='29000000-0000-4000-8000-000000000001' group by sale_id having count(*)=2) and method.code='cash'),
   100.00::numeric,
   'split sale stores change only on the cash payment'
 );
-select is((select count(*)::integer from app.cash_movements where movement_type='cash_sale'),2,'non-cash split portion creates no cash movement');
+select is((select count(*)::integer from app.cash_movements where tenant_id='29000000-0000-4000-8000-000000000001' and movement_type='cash_sale'),2,'non-cash split portion creates no cash movement');
 select is(
-  (app.load_sale_receipt_with_customer('19000000-0000-4000-8000-000000000001','29000000-0000-4000-8000-000000000001',(select sale_id from app.sale_payments group by sale_id having count(*)=2))->>'canReverse')::boolean,
+  (app.load_sale_receipt_with_customer('19000000-0000-4000-8000-000000000001','29000000-0000-4000-8000-000000000001',(select sale_id from app.sale_payments where tenant_id='29000000-0000-4000-8000-000000000001' group by sale_id having count(*)=2))->>'canReverse')::boolean,
   false,
   'split receipt does not offer an unsafe cash-only reversal'
 );
 select is(
-  app.load_sale_receipt_with_customer('19000000-0000-4000-8000-000000000001','29000000-0000-4000-8000-000000000001',(select sale_id from app.sale_payments group by sale_id having count(*)=2))->>'reversalBlockedReason',
+  app.load_sale_receipt_with_customer('19000000-0000-4000-8000-000000000001','29000000-0000-4000-8000-000000000001',(select sale_id from app.sale_payments where tenant_id='29000000-0000-4000-8000-000000000001' group by sale_id having count(*)=2))->>'reversalBlockedReason',
   'Split and non-cash refunds require a dedicated payment return flow.',
   'split receipt explains why reversal is unavailable'
 );
@@ -105,7 +105,7 @@ select lives_ok($$
     'split-sale-retry'
   )
 $$, 'split sale retry returns the stored response');
-select is((select count(*)::integer from app.sales),2,'split sale retry creates no duplicate sale');
+select is((select count(*)::integer from app.sales where tenant_id='29000000-0000-4000-8000-000000000001'),2,'split sale retry creates no duplicate sale');
 select throws_ok($$
   select app.complete_pos_sale_with_customer(
     repeat('b',64),
@@ -117,7 +117,7 @@ select throws_ok($$
     'bad-split-request'
   )
 $$,'HCS99','Payment allocation must equal the sale total','underallocated split payment rolls back the sale');
-select is((select count(*)::integer from app.sales),2,'invalid payment allocation leaves sale count unchanged');
+select is((select count(*)::integer from app.sales where tenant_id='29000000-0000-4000-8000-000000000001'),2,'invalid payment allocation leaves sale count unchanged');
 
 select * from finish();
 rollback;

@@ -18,6 +18,7 @@ import {
   SlidersHorizontal,
   Smartphone,
   Store,
+  Tags,
   Truck,
   User,
   Users,
@@ -59,6 +60,7 @@ export const navGroups: NavGroup[] = [
       { label: 'Dashboard', href: '/', icon: LayoutDashboard },
       { label: 'Sales', href: '/sales', icon: Receipt },
       { label: 'Products', href: '/products', icon: Package },
+      { label: 'Wholesale pricing', href: '/pricing', icon: Tags },
       { label: 'Inventory', href: '/inventory', icon: Warehouse },
       { label: 'Purchasing', href: '/purchasing', icon: Truck },
       { label: 'Transfers and restock', href: '/transfers', icon: ArrowLeftRight },
@@ -94,7 +96,13 @@ export const navGroups: NavGroup[] = [
     heading: 'Add-on modules',
     items: [
       { label: 'Online store', href: '/online-store', icon: ShoppingBag, feature: 'online_store' },
-      { label: 'Advanced wholesale', href: '/wholesale', icon: Percent, feature: 'advanced_wholesale' },
+      {
+        label: 'Advanced wholesale',
+        href: '/wholesale',
+        icon: Percent,
+        feature: 'advanced_wholesale',
+        permission: 'wholesale_orders.read',
+      },
     ],
   },
 ]
@@ -112,11 +120,4 @@ export function resolveNav(groups: NavGroup[], ctx: NavContext): ResolvedNavGrou
       }),
     }))
     .filter((g) => g.items.length > 0)
-}
-
-/** MOCK: free core plan, owner role. */
-export const NAV_CONTEXT: NavContext = {
-  entitled: new Set<string>(),
-  enabled: new Set<string>(),
-  permissions: new Set<string>(),
 }

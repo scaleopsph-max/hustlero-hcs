@@ -4,11 +4,11 @@ import { createClient } from '@/lib/supabase-browser'
 import { ChevronDown, Lock } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { sessionContextResponseSchema, type TenantAccess } from '@hcs/contracts'
 import { Glass, Logo, cn } from '@hcs/ui'
 import { formatLocationCount, saveActiveTenant, selectActiveTenant } from '@/lib/active-tenant'
-import { NAV_CONTEXT, navGroups, resolveNav } from '@/mock/nav'
+import { navGroups, resolveNav } from '@/mock/nav'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
@@ -21,7 +21,14 @@ export function Sidebar({ className, onNavigate }: { className?: string; onNavig
   const [tenants, setTenants] = useState<TenantAccess[]>([])
   const [activeTenant, setActiveTenant] = useState<TenantAccess | null>(null)
   const [businessMenuOpen, setBusinessMenuOpen] = useState(false)
-  const groups = resolveNav(navGroups, NAV_CONTEXT)
+  const groups = useMemo(() => {
+    const enabled = new Set(activeTenant?.entitlements ?? [])
+    return resolveNav(navGroups, {
+      entitled: enabled,
+      enabled,
+      permissions: new Set(activeTenant?.permissions ?? []),
+    })
+  }, [activeTenant])
   const lockedCount = groups.flatMap((g) => g.items).filter((i) => i.locked).length
 
   useEffect(() => {

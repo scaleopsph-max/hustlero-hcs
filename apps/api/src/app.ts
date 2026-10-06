@@ -34,6 +34,15 @@ import {
   posDeviceContextSchema,
   posPinLoginRequestSchema,
   posPinLoginResponseSchema,
+  priceListUpsertRequestSchema,
+  priceListUpsertResponseSchema,
+  pricingContextSchema,
+  wholesaleOrderCancelRequestSchema,
+  wholesaleOrderCancelResponseSchema,
+  wholesaleOrderConfirmResponseSchema,
+  wholesaleOrderContextSchema,
+  wholesaleOrderDraftRequestSchema,
+  wholesaleOrderDraftResponseSchema,
   posSaleCompleteRequestSchema,
   posSaleCompleteResponseSchema,
   posRegisterOpenRequestSchema,
@@ -177,6 +186,22 @@ import {
   type CatalogVariantUpdater,
   type CatalogProductUpdater,
 } from './catalog-repository'
+import {
+  loadPricingContextFromPostgres,
+  upsertPriceListInPostgres,
+  type PriceListUpserter,
+  type PricingContextLoader,
+} from './pricing-repository'
+import {
+  cancelWholesaleOrderInPostgres,
+  confirmWholesaleOrderInPostgres,
+  loadWholesaleOrderContextFromPostgres,
+  saveWholesaleOrderDraftInPostgres,
+  type WholesaleOrderCanceller,
+  type WholesaleOrderConfirmer,
+  type WholesaleOrderContextLoader,
+  type WholesaleOrderDraftSaver,
+} from './wholesale-orders-repository'
 import { type Bindings, readEnvironment } from './env'
 import {
   addCustomerNoteInPostgres,
@@ -334,6 +359,12 @@ interface AppDependencies {
   updateCatalogProduct: CatalogProductUpdater
   updateCatalogVariant: CatalogVariantUpdater
   deactivateCatalogVariant: CatalogVariantDeactivator
+  loadPricingContext: PricingContextLoader
+  upsertPriceList: PriceListUpserter
+  loadWholesaleOrderContext: WholesaleOrderContextLoader
+  saveWholesaleOrderDraft: WholesaleOrderDraftSaver
+  confirmWholesaleOrder: WholesaleOrderConfirmer
+  cancelWholesaleOrder: WholesaleOrderCanceller
   loadInventoryStock: InventoryStockLoader
   loadInventoryMovements: InventoryMovementLoader
   recordInventoryAdjustment: InventoryAdjustmentRecorder
@@ -418,6 +449,12 @@ const defaultDependencies: AppDependencies = {
   updateCatalogProduct: updateCatalogProductInPostgres,
   updateCatalogVariant: updateCatalogVariantInPostgres,
   deactivateCatalogVariant: deactivateCatalogVariantInPostgres,
+  loadPricingContext: loadPricingContextFromPostgres,
+  upsertPriceList: upsertPriceListInPostgres,
+  loadWholesaleOrderContext: loadWholesaleOrderContextFromPostgres,
+  saveWholesaleOrderDraft: saveWholesaleOrderDraftInPostgres,
+  confirmWholesaleOrder: confirmWholesaleOrderInPostgres,
+  cancelWholesaleOrder: cancelWholesaleOrderInPostgres,
   loadInventoryStock: loadInventoryStockFromPostgres,
   loadInventoryMovements: loadInventoryMovementsFromPostgres,
   recordInventoryAdjustment: recordInventoryAdjustmentInPostgres,
@@ -1158,6 +1195,211 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
         )
       }
 
+      throw error
+    }
+  })
+
+  app.get('/v1/pricing', async (context) => {
+    const accessToken = readBearerToken(context.req.header('authorization'))
+    if (!accessToken)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Sign in to view pricing.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    const user = await dependencies.verifyAccessToken(accessToken, context.env)
+    if (!user)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_ACCESS_TOKEN',
+            message: 'The access token is invalid or expired.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    const tenants = await dependencies.loadSessionAccess(user.userId, context.env)
+    const requestedTenantId = context.req.header('x-tenant-id')
+    if (!requestedTenantId && tenants.length > 1)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'TENANT_SELECTION_REQUIRED',
+            message: 'Select a business to view pricing.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        409,
+      )
+    const tenant = requestedTenantId ? tenants.find((entry) => entry.tenantId === requestedTenantId) : tenants[0]
+    if (!tenant)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'PRICING_ACCESS_DENIED',
+            message: 'You do not have access to this business pricing.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    try {
+      return context.json(
+        pricingContextSchema.parse(await dependencies.loadPricingContext(user.userId, tenant.tenantId, context.env)),
+      )
+    } catch (error) {
+      if (postgresErrorCode(error) === 'HCS09')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'PRICING_ACCESS_DENIED',
+              message: 'You do not have catalog permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      throw error
+    }
+  })
+
+  app.post('/v1/pricing/price-lists', async (context) => {
+    const accessToken = readBearerToken(context.req.header('authorization'))
+    if (!accessToken)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Sign in to manage pricing.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    const user = await dependencies.verifyAccessToken(accessToken, context.env)
+    if (!user)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_ACCESS_TOKEN',
+            message: 'The access token is invalid or expired.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    const idempotencyKey = context.req.header('idempotency-key')
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'IDEMPOTENCY_KEY_REQUIRED',
+            message: 'A valid Idempotency-Key is required.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    const tenants = await dependencies.loadSessionAccess(user.userId, context.env)
+    const requestedTenantId = context.req.header('x-tenant-id')
+    if (!requestedTenantId && tenants.length > 1)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'TENANT_SELECTION_REQUIRED',
+            message: 'Select a business before managing pricing.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        409,
+      )
+    const tenant = requestedTenantId ? tenants.find((entry) => entry.tenantId === requestedTenantId) : tenants[0]
+    if (!tenant)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'PRICING_ACCESS_DENIED',
+            message: 'You do not have access to this business pricing.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    const parsed = priceListUpsertRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_PRICE_LIST',
+            message: 'Check the price list, threshold, customers, and variant prices.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      const response = await dependencies.upsertPriceList(
+        user.userId,
+        tenant.tenantId,
+        parsed.data,
+        idempotencyKey,
+        await requestHash(parsed.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(priceListUpsertResponseSchema.parse(response), response.status === 'created' ? 201 : 200)
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS08')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'IDEMPOTENCY_KEY_CONFLICT',
+              message: 'This request key was already used for different pricing details.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      if (code === 'HCS09')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'PRICING_ACCESS_DENIED',
+              message: 'You do not have catalog management permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      if (code === '23505')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'DUPLICATE_PRICE_LIST',
+              message: 'The price-list or pricing-group code is already in use.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          409,
+        )
+      if (code?.startsWith('HCSP'))
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVALID_PRICE_LIST',
+              message: error instanceof Error ? error.message : 'The price list is invalid.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          400,
+        )
       throw error
     }
   })
@@ -1996,6 +2238,234 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
           code === 'HCS12' ? 404 : 400,
         )
       }
+      throw error
+    }
+  })
+
+  const resolveWholesaleTenant = async (context: Context<{ Bindings: Bindings }>) => {
+    const accessToken = readBearerToken(context.req.header('authorization'))
+    if (!accessToken) return null
+    const user = await dependencies.verifyAccessToken(accessToken, context.env)
+    if (!user) return null
+    const tenants = await dependencies.loadSessionAccess(user.userId, context.env)
+    const requestedTenantId = context.req.header('x-tenant-id')
+    const tenant = requestedTenantId
+      ? tenants.find((entry) => entry.tenantId === requestedTenantId)
+      : tenants.length === 1
+        ? tenants[0]
+        : undefined
+    return tenant ? { userId: user.userId, tenantId: tenant.tenantId } : null
+  }
+
+  const wholesaleError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
+    const code = postgresErrorCode(error)
+    const mapping =
+      code === 'HCSQ0'
+        ? {
+            status: 403 as const,
+            code: 'ADVANCED_WHOLESALE_UNAVAILABLE',
+            message: 'Advanced wholesale is not enabled.',
+          }
+        : code === 'HCSQ1'
+          ? {
+              status: 403 as const,
+              code: 'WHOLESALE_ORDER_ACCESS_DENIED',
+              message: 'You do not have wholesale-order permission.',
+            }
+          : code === 'HCSQ7'
+            ? { status: 404 as const, code: 'WHOLESALE_ORDER_NOT_FOUND', message: 'The wholesale order was not found.' }
+            : code === 'HCS08'
+              ? {
+                  status: 409 as const,
+                  code: 'IDEMPOTENCY_KEY_CONFLICT',
+                  message: 'This request key was already used for another command.',
+                }
+              : code === 'HCSQ8'
+                ? {
+                    status: 409 as const,
+                    code: 'DUPLICATE_WHOLESALE_ORDER',
+                    message: 'The order number or variant is already in use.',
+                  }
+                : code === 'HCSQ6'
+                  ? {
+                      status: 409 as const,
+                      code: 'WHOLESALE_ORDER_STATUS_CONFLICT',
+                      message: error instanceof Error ? error.message : 'The order status does not allow this command.',
+                    }
+                  : code === 'HCQ10'
+                    ? {
+                        status: 409 as const,
+                        code: 'INSUFFICIENT_AVAILABLE_STOCK',
+                        message: 'Shared inventory does not have enough available stock.',
+                      }
+                    : code === 'HCQ11'
+                      ? {
+                          status: 409 as const,
+                          code: 'RESERVATION_BALANCE_CONFLICT',
+                          message: 'The inventory reservation balance is inconsistent.',
+                        }
+                      : code?.startsWith('HCSQ')
+                        ? {
+                            status: 400 as const,
+                            code: 'INVALID_WHOLESALE_ORDER',
+                            message: error instanceof Error ? error.message : 'Check the wholesale order details.',
+                          }
+                        : null
+    return mapping
+      ? context.json(
+          apiErrorResponseSchema.parse({
+            error: { code: mapping.code, message: mapping.message, requestId: context.get('requestId') },
+          }),
+          mapping.status,
+        )
+      : null
+  }
+
+  const readWholesaleCommand = async (context: Context<{ Bindings: Bindings }>) => {
+    const resolved = await resolveWholesaleTenant(context)
+    if (!resolved) return null
+    const idempotencyKey = context.req.header('idempotency-key')
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)) return null
+    return { ...resolved, idempotencyKey }
+  }
+
+  app.get('/v1/wholesale/orders', async (context) => {
+    const resolved = await resolveWholesaleTenant(context)
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'WHOLESALE_ORDER_ACCESS_DENIED',
+            message: 'Sign in and select a business to view wholesale orders.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    try {
+      return context.json(
+        wholesaleOrderContextSchema.parse(
+          await dependencies.loadWholesaleOrderContext(resolved.userId, resolved.tenantId, context.env),
+        ),
+      )
+    } catch (error) {
+      const response = wholesaleError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
+  app.post('/v1/wholesale/orders', async (context) => {
+    const command = await readWholesaleCommand(context)
+    if (!command)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'WHOLESALE_COMMAND_CONTEXT_REQUIRED',
+            message: 'Sign in, select a business, and provide a valid Idempotency-Key.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    const parsed = wholesaleOrderDraftRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_WHOLESALE_ORDER',
+            message: 'Check the customer, location, price list, and order lines.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      const response = await dependencies.saveWholesaleOrderDraft(
+        command.userId,
+        command.tenantId,
+        parsed.data,
+        command.idempotencyKey,
+        await requestHash(parsed.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(wholesaleOrderDraftResponseSchema.parse(response), response.result === 'created' ? 201 : 200)
+    } catch (error) {
+      const response = wholesaleError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
+  app.post('/v1/wholesale/orders/:id/confirm', async (context) => {
+    const command = await readWholesaleCommand(context)
+    const salesOrderId = context.req.param('id')
+    if (!command || !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(salesOrderId))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'WHOLESALE_COMMAND_CONTEXT_REQUIRED',
+            message: 'Sign in, select a business, and provide a valid order and Idempotency-Key.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      return context.json(
+        wholesaleOrderConfirmResponseSchema.parse(
+          await dependencies.confirmWholesaleOrder(
+            command.userId,
+            command.tenantId,
+            salesOrderId,
+            command.idempotencyKey,
+            await requestHash({ salesOrderId }),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+      )
+    } catch (error) {
+      const response = wholesaleError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
+  app.post('/v1/wholesale/orders/:id/cancel', async (context) => {
+    const command = await readWholesaleCommand(context)
+    const salesOrderId = context.req.param('id')
+    const parsed = wholesaleOrderCancelRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!command || !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(salesOrderId) || !parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_WHOLESALE_CANCELLATION',
+            message: 'Provide a valid order, reason, business, and Idempotency-Key.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      return context.json(
+        wholesaleOrderCancelResponseSchema.parse(
+          await dependencies.cancelWholesaleOrder(
+            command.userId,
+            command.tenantId,
+            salesOrderId,
+            parsed.data.reason,
+            command.idempotencyKey,
+            await requestHash({ salesOrderId, ...parsed.data }),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+      )
+    } catch (error) {
+      const response = wholesaleError(context, error)
+      if (response) return response
       throw error
     }
   })
@@ -3342,6 +3812,17 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
           error: { code: 'CUSTOMER_ALREADY_EXISTS', message: 'That email or phone is already in use.', requestId },
         }),
         409,
+      )
+    if (code && ['HCSW0', 'HCSW1', 'HCSW2', 'HCSW3'].includes(code))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: code === 'HCSW3' ? 'WHOLESALE_THRESHOLD_NOT_MET' : 'WHOLESALE_PRICING_UNAVAILABLE',
+            message: error instanceof Error ? error.message : 'Wholesale pricing is unavailable.',
+            requestId,
+          },
+        }),
+        code === 'HCSW3' ? 409 : 400,
       )
     if (code === 'HCS95')
       return context.json(

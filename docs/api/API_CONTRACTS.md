@@ -90,6 +90,15 @@ Current catalog implementation:
 - The command writes one audit event and one outbox event. Identical retries replay the stored response; a changed payload with the same key returns 409.
 - Catalog creation does not create or edit stock. Opening inventory remains a separate ledger-backed onboarding step.
 
+Current basic wholesale-pricing foundation:
+
+- `GET /v1/pricing` returns active tenant variants, active reseller customers, pricing groups, wholesale/dealer price lists, assignments, and integer-centavo prices. Access uses the same owner or catalog permission boundary as product management.
+- `POST /v1/pricing/price-lists` requires `catalog.manage`, an `Idempotency-Key`, one pricing-group quantity threshold in integer thousandths, and one or more tenant-owned variant prices in integer centavos.
+- A list may be the active default for its pricing type or may be assigned to specific active reseller customers. Reseller status does not bypass the quantity threshold.
+- Retail, wholesale, and dealer sales share the same branch-variant inventory balance. Price lists do not create inventory positions or movements.
+- The local transaction slice stores `pricing_type` and optional `price_list_id` sale snapshots, exposes protected POS pricing options, and resolves every wholesale/dealer price again inside the atomic PostgreSQL sale command. It requires an active reseller, prefers that customer's assigned list over the default list, requires every cart item to be present, and enforces the combined pricing-group threshold before stock or cash changes.
+- The POS displays Retail, Wholesale, and Dealer modes and mirrors the authoritative rules for immediate cashier feedback. The client still submits no unit prices or totals. Staging migration and sale/refund UAT remain release gates; the deployed Production POS continues to run the verified retail build.
+
 Current opening-inventory implementation:
 
 - `GET /v1/inventory/opening-balances` returns active inventory-tracked variants and their opening status for one server-authorized branch. Owners can select any active tenant branch; future employees are restricted to assigned branches.
@@ -212,6 +221,15 @@ Current POS sales implementation:
 - Platform commands use a separate actor-scoped idempotency ledger and append `platform_admin` audit events. The restricted Worker database role may execute the platform functions but cannot read the allowlist or idempotency tables directly.
 
 ## Command safety
+
+### Advanced Wholesale AW1
+
+- `GET /v1/wholesale/orders` returns server-authorized reseller customers, branches, sellable variants, shared inventory availability, eligible price lists, and tenant sales orders. It requires the effective `advanced_wholesale` entitlement plus `wholesale_orders.read` or owner access.
+- `POST /v1/wholesale/orders` creates or replaces an editable draft. The request contains customer, branch, price-list, pricing type, notes, variant IDs, and integer-thousandth quantities. PostgreSQL resolves every product and current unit price. Drafts do not reserve or deduct inventory.
+- `POST /v1/wholesale/orders/{id}/confirm` accepts no commercial values. The atomic command revalidates reseller eligibility, assigned/default price-list access, current item prices, current pricing-group thresholds, and shared branch availability; it then snapshots customer/catalog values, increments `inventory_balances.reserved`, and appends positive reservation-ledger rows.
+- `POST /v1/wholesale/orders/{id}/cancel` requires a reason. For confirmed or partially fulfilled orders it releases only `ordered - fulfilled - already cancelled`, appends negative reservation-ledger rows, and preserves the order and line history.
+- Every write requires an `Idempotency-Key`. Identical retries replay the stored result; changed reuse returns 409. Confirm and cancel append one tenant audit event and outbox event on the first committed execution only.
+- Direct browser and general API-role reads or writes to sales-order and reservation tables are denied. Hyperdrive may execute only the narrow security-definer functions, while RLS remains enabled as defense in depth.
 
 - The API derives tenant, actor, employee, location, and device context from trusted authentication/device state.
 - Clients never submit authoritative cost, COGS, tax outcome, available stock, entitlement, permission, expected cash, or ledger balances.

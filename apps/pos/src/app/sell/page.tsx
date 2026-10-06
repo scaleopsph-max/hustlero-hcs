@@ -8,6 +8,7 @@ import {
   posSalesContextSchema,
   type PosCustomer,
   type PosSalesContext,
+  type PricingType,
 } from '@hcs/contracts'
 import { Button, Chip, Glass, Logo, Surface, buttonClasses, cn, formatPeso, parsePeso } from '@hcs/ui'
 import { SyncPill } from '@/components/SyncPill'
@@ -18,16 +19,20 @@ import {
   posRequest,
   readPosCart,
   readPosCustomer,
+  readPosPricingType,
   readPosSession,
   writePosCart,
+  writePosPricingType,
   type PosCartLine,
 } from '@/lib/pos-api'
+import { resolvePosPricing } from '@/lib/pos-pricing'
 
 export default function SellScreen() {
   const router = useRouter()
   const [context, setContext] = useState<PosSalesContext | null>(null)
   const [lines, setLines] = useState<PosCartLine[]>([])
   const [customer, setCustomer] = useState<PosCustomer | null>(null)
+  const [pricingType, setPricingType] = useState<PricingType>('retail')
   const [category, setCategory] = useState('All')
   const [query, setQuery] = useState('')
   const [openingCash, setOpeningCash] = useState('0.00')
@@ -40,6 +45,7 @@ export default function SellScreen() {
       setContext(posSalesContextSchema.parse(await posRequest('/v1/pos/context')))
       setLines(readPosCart())
       setCustomer(readPosCustomer())
+      setPricingType(readPosPricingType())
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not load the register.')
       if (!readPosSession()) router.replace('/')
@@ -60,10 +66,17 @@ export default function SellScreen() {
           `${item.productName} ${item.variantName} ${item.sku} ${item.barcode ?? ''}`.toLowerCase().includes(needle)),
     )
   }, [category, context, query])
-  const total = lines.reduce(
-    (sum, line) => sum + (itemById.get(line.variantId)?.retailPriceCentavos ?? 0) * (line.quantityMilli / 1000),
-    0,
+  const pricing = useMemo(
+    () => resolvePosPricing(context?.items ?? [], lines, customer, pricingType),
+    [context, customer, lines, pricingType],
   )
+  const total = pricing.totalCentavos
+
+  function selectPricingType(next: PricingType) {
+    setPricingType(next)
+    writePosPricingType(next)
+    setError(null)
+  }
 
   function updateLines(next: PosCartLine[]) {
     setLines(next)
@@ -245,17 +258,44 @@ export default function SellScreen() {
               <ShoppingBag size={21} className="text-gold-300" />
             </div>
             <PosCustomerPicker selected={customer} onSelect={setCustomer} />
+            <div className="grid grid-cols-3 gap-1" aria-label="Pricing type">
+              {(['retail', 'wholesale', 'dealer'] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => selectPricingType(type)}
+                  className={cn(
+                    'min-h-10 border px-2 text-xs font-semibold capitalize',
+                    pricingType === type
+                      ? 'border-gold-400 bg-gold-500/20 text-gold-100'
+                      : 'border-white/15 text-ink-200',
+                  )}
+                >
+                  {type}
+                </button>
+              ))}
+            </div>
+            {pricingType !== 'retail' && pricing.error ? (
+              <div className="border-l-2 border-amber-400 bg-amber-950/50 p-2 text-xs text-amber-100">
+                {pricing.error}
+              </div>
+            ) : null}
             <ul className="flex flex-col overflow-y-auto">
               {lines.map((line) => {
                 const item = itemById.get(line.variantId)
                 if (!item) return null
+                const resolved = pricing.lines.get(line.variantId)
+                const unitPrice = resolved?.unitPriceCentavos ?? item.retailPriceCentavos
                 return (
                   <li key={line.variantId} className="flex items-center gap-2 border-b border-white/10 py-3">
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-semibold text-white">
                         {item.productName}, {item.variantName}
                       </div>
-                      <div className="text-xs text-ink-300">{formatPeso(item.retailPriceCentavos)} each</div>
+                      <div className="text-xs text-ink-300">
+                        {formatPeso(unitPrice)} each
+                        {resolved?.pricingGroupName ? ` · ${resolved.pricingGroupName}` : ''}
+                      </div>
                     </div>
                     <div className="flex items-center">
                       <button
@@ -277,7 +317,9 @@ export default function SellScreen() {
                       </button>
                     </div>
                     <strong className="w-20 text-right text-white">
-                      {formatPeso((item.retailPriceCentavos * line.quantityMilli) / 1000)}
+                      {formatPeso(
+                        resolved?.lineTotalCentavos ?? (item.retailPriceCentavos * line.quantityMilli) / 1000,
+                      )}
                     </strong>
                   </li>
                 )
@@ -293,7 +335,7 @@ export default function SellScreen() {
               <span className="font-display text-4xl font-bold text-white">{formatPeso(total)}</span>
             </div>
             <button
-              disabled={!lines.length}
+              disabled={!lines.length || !pricing.eligible}
               onClick={() => router.push('/checkout')}
               className={buttonClasses({
                 variant: 'primary',

@@ -31,6 +31,12 @@ import {
   posDeviceActivationCreateResponseSchema,
   posDeviceContextSchema,
   posPinLoginResponseSchema,
+  priceListUpsertResponseSchema,
+  pricingContextSchema,
+  wholesaleOrderCancelResponseSchema,
+  wholesaleOrderConfirmResponseSchema,
+  wholesaleOrderContextSchema,
+  wholesaleOrderDraftResponseSchema,
   posSaleCompleteResponseSchema,
   posRegisterOpenResponseSchema,
   posSalesContextSchema,
@@ -135,6 +141,76 @@ const deactivateCatalogVariant = vi.fn(async () => ({
   productId: '40000000-0000-4000-8000-000000000001',
   variantId: '50000000-0000-4000-8000-000000000002',
   status: 'deactivated' as const,
+}))
+const pricingContext = { canManage: true, variants: [], customers: [], priceLists: [] }
+const loadPricingContext = vi.fn(async () => pricingContext)
+const upsertPriceList = vi.fn(async () => ({
+  priceListId: '41000000-0000-4000-8000-000000000001',
+  pricingGroupId: '42000000-0000-4000-8000-000000000001',
+  status: 'created' as const,
+}))
+const wholesaleCustomerId = '60000000-0000-4000-8000-000000000001'
+const wholesaleOrderId = '61000000-0000-4000-8000-000000000001'
+const wholesaleOrderContext = {
+  canManage: true,
+  customers: [{ id: wholesaleCustomerId, customerNumber: 'CUST-000001', fullName: 'Sample Reseller' }],
+  locations: [{ id: locationId, code: 'MAIN', name: 'Main Store' }],
+  variants: [
+    {
+      id: '50000000-0000-4000-8000-000000000001',
+      productName: 'Triple Black',
+      variantName: 'Small',
+      sku: 'TSH-BLK-S',
+    },
+  ],
+  inventory: [
+    {
+      locationId,
+      variantId: '50000000-0000-4000-8000-000000000001',
+      onHandMilli: 20_000,
+      reservedMilli: 0,
+      availableMilli: 20_000,
+    },
+  ],
+  priceLists: [
+    {
+      id: '41000000-0000-4000-8000-000000000001',
+      code: 'WHOLESALE',
+      name: 'Wholesale price list',
+      pricingType: 'wholesale' as const,
+      isDefault: true,
+      customerIds: [],
+      entries: [
+        {
+          variantId: '50000000-0000-4000-8000-000000000001',
+          unitPriceMinor: 45_000,
+          pricingGroupId: '42000000-0000-4000-8000-000000000001',
+          thresholdMilli: 10_000,
+          pricingGroupName: 'Wholesale',
+        },
+      ],
+    },
+  ],
+  orders: [],
+}
+const loadWholesaleOrderContext = vi.fn(async () => wholesaleOrderContext)
+const saveWholesaleOrderDraft = vi.fn(async () => ({
+  salesOrderId: wholesaleOrderId,
+  status: 'draft' as const,
+  result: 'created' as const,
+  lineCount: 1,
+  totalMinor: 450_000,
+}))
+const confirmWholesaleOrder = vi.fn(async () => ({
+  salesOrderId: wholesaleOrderId,
+  status: 'confirmed' as const,
+  reservedLineCount: 1,
+  totalMinor: 450_000,
+}))
+const cancelWholesaleOrder = vi.fn(async () => ({
+  salesOrderId: wholesaleOrderId,
+  status: 'cancelled' as const,
+  releasedQuantityMilli: 10_000,
 }))
 const loadOpeningInventory = vi.fn(async () => ({
   locations: [{ id: locationId, code: 'MAIN', name: 'Main Store' }],
@@ -452,6 +528,7 @@ const posContext = {
       barcode: '12345',
       category: 'Shirts',
       retailPriceCentavos: 89900,
+      pricingOptions: [],
       availableMilli: 10000,
       trackInventory: true,
     },
@@ -486,6 +563,9 @@ const completePosSale = vi.fn(async () => ({
   completedAt: '2026-09-25T02:05:00.000Z',
   loyaltyEarnedPoints: 0,
   loyaltyBalancePoints: null,
+  pricingType: 'retail' as const,
+  priceListId: null,
+  priceListName: null,
 }))
 const loadSales = vi.fn(async () => ({ sales: [] }))
 const saleReceipt = {
@@ -982,6 +1062,12 @@ const authenticatedApp = createApp({
   updateCatalogProduct,
   updateCatalogVariant,
   deactivateCatalogVariant,
+  loadPricingContext,
+  upsertPriceList,
+  loadWholesaleOrderContext,
+  saveWholesaleOrderDraft,
+  confirmWholesaleOrder,
+  cancelWholesaleOrder,
   loadInventoryStock,
   loadInventoryMovements,
   recordInventoryAdjustment,
@@ -1477,6 +1563,12 @@ describe('API', () => {
       updateCatalogProduct,
       updateCatalogVariant,
       deactivateCatalogVariant,
+      loadPricingContext,
+      upsertPriceList,
+      loadWholesaleOrderContext,
+      saveWholesaleOrderDraft,
+      confirmWholesaleOrder,
+      cancelWholesaleOrder,
       loadInventoryStock,
       loadInventoryMovements,
       recordInventoryAdjustment,
@@ -1604,6 +1696,12 @@ describe('API', () => {
       updateCatalogProduct,
       updateCatalogVariant,
       deactivateCatalogVariant,
+      loadPricingContext,
+      upsertPriceList,
+      loadWholesaleOrderContext,
+      saveWholesaleOrderDraft,
+      confirmWholesaleOrder,
+      cancelWholesaleOrder,
       loadInventoryStock,
       loadInventoryMovements,
       recordInventoryAdjustment,
@@ -1819,6 +1917,172 @@ describe('API', () => {
     expect(response.status).toBe(200)
     expect(catalogResponseSchema.safeParse(await response.json()).success).toBe(true)
     expect(loadCatalog).toHaveBeenCalledWith(userId, tenantId, bindings)
+  })
+
+  it('loads tenant pricing and creates an idempotent wholesale price list', async () => {
+    loadPricingContext.mockClear()
+    upsertPriceList.mockClear()
+    const loaded = await authenticatedApp.request(
+      '/v1/pricing',
+      { headers: { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId } },
+      bindings,
+    )
+    expect(loaded.status).toBe(200)
+    expect(pricingContextSchema.safeParse(await loaded.json()).success).toBe(true)
+    expect(loadPricingContext).toHaveBeenCalledWith(userId, tenantId, bindings)
+
+    const request = {
+      code: 'WHOLESALE',
+      name: 'Wholesale price list',
+      pricingType: 'wholesale' as const,
+      isDefault: true,
+      isActive: true,
+      pricingGroup: { code: 'CORE', name: 'Core products', thresholdMilli: 6_000 },
+      customerIds: [],
+      entries: [{ variantId: '50000000-0000-4000-8000-000000000001', unitPriceMinor: 75_000 }],
+    }
+    const saved = await authenticatedApp.request(
+      '/v1/pricing/price-lists',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'price-list-request-001',
+        },
+        body: JSON.stringify(request),
+      },
+      bindings,
+    )
+    expect(saved.status).toBe(201)
+    expect(priceListUpsertResponseSchema.safeParse(await saved.json()).success).toBe(true)
+    expect(upsertPriceList).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      request,
+      'price-list-request-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('runs the advanced wholesale draft, confirm, and cancel API workflow', async () => {
+    loadWholesaleOrderContext.mockClear()
+    saveWholesaleOrderDraft.mockClear()
+    confirmWholesaleOrder.mockClear()
+    cancelWholesaleOrder.mockClear()
+
+    const loaded = await authenticatedApp.request(
+      '/v1/wholesale/orders',
+      { headers: { authorization: 'Bearer valid-token', 'x-tenant-id': tenantId } },
+      bindings,
+    )
+    expect(loaded.status).toBe(200)
+    expect(wholesaleOrderContextSchema.safeParse(await loaded.json()).success).toBe(true)
+    expect(loadWholesaleOrderContext).toHaveBeenCalledWith(userId, tenantId, bindings)
+
+    const draftRequest = {
+      orderNumber: 'SO-20261006-001',
+      customerId: wholesaleCustomerId,
+      locationId,
+      priceListId: '41000000-0000-4000-8000-000000000001',
+      pricingType: 'wholesale' as const,
+      notes: 'First reseller order',
+      lines: [{ variantId: '50000000-0000-4000-8000-000000000001', quantityMilli: 10_000 }],
+    }
+    const saved = await authenticatedApp.request(
+      '/v1/wholesale/orders',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'wholesale-draft-001',
+        },
+        body: JSON.stringify(draftRequest),
+      },
+      bindings,
+    )
+    expect(saved.status).toBe(201)
+    expect(wholesaleOrderDraftResponseSchema.safeParse(await saved.json()).success).toBe(true)
+    expect(saveWholesaleOrderDraft).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      draftRequest,
+      'wholesale-draft-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+
+    const confirmed = await authenticatedApp.request(
+      `/v1/wholesale/orders/${wholesaleOrderId}/confirm`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'wholesale-confirm-001',
+        },
+      },
+      bindings,
+    )
+    expect(confirmed.status).toBe(200)
+    expect(wholesaleOrderConfirmResponseSchema.safeParse(await confirmed.json()).success).toBe(true)
+    expect(confirmWholesaleOrder).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      wholesaleOrderId,
+      'wholesale-confirm-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+
+    const cancelled = await authenticatedApp.request(
+      `/v1/wholesale/orders/${wholesaleOrderId}/cancel`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'wholesale-cancel-001',
+        },
+        body: JSON.stringify({ reason: 'Customer changed the order.' }),
+      },
+      bindings,
+    )
+    expect(cancelled.status).toBe(200)
+    expect(wholesaleOrderCancelResponseSchema.safeParse(await cancelled.json()).success).toBe(true)
+    expect(cancelWholesaleOrder).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      wholesaleOrderId,
+      'Customer changed the order.',
+      'wholesale-cancel-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('rejects invalid or ambiguous advanced wholesale commands before persistence', async () => {
+    saveWholesaleOrderDraft.mockClear()
+    const missingKey = await authenticatedApp.request(
+      '/v1/wholesale/orders',
+      {
+        method: 'POST',
+        headers: { authorization: 'Bearer valid-token', 'content-type': 'application/json', 'x-tenant-id': tenantId },
+        body: JSON.stringify({}),
+      },
+      bindings,
+    )
+    expect(missingKey.status).toBe(400)
+    expect(saveWholesaleOrderDraft).not.toHaveBeenCalled()
   })
 
   it('requires valid product details and an idempotency key', async () => {
@@ -2885,6 +3149,7 @@ describe('API', () => {
           tenderedCentavos: 49_900,
         },
       ],
+      pricingType: 'retail' as const,
     }
     const response = await authenticatedApp.request(
       '/v1/pos/sales/complete',
@@ -2941,6 +3206,38 @@ describe('API', () => {
     )
     expect(response.status).toBe(409)
     expect(apiErrorResponseSchema.parse(await response.json()).error.code).toBe('INVENTORY_CUTOVER_REQUIRED')
+  })
+
+  it('rejects a wholesale sale when the server threshold is not met', async () => {
+    completePosSale.mockRejectedValueOnce(
+      Object.assign(new Error('The pricing-group quantity threshold has not been met'), { code: 'HCSW3' }),
+    )
+    const response = await authenticatedApp.request(
+      '/v1/pos/sales/complete',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-pos-session-token': 'f'.repeat(64),
+          'idempotency-key': 'pos-wholesale-threshold-001',
+        },
+        body: JSON.stringify({
+          lines: [{ variantId: '50000000-0000-4000-8000-000000000001', quantityMilli: 5000 }],
+          payments: [
+            {
+              paymentMethodId: 'e0000000-0000-4000-8000-000000000001',
+              amountCentavos: 375000,
+              tenderedCentavos: 375000,
+            },
+          ],
+          customerId: '10000000-0000-4000-8000-000000000001',
+          pricingType: 'wholesale',
+        }),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(409)
+    expect(apiErrorResponseSchema.parse(await response.json()).error.code).toBe('WHOLESALE_THRESHOLD_NOT_MET')
   })
 
   it('lists tenant sales for an authenticated Back Office user', async () => {

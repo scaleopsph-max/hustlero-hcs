@@ -28,6 +28,21 @@ export const posSalesContextSchema = z.object({
       barcode: z.string().nullable(),
       category: z.string().nullable(),
       retailPriceCentavos: z.number().int().nonnegative(),
+      pricingOptions: z
+        .array(
+          z.object({
+            pricingType: z.enum(['wholesale', 'dealer']),
+            priceListId: id,
+            priceListName: z.string(),
+            pricingGroupId: id,
+            pricingGroupName: z.string(),
+            thresholdMilli: z.number().int().positive(),
+            unitPriceCentavos: z.number().int().nonnegative(),
+            isDefault: z.boolean(),
+            customerIds: z.array(id),
+          }),
+        )
+        .default([]),
       availableMilli: z.number().int().nonnegative().nullable(),
       trackInventory: z.boolean(),
     }),
@@ -71,6 +86,7 @@ export const posSaleCompleteRequestSchema = z.object({
       'Duplicate payment methods',
     ),
   customerId: id.nullable().optional(),
+  pricingType: z.enum(['retail', 'wholesale', 'dealer']).default('retail'),
 })
 
 export const posSaleCompleteResponseSchema = z.object({
@@ -96,6 +112,9 @@ export const posSaleCompleteResponseSchema = z.object({
   customerName: z.string().nullable().optional(),
   loyaltyEarnedPoints: z.number().int().nonnegative().default(0),
   loyaltyBalancePoints: z.number().int().nonnegative().nullable().default(null),
+  pricingType: z.enum(['retail', 'wholesale', 'dealer']).default('retail'),
+  priceListId: id.nullable().default(null),
+  priceListName: z.string().nullable().default(null),
 })
 
 // Compatibility aliases for consumers migrating from the original cash-only contract.

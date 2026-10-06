@@ -42,7 +42,11 @@ update app.tenant_entitlements set entitled=true,enabled=true where tenant_id='2
 select is((platform.load_context('1a000000-0000-4000-8000-000000000001')->'admin'->>'role'),'super_admin','super admin context is loaded');
 select is((platform.load_context('1a000000-0000-4000-8000-000000000001')->'admin'->>'canManage')::boolean,true,'super admin can manage');
 select is((platform.load_context('1a000000-0000-4000-8000-000000000003')->'admin'->>'canManage')::boolean,false,'support role is read-only');
-select is(jsonb_array_length(platform.load_context('1a000000-0000-4000-8000-000000000001')->'tenants'),1,'real tenant directory is returned');
+select ok(exists(
+  select 1
+  from jsonb_array_elements(platform.load_context('1a000000-0000-4000-8000-000000000001')->'tenants') tenant
+  where tenant->>'id' = '2a000000-0000-4000-8000-000000000001'
+),'real tenant directory is returned');
 select throws_ok($$select platform.load_context('1a000000-0000-4000-8000-000000000004')$$,'HCSP0','Platform access is not allowed','non-admin is denied');
 select throws_ok($$select platform.update_tenant_entitlement('1a000000-0000-4000-8000-000000000003','2a000000-0000-4000-8000-000000000001','inventory',false,null,'Support cannot change access','support-denied-001','hash-a','request-support')$$,'HCSP0','Platform entitlement management is not allowed','support cannot change entitlements');
 

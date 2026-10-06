@@ -9,19 +9,23 @@ import {
   type PosCustomer,
   type PosSaleCompleteResponse,
   type PosSalesContext,
+  type PricingType,
 } from '@hcs/contracts'
 import { Button, Glass, Keypad, Surface, cn, formatPeso, parsePeso } from '@hcs/ui'
 import { SubHeader } from '@/components/SubHeader'
 import {
   POS_CART_KEY,
   POS_CUSTOMER_KEY,
+  POS_PRICING_TYPE_KEY,
   newIdempotencyKey,
   posRequest,
   readPosCart,
   readPosCustomer,
+  readPosPricingType,
   readPosSession,
   type PosCartLine,
 } from '@/lib/pos-api'
+import { resolvePosPricing } from '@/lib/pos-pricing'
 
 type PaymentMethod = PosSalesContext['paymentMethods'][number]
 type PaymentAllocation = {
@@ -45,6 +49,7 @@ export default function Checkout() {
   const [context, setContext] = useState<PosSalesContext | null>(null)
   const [lines, setLines] = useState<PosCartLine[]>([])
   const [customer, setCustomer] = useState<PosCustomer | null>(null)
+  const [pricingType, setPricingType] = useState<PricingType>('retail')
   const [selectedMethodId, setSelectedMethodId] = useState('')
   const [amount, setAmount] = useState('')
   const [received, setReceived] = useState('')
@@ -60,6 +65,7 @@ export default function Checkout() {
     if (!cart.length) return router.replace('/sell')
     setLines(cart)
     setCustomer(readPosCustomer())
+    setPricingType(readPosPricingType())
     void posRequest('/v1/pos/context')
       .then((data) => {
         const loaded = posSalesContextSchema.parse(data)
@@ -76,10 +82,11 @@ export default function Checkout() {
   }, [router])
 
   const itemById = useMemo(() => new Map(context?.items.map((item) => [item.variantId, item]) ?? []), [context])
-  const total = lines.reduce(
-    (sum, line) => sum + (itemById.get(line.variantId)?.retailPriceCentavos ?? 0) * (line.quantityMilli / 1000),
-    0,
+  const pricing = useMemo(
+    () => resolvePosPricing(context?.items ?? [], lines, customer, pricingType),
+    [context, customer, lines, pricingType],
   )
+  const total = pricing.totalCentavos
   const allocated = payments.reduce((sum, payment) => sum + payment.amountCentavos, 0)
   const remaining = Math.max(total - allocated, 0)
   const selectedMethod = context?.paymentMethods.find((method) => method.id === selectedMethodId)
@@ -160,11 +167,13 @@ export default function Checkout() {
               tenderedCentavos,
             })),
             customerId: customer?.id ?? null,
+            pricingType,
           }),
         }),
       )
       sessionStorage.removeItem(POS_CART_KEY)
       sessionStorage.removeItem(POS_CUSTOMER_KEY)
+      sessionStorage.removeItem(POS_PRICING_TYPE_KEY)
       setReceipt(completed)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The sale could not be completed.')
@@ -250,9 +259,22 @@ export default function Checkout() {
               </strong>
             </div>
           ) : null}
+          <div className="flex items-center justify-between border-b border-white/10 pb-3 text-sm">
+            <span className="text-ink-300">Pricing</span>
+            <strong className="capitalize text-white">
+              {pricingType}
+              {pricing.priceListName ? ` · ${pricing.priceListName}` : ''}
+            </strong>
+          </div>
+          {!pricing.eligible && pricing.error ? (
+            <div className="border-l-2 border-amber-400 bg-amber-950/50 p-2 text-xs text-amber-100">
+              {pricing.error}
+            </div>
+          ) : null}
           <ul>
             {lines.map((line) => {
               const item = itemById.get(line.variantId)
+              const resolved = pricing.lines.get(line.variantId)
               return item ? (
                 <li key={line.variantId} className="flex justify-between gap-3 border-t border-white/10 py-3">
                   <div>
@@ -260,11 +282,12 @@ export default function Checkout() {
                       {item.productName}, {item.variantName}
                     </div>
                     <div className="text-sm text-ink-300">
-                      {line.quantityMilli / 1000} × {formatPeso(item.retailPriceCentavos)}
+                      {line.quantityMilli / 1000} ×{' '}
+                      {formatPeso(resolved?.unitPriceCentavos ?? item.retailPriceCentavos)}
                     </div>
                   </div>
                   <strong className="text-white">
-                    {formatPeso((item.retailPriceCentavos * line.quantityMilli) / 1000)}
+                    {formatPeso(resolved?.lineTotalCentavos ?? (item.retailPriceCentavos * line.quantityMilli) / 1000)}
                   </strong>
                 </li>
               ) : null
@@ -401,7 +424,7 @@ export default function Checkout() {
               variant="primary"
               size="xl"
               className="mt-auto"
-              disabled={!payments.length || busy}
+              disabled={!payments.length || busy || !pricing.eligible}
               onClick={() => void complete()}
             >
               {busy ? 'Completing sale...' : `Complete sale · ${formatPeso(total)}`}

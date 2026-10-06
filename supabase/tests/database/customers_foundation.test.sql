@@ -30,8 +30,8 @@ select lives_ok($$select app.create_customer('1a000000-0000-4000-8000-0000000000
 select is((select customer_number::text from app.customers where tenant_id='2a000000-0000-4000-8000-000000000001'),'CUST-000001','customer number is tenant-sequenced');
 select is((select email::text from app.customers where tenant_id='2a000000-0000-4000-8000-000000000001'),'maria@example.com','email is normalized');
 select is((select origin from app.customers where tenant_id='2a000000-0000-4000-8000-000000000001'),'backoffice','back office origin is recorded');
-select is((select count(*)::integer from audit.audit_events where action='customer.created'),1,'customer creation is audited');
-select is((select count(*)::integer from integration.event_outbox where topic='customer.created'),1,'customer creation emits an outbox event');
+select is((select count(*)::integer from audit.audit_events where tenant_id='2a000000-0000-4000-8000-000000000001' and action='customer.created'),1,'customer creation is audited');
+select is((select count(*)::integer from integration.event_outbox where tenant_id='2a000000-0000-4000-8000-000000000001' and topic='customer.created'),1,'customer creation emits an outbox event');
 select lives_ok($$select app.create_customer('1a000000-0000-4000-8000-000000000001','2a000000-0000-4000-8000-000000000001','Maria Santos','MARIA@EXAMPLE.COM',null,null,'standard',false,false,'customer-create-001','hash-1','retry-1')$$,'identical customer retry is accepted');
 select is((select count(*)::integer from app.customers where tenant_id='2a000000-0000-4000-8000-000000000001'),1,'idempotent retry creates no duplicate');
 select throws_ok($$select app.create_customer('1a000000-0000-4000-8000-000000000001','2a000000-0000-4000-8000-000000000001','Other Maria','maria@example.com',null,null,'standard',false,false,'customer-create-002','hash-2','request-2')$$,'HCSB3','An active customer already uses this email or phone','active duplicate contact is rejected');

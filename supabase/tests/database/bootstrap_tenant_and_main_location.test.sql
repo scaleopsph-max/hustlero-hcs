@@ -64,7 +64,7 @@ select is(
   'exactly one tenant is created'
 );
 select is(
-  (select count(*)::integer from app.locations where code = 'MAIN' and name = 'Main Store'),
+  (select count(*)::integer from app.locations where tenant_id = (select id from app.tenants where slug = 'pg-tap-onboarding') and code = 'MAIN' and name = 'Main Store'),
   1,
   'main store is created'
 );
@@ -74,7 +74,7 @@ select is(
   'actor becomes active owner'
 );
 select is(
-  (select count(*)::integer from app.roles where code = 'owner' and is_system_template),
+  (select count(*)::integer from app.roles where tenant_id = (select id from app.tenants where slug = 'pg-tap-onboarding') and code = 'owner' and is_system_template),
   1,
   'owner role is created'
 );
@@ -83,19 +83,20 @@ select is(
     select count(*)::integer
     from app.role_permissions rp
     join app.roles r on r.tenant_id = rp.tenant_id and r.id = rp.role_id
-    where r.code = 'owner'
+    where r.tenant_id = (select id from app.tenants where slug = 'pg-tap-onboarding')
+      and r.code = 'owner'
       and rp.permission_code in ('tenant.manage', 'locations.manage', 'onboarding.manage')
   ),
   3,
   'owner role receives the three bootstrap permissions'
 );
 select is(
-  (select count(*)::integer from audit.audit_events where action = 'tenant.created'),
+  (select count(*)::integer from audit.audit_events where tenant_id = (select id from app.tenants where slug = 'pg-tap-onboarding') and action = 'tenant.created'),
   1,
   'tenant creation is audited'
 );
 select is(
-  (select count(*)::integer from integration.event_outbox where topic = 'tenant.created'),
+  (select count(*)::integer from integration.event_outbox where tenant_id = (select id from app.tenants where slug = 'pg-tap-onboarding') and topic = 'tenant.created'),
   1,
   'tenant creation emits one outbox event'
 );

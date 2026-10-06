@@ -48,8 +48,8 @@ select is(
   platform.create_support_access('1b000000-0000-4000-8000-000000000001','2b000000-0000-4000-8000-000000000001','SUP-1042','Investigate inventory totals',30,'support-create-001','hash-create','request-create')->>'accessLevel',
   'read_only','support access is read-only'
 );
-select is((select scope from platform.support_access_grants where ticket_reference='SUP-1042'),array['tenant_overview']::text[],'support scope is overview only');
-select is((select admin_user_id from platform.support_access_grants where ticket_reference='SUP-1042'),'1b000000-0000-4000-8000-000000000001'::uuid,'grant belongs to the requesting operator');
+select is((select scope from platform.support_access_grants where tenant_id='2b000000-0000-4000-8000-000000000001' and admin_user_id='1b000000-0000-4000-8000-000000000001' and ticket_reference='SUP-1042'),array['tenant_overview']::text[],'support scope is overview only');
+select is((select admin_user_id from platform.support_access_grants where tenant_id='2b000000-0000-4000-8000-000000000001' and admin_user_id='1b000000-0000-4000-8000-000000000001' and ticket_reference='SUP-1042'),'1b000000-0000-4000-8000-000000000001'::uuid,'grant belongs to the requesting operator');
 select is((select count(*)::integer from audit.audit_events where action='platform.support_access.granted' and tenant_id='2b000000-0000-4000-8000-000000000001'),1,'grant is audited once');
 select lives_ok(
   $$select platform.create_support_access('1b000000-0000-4000-8000-000000000001','2b000000-0000-4000-8000-000000000001','SUP-1042','Investigate inventory totals',30,'support-create-001','hash-create','request-create')$$,
@@ -66,26 +66,26 @@ select throws_ok(
 );
 select is((platform.load_support_access('1b000000-0000-4000-8000-000000000001')->>'canGrant')::boolean,true,'super admin can issue access');
 select is(jsonb_array_length(platform.load_support_access('1b000000-0000-4000-8000-000000000001')->'grants'),1,'operator sees own grant history');
-select is((platform.load_support_overview('1b000000-0000-4000-8000-000000000001',(select id from platform.support_access_grants where ticket_reference='SUP-1042'),'view-001')->'tenant'->>'name'),'Support Test Store','active grant reveals tenant summary');
-select is((platform.load_support_overview('1b000000-0000-4000-8000-000000000001',(select id from platform.support_access_grants where ticket_reference='SUP-1042'),'view-002')->'metrics'->>'locationCount')::integer,1,'overview returns aggregate location count');
-select ok(not (platform.load_support_overview('1b000000-0000-4000-8000-000000000001',(select id from platform.support_access_grants where ticket_reference='SUP-1042'),'view-003') ? 'customers'),'overview excludes customer records');
+select is((platform.load_support_overview('1b000000-0000-4000-8000-000000000001',(select id from platform.support_access_grants where tenant_id='2b000000-0000-4000-8000-000000000001' and admin_user_id='1b000000-0000-4000-8000-000000000001' and ticket_reference='SUP-1042'),'view-001')->'tenant'->>'name'),'Support Test Store','active grant reveals tenant summary');
+select is((platform.load_support_overview('1b000000-0000-4000-8000-000000000001',(select id from platform.support_access_grants where tenant_id='2b000000-0000-4000-8000-000000000001' and admin_user_id='1b000000-0000-4000-8000-000000000001' and ticket_reference='SUP-1042'),'view-002')->'metrics'->>'locationCount')::integer,1,'overview returns aggregate location count');
+select ok(not (platform.load_support_overview('1b000000-0000-4000-8000-000000000001',(select id from platform.support_access_grants where tenant_id='2b000000-0000-4000-8000-000000000001' and admin_user_id='1b000000-0000-4000-8000-000000000001' and ticket_reference='SUP-1042'),'view-003') ? 'customers'),'overview excludes customer records');
 select is((select count(*)::integer from audit.audit_events where action='platform.support_access.viewed' and tenant_id='2b000000-0000-4000-8000-000000000001'),3,'every overview view is audited');
 select throws_ok(
-  $$select platform.load_support_overview('1b000000-0000-4000-8000-000000000002',(select id from platform.support_access_grants where ticket_reference='SUP-1042'),'view-outsider')$$,
+  $$select platform.load_support_overview('1b000000-0000-4000-8000-000000000002',(select id from platform.support_access_grants where tenant_id='2b000000-0000-4000-8000-000000000001' and admin_user_id='1b000000-0000-4000-8000-000000000001' and ticket_reference='SUP-1042'),'view-outsider')$$,
   'HCSP2','Support access grant was not found','another operator cannot use the grant'
 );
-select ok((platform.revoke_support_access('1b000000-0000-4000-8000-000000000001',(select id from platform.support_access_grants where ticket_reference='SUP-1042'),'Investigation completed','support-revoke-001','hash-revoke','request-revoke')->>'revokedAt') is not null,'operator can revoke own grant');
+select ok((platform.revoke_support_access('1b000000-0000-4000-8000-000000000001',(select id from platform.support_access_grants where tenant_id='2b000000-0000-4000-8000-000000000001' and admin_user_id='1b000000-0000-4000-8000-000000000001' and ticket_reference='SUP-1042'),'Investigation completed','support-revoke-001','hash-revoke','request-revoke')->>'revokedAt') is not null,'operator can revoke own grant');
 select is((select count(*)::integer from audit.audit_events where action='platform.support_access.revoked' and tenant_id='2b000000-0000-4000-8000-000000000001'),1,'revocation is audited');
 select throws_ok(
-  $$select platform.load_support_overview('1b000000-0000-4000-8000-000000000001',(select id from platform.support_access_grants where ticket_reference='SUP-1042'),'view-after-revoke')$$,
+  $$select platform.load_support_overview('1b000000-0000-4000-8000-000000000001',(select id from platform.support_access_grants where tenant_id='2b000000-0000-4000-8000-000000000001' and admin_user_id='1b000000-0000-4000-8000-000000000001' and ticket_reference='SUP-1042'),'view-after-revoke')$$,
   'HCSP4','Support access grant is not active','revoked grant cannot open tenant summary'
 );
-select is((select count(*)::integer from platform.support_access_grants where ticket_reference='SUP-1042'),1,'revocation preserves grant history');
+select is((select count(*)::integer from platform.support_access_grants where tenant_id='2b000000-0000-4000-8000-000000000001' and admin_user_id='1b000000-0000-4000-8000-000000000001' and ticket_reference='SUP-1042'),1,'revocation preserves grant history');
 
 insert into platform.support_access_grants(tenant_id,admin_user_id,granted_by,ticket_reference,reason,starts_at,expires_at)
 values('2b000000-0000-4000-8000-000000000001','1b000000-0000-4000-8000-000000000001','1b000000-0000-4000-8000-000000000001','SUP-EXPIRED','Historical investigation',now()-interval '2 hours',now()-interval '1 hour');
 select throws_ok(
-  $$select platform.load_support_overview('1b000000-0000-4000-8000-000000000001',(select id from platform.support_access_grants where ticket_reference='SUP-EXPIRED'),'view-expired')$$,
+  $$select platform.load_support_overview('1b000000-0000-4000-8000-000000000001',(select id from platform.support_access_grants where tenant_id='2b000000-0000-4000-8000-000000000001' and admin_user_id='1b000000-0000-4000-8000-000000000001' and ticket_reference='SUP-EXPIRED'),'view-expired')$$,
   'HCSP4','Support access grant is not active','expired grant cannot open tenant summary'
 );
 select throws_ok(
