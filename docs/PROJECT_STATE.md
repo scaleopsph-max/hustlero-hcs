@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-06
+Last updated: 2026-10-07
 
 ## Phase
 
@@ -255,10 +255,11 @@ Last updated: 2026-10-06
 - The first live operating shift was intentionally opened with PHP 1,000.00 starting cash. The owner-confirmed live sale `MAIN-20261003-000002` completed for five `SAH-00001` units at PHP 2,495.00 cash tendered from PHP 2,500.00, with PHP 5.00 change. Stock moved `100 -> 95`, the cash ledger recorded one PHP 2,495.00 `cash_sale` movement, and sale, audit, and outbox records each exist exactly once. The shift then closed at PHP 3,495.00 expected and counted cash with zero variance, no variance movement, and one close audit/outbox pair. Evidence is recorded in `docs/qa/PRODUCTION_LIVE_PILOT_2026-10-03.md`.
 - The owner approved the Production Basic Wholesale release. Migration `20261003055709` is recorded as the 48th Production migration; the Security Advisor has no warning- or error-level findings and the Performance Advisor has no error-level findings. Production API `5c82d179-84bb-4145-8055-bd826da7cfaa`, Back Office `a8753db5-c0c1-4e93-8091-3ffd78f2dadc`, and POS `9ea9e392-1e58-4de7-80e7-55492b62c032` are deployed with Production-only references. Health/auth/CORS/page checks returned 200/401/204/200, and the authenticated owner session loaded the new Wholesale Pricing workspace for `SAH RESTORATION`. No Production price list, sale, or inventory movement was created during deployment. The temporary Supabase CLI token was revoked and the account token list was verified empty. Evidence is recorded in `docs/qa/PRODUCTION_WHOLESALE_RELEASE_2026-10-05.md`.
 - Production Basic Wholesale activation and controlled UAT passed. Active Wholesale pricing requires 10 units at PHP 450.00 each; active Dealer pricing requires 50 units at PHP 399.00 each. Reseller gating and sub-threshold Charge blocking were verified. Exact-cash receipts `MAIN-20261005-000001` (PHP 4,500.00) and `MAIN-20261005-000002` (PHP 19,950.00) each posted once and were fully refunded with return-to-stock enabled. Shared inventory returned to 95 on hand and available, customer net spend returned to PHP 0.00, and both append-only reversal histories are preserved. On 2026-10-06 the owner supplied the PHP 1,000.00 physical count; the Main Register closed at PHP 1,000.00 expected and counted cash with zero variance, leaving zero open sessions. Evidence is recorded in `docs/qa/PRODUCTION_WHOLESALE_UAT_2026-10-05.md`.
+- Advanced Wholesale AW1 branch CI run `37552218931` passed the fail-closed dependency gate, tracked-file secret scan, formatting, lint, strict typecheck, all 93 Vitest cases, all standard and Cloudflare builds, a fresh Supabase reset, and every pgTAP suite including the 44-assertion sales-order and shared-inventory reservation coverage. No AW1 migration or Worker was deployed to Staging or Production.
 
 ## Next safe action
 
-Basic Wholesale and Dealer pricing are configured and controlled Production UAT is complete. Both UAT receipts are fully reversed, shared inventory is back at the 95-unit baseline, the reseller has zero net spend, and the Main Register is closed with zero variance. The Advanced Wholesale blueprint is approved, AW1 is implemented locally, and application checks/builds pass. The next safe action is a fresh database migration and all pgTAP suites in CI; only after that evidence passes should AW1 receive a separate Staging migration/deployment approval. Online Store remains a separate later add-on.
+Basic Wholesale and Dealer pricing are configured and controlled Production UAT is complete. Both UAT receipts are fully reversed, shared inventory is back at the 95-unit baseline, the reseller has zero net spend, and the Main Register is closed with zero variance. The Advanced Wholesale blueprint is approved, AW1 is implemented on `codex/advanced-wholesale-aw1`, and its full application plus fresh-database CI evidence passes. The next safe action is a separate owner approval for the AW1 Staging migration and isolated API/Back Office deployment, followed by controlled sales-order reservation and cancellation UAT. Online Store remains a separate later add-on.
 
 ## Production state
 
