@@ -19,7 +19,7 @@
     "format": "prettier --write \"apps/**/*.{ts,tsx,js,mjs,json,jsonc,css}\" \"packages/**/*.{ts,tsx,js,mjs,json,css}\" \"*.{ts,js,mjs,json,jsonc}\" \".github/**/*.yml\"",
     "format:check": "prettier --check \"apps/**/*.{ts,tsx,js,mjs,json,jsonc,css}\" \"packages/**/*.{ts,tsx,js,mjs,json,css}\" \"*.{ts,js,mjs,json,jsonc}\" \".github/**/*.yml\"",
     "lint": "eslint apps packages",
-    "security:dependencies": "npm audit --audit-level=high",
+    "security:dependencies": "node scripts/dependency-audit.mjs",
     "security:secrets": "node scripts/secret-scan.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -32,10 +32,15 @@
     "eslint-config-prettier": "10.1.8",
     "globals": "17.12.0",
     "prettier": "3.9.8",
+    "sharp": "0.35.5",
     "supabase": "2.117.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.70.0",
     "vitest": "4.1.11"
+  },
+  "overrides": {
+    "sharp": "$sharp",
+    "source-map-js": "1.2.2"
   },
   "engines": {
     "node": ">=20.9.0"

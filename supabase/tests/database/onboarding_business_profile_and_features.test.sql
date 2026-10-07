@@ -61,13 +61,13 @@ insert into app.tenant_memberships (tenant_id, user_id, status, is_owner, joined
 
 select is(
   (select count(*)::integer from app.features where platform_available),
-  8,
-  'eight MVP core features are platform available'
+  9,
+  'nine MVP core features are platform available'
 );
 select is(
   (select count(*)::integer from app.tenant_entitlements where tenant_id = '22000000-0000-4000-8000-000000000001'),
-  8,
-  'new tenant receives eight core feature entitlements'
+  9,
+  'new tenant receives nine core feature entitlements'
 );
 select is(
   (select count(*)::integer from app.tenant_entitlements where tenant_id = '22000000-0000-4000-8000-000000000001' and enabled),
@@ -76,7 +76,7 @@ select is(
 );
 select is(
   (select count(*)::integer from app.tenant_entitlements where tenant_id = '22000000-0000-4000-8000-000000000001' and not enabled),
-  5,
+  6,
   'optional core features start disabled'
 );
 

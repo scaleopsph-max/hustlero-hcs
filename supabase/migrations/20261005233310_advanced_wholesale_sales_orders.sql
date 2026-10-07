@@ -10,6 +10,26 @@ select tenant.id, 'advanced_wholesale', false, false
 from app.tenants tenant
 on conflict (tenant_id, feature_code) do nothing;
 
+create function app.initialize_tenant_advanced_wholesale_entitlement()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  insert into app.tenant_entitlements (tenant_id, feature_code, entitled, enabled)
+  values (new.id, 'advanced_wholesale', false, false)
+  on conflict (tenant_id, feature_code) do nothing;
+  return new;
+end;
+$$;
+
+revoke all on function app.initialize_tenant_advanced_wholesale_entitlement() from public, anon, authenticated;
+
+create trigger tenants_initialize_advanced_wholesale_entitlement
+after insert on app.tenants
+for each row execute function app.initialize_tenant_advanced_wholesale_entitlement();
+
 insert into app.permissions (code, description) values
   ('wholesale_orders.read', 'View advanced wholesale sales orders'),
   ('wholesale_orders.manage', 'Create, confirm, and cancel advanced wholesale sales orders')

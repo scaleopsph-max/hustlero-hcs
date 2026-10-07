@@ -60,3 +60,11 @@
 - Select and benchmark the database query layer in Cloudflare Workers.
 - Confirm local/staging/production Supabase workflow and pooling strategy.
 - Confirm receipt-printer and barcode-scanner browser/device support on target hardware.
+
+## ADR-040: Time-box the unpatched braces build-tool advisory
+
+- **Date:** 2026-10-07
+- **Status:** Accepted
+- **Decision:** Keep the dependency security gate fail-closed for every high and critical advisory except two path-scoped build-tool findings. `GHSA-vfj7-8cjw-p6xm` is accepted only for dependency chains rooted exclusively in `braces`, which HCS invokes through trusted Tailwind and vinext build-time glob patterns. `GHSA-wq5f-xc86-pv6w` is accepted only for the `sharp` copy nested under Cloudflare `miniflare`; Next and image-generation paths are pinned to patched `sharp` 0.35.5. Fixable `source-map-js` findings are pinned to 1.2.2.
+- **Reason:** No patched `braces` release exists as of 2026-10-07, and forcing Tailwind 4 does not remove the vinext path. Cloudflare's current `miniflare` release pins vulnerable `sharp` 0.35.4 exactly, while the emulator is not shipped in the deployed worker. Blocking delivery on these isolated build-time paths would not reduce tenant runtime risk.
+- **Review trigger:** Remove each exception immediately when a patched `braces` or Cloudflare `miniflare` dependency chain becomes available. Any introduction of user-controlled glob or image input into these build tools invalidates this decision.
