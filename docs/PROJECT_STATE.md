@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-08
+Last updated: 2026-10-09
 
 ## Phase
 
@@ -263,10 +263,14 @@ Last updated: 2026-10-08
 - Post-deployment Supabase advisors report no warning- or error-level findings. The three AW1 tables retain the intentional private-schema RLS-without-browser-policy posture; informational foreign-key index candidates are tracked for measured performance work rather than speculative removal or addition.
 - The owner approved `APPROVED ADVANCED WHOLESALE AW2 - PROCEED TO BUILD` on 2026-10-08 for local implementation only. The AW2 branch now contains partial fulfillment, shared-stock reservation consumption, immutable invoices, combined Sales archive records, printable invoice presentation, and `all`/`pos`/`wholesale` reporting contracts. No AW2 migration or Worker build has been applied to Staging or Production.
 - Advanced Wholesale AW2 branch CI run `37731734969` passed the fail-closed dependency gate, tracked-file secret scan, formatting, lint, strict typecheck, all 93 Vitest cases, all standard and Cloudflare builds, a fresh Supabase reset, and every pgTAP suite including the 56-assertion AW2 fulfillment, invoice, reporting, immutability, idempotency, authorization, and tenant-isolation coverage.
+- Staging migration `20261008045840_advanced_wholesale_partial_fulfillment_invoices` is recorded with the exact repository version. Staging API Worker `4b94f93c-fb64-48d2-ab5f-bb51e7b402c8` and corrected Back Office Worker `49e3b2d7-f7a1-4a43-8796-9b34f1f9c1c8` are deployed with staging-only bindings and public configuration. Health, authentication rejection, exact-origin CORS, and `/wholesale` checks returned 200, 401, 204, and 200.
+- Controlled Staging order `SO-20261008-002` passed the AW2 lifecycle. Six shared-stock units were reserved, two units produced immutable invoice `INV-20261008-000001` for PHP 1,600.00, and the remaining four produced `INV-20261008-000002` for PHP 3,200.00. The order is fulfilled, invoice quantities reconcile to six, on-hand is 3, and reserved is 0. The Sales archive rendered the completed invoice snapshot and kept wholesale refund/void disabled for AW4. Evidence is recorded in `docs/qa/STAGING_ADVANCED_WHOLESALE_AW2_UAT_2026-10-08.md`.
+- AW2 UAT identified and corrected a Back Office order-number suggestion defect: after a cancelled order, the new-draft form could suggest the cancelled number once. The API uniqueness guard rejected the duplicate without mutation. The UI now advances from the highest same-day ordinal across every order status, with regression coverage for gaps, prior days, and malformed values.
+- Both scoped temporary AW2 Staging deployment tokens were revoked after release and the Supabase account token list was verified empty.
 
 ## Next safe action
 
-The next safe action is a separate owner-approved AW2 Staging migration and Worker deployment followed by partial-fulfillment, invoice, Sales archive, reporting, and shared-inventory UAT. Production Advanced Wholesale remains unchanged and requires its own future release approval. Online Store remains a separate later add-on.
+The next safe action is to complete AW2 Production release review after the corrected Staging Back Office deployment is smoke-tested. Production Advanced Wholesale remains unchanged and requires a separate owner approval before migration or Worker deployment. AW3 payment terms/allocations, AW4 returns/credits, and Online Store remain later slices.
 
 ## Production state
 

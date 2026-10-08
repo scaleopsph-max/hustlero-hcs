@@ -1,6 +1,6 @@
 # Staging Readiness
 
-Last reviewed: 2026-10-02
+Last reviewed: 2026-10-09
 
 ## Decision
 
@@ -18,13 +18,13 @@ All technical Staging gates are complete. The isolated Supabase project, Hyperdr
 | Inventory cutover | Pass | Controlled preview, post, reconcile, ledger, audit, and outbox validation passed on the permanent test tenant. |
 | Supabase leaked-password protection | Pass | Development and Staging are in the Pro organization; leaked-password protection is enabled and fresh Security Advisor checks no longer report the warning. |
 | Staging Supabase project | Provisioned | `HUSTLERO HCS Staging` (`sdfwdhbryjyfufgtfqmf`) is healthy in Singapore at the confirmed $0/month project cost. |
-| Staging migration replay | Pass | All 47 committed migrations are recorded with exact repository versions, including multi-tender migration `20260928140928`. Direct posture checks passed; local invocation of remote pgTAP remains unavailable without Docker, while CI run `36502871749` passed the fresh replay and all pgTAP suites. |
+| Staging migration replay | Pass | All committed migrations through `20261008045840_advanced_wholesale_partial_fulfillment_invoices` are recorded with exact repository versions. CI run `37731734969` passed the fresh replay and all pgTAP suites, including 56 AW2 assertions. |
 | Staging Hyperdrive and credentials | Provisioned | `hustlero-hcs-staging` (`008f24430d3e433eb478caaa52787fea`) uses a staging-only restricted login, SSL required, 20 origin connections, and caching disabled. |
-| Staging API Worker | Pass | `hustlero-hcs-api-staging` version `1f099099-8a16-4203-9b7d-610e99c9885a` passed dry run, health 200, unauthenticated `/v1/me` 401, and Back Office-origin CORS 204. |
-| Staging web applications | Pass | Back Office `e61b47e8-a317-4281-bfc8-fdc7402d6781`, POS `ba723e6b-4146-4134-8af9-da0d43f9cdb2`, and Admin `b969c720-9d84-482e-a9cf-a689cdc50ba9` each returned 200 and rendered their expected entry state. Back Office includes verified password recovery, fresh-session POS activation commands, and the corrected active-location summary. The POS candidate contains the staging API origin and multi-tender checkout UI. |
+| Staging API Worker | Pass | `hustlero-hcs-api-staging` version `4b94f93c-fb64-48d2-ab5f-bb51e7b402c8` passed dry run, health 200, unauthenticated `/v1/me` 401, and exact Back Office-origin CORS 204. |
+| Staging web applications | Pass | Back Office `49e3b2d7-f7a1-4a43-8796-9b34f1f9c1c8`, POS `ba723e6b-4146-4134-8af9-da0d43f9cdb2`, and Admin `b969c720-9d84-482e-a9cf-a689cdc50ba9` each returned 200. Back Office contains the AW2 partial-fulfillment and immutable-invoice UI, the corrected next-order suggestion, and verified staging-only Supabase and API references. |
 | Staging Auth URLs | Pass | Back Office is the site URL; Back Office and Super Admin staging wildcard redirects are allowlisted. |
 | Staging platform operator | Pass | The owner-confirmed existing Staging owner identity is the single active `super_admin` allowlist entry. Isolated Super Admin sign-in and TOTP enrollment passed, tenant membership remains unchanged, and the session reached AAL2. |
-| Owner UAT | Pass | Generated staging business, catalog, opening inventory, funds, employee, register, POS device, guided sale, same-session full cash refunds, balanced register closes, purchasing/receiving, branch transfers, customer/loyalty, subscription controls, and time-boxed support access are verified end to end. Operational, customer, loyalty, subscription, support, audit/outbox, reporting, alert, notification, and branch-aware views reconcile. |
+| Owner UAT | Pass | Generated staging business, catalog, opening inventory, funds, employee, register, POS device, guided sale, same-session full cash refunds, balanced register closes, purchasing/receiving, branch transfers, customer/loyalty, subscription controls, time-boxed support access, AW1 reservations, and AW2 partial fulfillment with two immutable invoices are verified end to end. The cancelled-order number suggestion defect found during AW2 UAT is regression-covered and corrected in the Staging Back Office candidate. |
 | Recovery verification | Pass | The 1 Oct physical backup restored to isolated project `fliglpvhqtkstpnczfnq`; migrations, schema, Auth, 57 timestamped table counts, tenant ownership, and business ledgers reconciled. API Worker rollback to `286f8d46-b29d-46de-8c27-22635a6cbb95` passed smoke checks and current version `1f099099-8a16-4203-9b7d-610e99c9885a` was restored to 100% traffic. The drill project was deleted after owner confirmation. |
 | Final release checks | Pass | Staging remained `ACTIVE_HEALTHY`; Security Advisor reported only the established informational private-schema notices; API health/auth/CORS returned 200/401/204; and release-candidate API version `1f099099-8a16-4203-9b7d-610e99c9885a` receives 100% traffic. |
 | Production | Not started | Production remains a separate manual promotion after UAT and recovery verification. |

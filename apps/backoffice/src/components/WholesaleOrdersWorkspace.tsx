@@ -2,6 +2,7 @@
 
 import { selectActiveTenant } from '@/lib/active-tenant'
 import { createClient } from '@/lib/supabase-browser'
+import { nextWholesaleOrderNumber } from '@/lib/wholesale-order-number'
 import {
   sessionContextResponseSchema,
   wholesaleOrderCancelResponseSchema,
@@ -39,7 +40,7 @@ export function WholesaleOrdersWorkspace() {
   const [tenantId, setTenantId] = useState<string | null>(null)
   const [data, setData] = useState<WholesaleOrderContext | null>(null)
   const [editingId, setEditingId] = useState<string | undefined>()
-  const [orderNumber, setOrderNumber] = useState(`SO-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-001`)
+  const [orderNumber, setOrderNumber] = useState(() => nextWholesaleOrderNumber([]))
   const [customerId, setCustomerId] = useState('')
   const [locationId, setLocationId] = useState('')
   const [priceListId, setPriceListId] = useState('')
@@ -59,6 +60,7 @@ export function WholesaleOrdersWorkspace() {
     setSelectedOrderId((current) => current ?? context.orders[0]?.id ?? null)
     setCustomerId((current) => current || context.customers[0]?.id || '')
     setLocationId((current) => current || context.locations[0]?.id || '')
+    return context
   }, [])
 
   useEffect(() => {
@@ -77,7 +79,8 @@ export function WholesaleOrdersWorkspace() {
         if (!tenant) throw new Error('Create or select a business first.')
         setToken(nextToken)
         setTenantId(tenant.tenantId)
-        await load(nextToken, tenant.tenantId)
+        const context = await load(nextToken, tenant.tenantId)
+        setOrderNumber(nextWholesaleOrderNumber(context.orders.map((order) => order.orderNumber)))
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : 'Could not load wholesale orders.')
       } finally {
@@ -109,11 +112,9 @@ export function WholesaleOrdersWorkspace() {
   }, [data, quantities, selectedPriceList])
   const totalMinor = linePreview.reduce((sum, line) => sum + line.lineTotalMinor, 0)
 
-  function resetDraft(ordinal = (data?.orders.length ?? 0) + 1) {
+  function resetDraft(orders = data?.orders ?? []) {
     setEditingId(undefined)
-    setOrderNumber(
-      `SO-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${String(ordinal).padStart(3, '0')}`,
-    )
+    setOrderNumber(nextWholesaleOrderNumber(orders.map((order) => order.orderNumber)))
     setNotes('')
     setQuantities({})
   }
@@ -156,10 +157,10 @@ export function WholesaleOrdersWorkspace() {
           }),
         }),
       )
-      await load(token, tenantId)
+      const context = await load(token, tenantId)
       setSelectedOrderId(response.salesOrderId)
       setMessage(response.result === 'created' ? 'Draft order created.' : 'Draft order updated.')
-      resetDraft((data?.orders.length ?? 0) + (response.result === 'created' ? 2 : 1))
+      resetDraft(context.orders)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not save the draft order.')
     } finally {
