@@ -4,7 +4,7 @@ import { Topbar } from '@/components/Topbar'
 export default function SalesPage() {
   return (
     <>
-      <Topbar title="Sales" subtitle="Completed POS receipts across branches." />
+      <Topbar title="Sales" subtitle="Completed POS receipts and wholesale invoices across branches." />
       <SalesWorkspace />
     </>
   )

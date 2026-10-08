@@ -126,6 +126,9 @@ export const salesContextSchema = z.object({
     z.object({
       id,
       receiptNumber: z.string(),
+      channel: z.enum(['pos', 'wholesale']).default('pos'),
+      invoiceId: id.nullable().default(null),
+      salesOrderId: id.nullable().default(null),
       status: z.enum(['completed', 'voided', 'partially_refunded', 'refunded']),
       locationName: z.string(),
       registerName: z.string(),
@@ -142,6 +145,11 @@ export const salesContextSchema = z.object({
 export const saleReceiptDetailSchema = z.object({
   id,
   receiptNumber: z.string(),
+  channel: z.enum(['pos', 'wholesale']).default('pos'),
+  invoiceId: id.nullable().default(null),
+  invoiceNumber: z.string().nullable().default(null),
+  salesOrderId: id.nullable().default(null),
+  orderNumber: z.string().nullable().default(null),
   status: z.enum(['completed', 'voided', 'partially_refunded', 'refunded']),
   locationName: z.string(),
   registerName: z.string(),

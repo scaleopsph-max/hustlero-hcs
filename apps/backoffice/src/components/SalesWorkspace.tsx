@@ -65,7 +65,7 @@ export function SalesWorkspace() {
     <div className="grid gap-5">
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="border border-ink-900/10 bg-white p-5">
-          <div className="text-sm text-ink-500">Completed receipts</div>
+          <div className="text-sm text-ink-500">Completed sales</div>
           <div className="mt-1 font-display text-3xl font-bold">
             {data.sales.filter((sale) => sale.status === 'completed').length}
           </div>
@@ -77,7 +77,7 @@ export function SalesWorkspace() {
       </div>
       <Glass variant="light" className="overflow-hidden">
         <div className="grid grid-cols-[1.3fr_1fr_1fr_1fr_0.8fr] gap-3 border-b border-ink-900/10 px-5 py-3 text-xs font-semibold uppercase text-ink-500">
-          <span>Receipt</span>
+          <span>Receipt / invoice</span>
           <span>Branch / register</span>
           <span>Cashier</span>
           <span>Completed</span>
@@ -92,7 +92,8 @@ export function SalesWorkspace() {
             >
               <div>
                 <div className="font-semibold">{sale.receiptNumber}</div>
-                <div className="mt-1">
+                <div className="mt-1 flex flex-wrap gap-1">
+                  <Chip tone={sale.channel === 'wholesale' ? 'warning' : 'neutral'}>{sale.channel}</Chip>
                   <Chip
                     tone={
                       sale.status === 'completed'
@@ -130,7 +131,7 @@ export function SalesWorkspace() {
             <Receipt size={34} className="text-ink-400" />
             <div>
               <div className="font-semibold">No completed sales yet</div>
-              <div className="text-sm text-ink-500">The first POS receipt will appear here.</div>
+              <div className="text-sm text-ink-500">The first POS receipt or wholesale invoice will appear here.</div>
             </div>
           </div>
         )}

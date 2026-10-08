@@ -220,10 +220,18 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
       <Glass variant="light" className="print-receipt overflow-hidden p-0">
         <div className="flex flex-wrap items-start justify-between gap-4 border-b border-ink-900/10 p-6">
           <div>
-            <div className="text-xs font-semibold uppercase text-ink-500">Official sale record</div>
-            <h1 className="mt-1 font-display text-2xl font-bold">{receipt.receiptNumber}</h1>
+            <div className="text-xs font-semibold uppercase text-ink-500">
+              {receipt.channel === 'wholesale' ? 'Wholesale invoice' : 'Official sale record'}
+            </div>
+            <h1 className="mt-1 font-display text-2xl font-bold">{receipt.invoiceNumber ?? receipt.receiptNumber}</h1>
             <div className="mt-2">
-              <Chip tone={statusTone(receipt.status)}>{receipt.status.replace('_', ' ')}</Chip>
+              <div className="flex flex-wrap gap-2">
+                <Chip tone={receipt.channel === 'wholesale' ? 'warning' : 'neutral'}>{receipt.channel}</Chip>
+                <Chip tone={statusTone(receipt.status)}>{receipt.status.replace('_', ' ')}</Chip>
+              </div>
+              {receipt.orderNumber ? (
+                <div className="mt-2 text-sm text-ink-500">Order {receipt.orderNumber}</div>
+              ) : null}
             </div>
           </div>
           <div className="text-right text-sm">
@@ -234,7 +242,9 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
                 new Date(receipt.completedAt),
               )}
             </div>
-            <div className="text-ink-500">Cashier: {receipt.employeeName}</div>
+            <div className="text-ink-500">
+              {receipt.channel === 'wholesale' ? 'Issued by' : 'Cashier'}: {receipt.employeeName}
+            </div>
             {receipt.customerId ? (
               <Link href={`/customers/${receipt.customerId}`} className="font-medium underline underline-offset-2">
                 Customer: {receipt.customerName} ({receipt.customerNumber})
@@ -279,7 +289,10 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
         </div>
         <div className="grid gap-6 border-t border-ink-900/10 p-6 sm:grid-cols-2">
           <div className="text-sm">
-            <div className="font-semibold">Payment</div>
+            <div className="font-semibold">{receipt.channel === 'wholesale' ? 'Payment status' : 'Payment'}</div>
+            {receipt.channel === 'wholesale' && receipt.payments.length === 0 ? (
+              <div className="mt-2 text-ink-600">Payment terms and allocations are introduced in AW3.</div>
+            ) : null}
             {receipt.payments.map((payment) => (
               <div key={payment.id} className="mt-2 text-ink-600">
                 {payment.methodName}: {formatPeso(payment.amountCentavos)}

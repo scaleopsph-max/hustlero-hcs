@@ -3,11 +3,14 @@ import {
   wholesaleOrderConfirmResponseSchema,
   wholesaleOrderContextSchema,
   wholesaleOrderDraftResponseSchema,
+  wholesaleOrderFulfillResponseSchema,
   type WholesaleOrderCancelResponse,
   type WholesaleOrderConfirmResponse,
   type WholesaleOrderContext,
   type WholesaleOrderDraftRequest,
   type WholesaleOrderDraftResponse,
+  type WholesaleOrderFulfillRequest,
+  type WholesaleOrderFulfillResponse,
 } from '@hcs/contracts'
 import { Client } from 'pg'
 
@@ -50,6 +53,17 @@ export type WholesaleOrderCanceller = (
   bindings: Bindings,
 ) => Promise<WholesaleOrderCancelResponse>
 
+export type WholesaleOrderFulfiller = (
+  userId: string,
+  tenantId: string,
+  salesOrderId: string,
+  request: WholesaleOrderFulfillRequest,
+  idempotencyKey: string,
+  requestHash: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<WholesaleOrderFulfillResponse>
+
 function connectionString(bindings: Bindings): string {
   if (!bindings.HYPERDRIVE?.connectionString) throw new Error('HYPERDRIVE binding is not configured.')
   return bindings.HYPERDRIVE.connectionString
@@ -66,13 +80,26 @@ async function queryFunction<T>(bindings: Bindings, text: string, values: unknow
   }
 }
 
-export const loadWholesaleOrderContextFromPostgres: WholesaleOrderContextLoader = (userId, tenantId, bindings) =>
-  queryFunction(
-    bindings,
-    'select app.load_wholesale_order_context($1::uuid, $2::uuid) context',
-    [userId, tenantId],
-    (value) => wholesaleOrderContextSchema.parse(value),
-  )
+export const loadWholesaleOrderContextFromPostgres: WholesaleOrderContextLoader = async (
+  userId,
+  tenantId,
+  bindings,
+) => {
+  const client = new Client({ connectionString: connectionString(bindings) })
+  try {
+    await client.connect()
+    const result = await client.query(
+      'select app.load_wholesale_order_context($1::uuid, $2::uuid) context, app.list_wholesale_invoices($1::uuid, $2::uuid) invoices',
+      [userId, tenantId],
+    )
+    return wholesaleOrderContextSchema.parse({
+      ...(result.rows[0]?.context as Record<string, unknown>),
+      invoices: result.rows[0]?.invoices ?? [],
+    })
+  } finally {
+    await client.end()
+  }
+}
 
 export const saveWholesaleOrderDraftInPostgres: WholesaleOrderDraftSaver = (
   userId,
@@ -121,4 +148,21 @@ export const cancelWholesaleOrderInPostgres: WholesaleOrderCanceller = (
     'select app.cancel_wholesale_order_remaining($1::uuid, $2::uuid, $3::uuid, $4::text, $5::text, $6::text, $7::text) response',
     [userId, tenantId, salesOrderId, reason, idempotencyKey, requestHash, requestId],
     (value) => wholesaleOrderCancelResponseSchema.parse(value),
+  )
+
+export const fulfillWholesaleOrderInPostgres: WholesaleOrderFulfiller = (
+  userId,
+  tenantId,
+  salesOrderId,
+  request,
+  idempotencyKey,
+  requestHash,
+  requestId,
+  bindings,
+) =>
+  queryFunction(
+    bindings,
+    'select app.fulfill_wholesale_order($1::uuid, $2::uuid, $3::uuid, $4::jsonb, $5::text, $6::text, $7::text) response',
+    [userId, tenantId, salesOrderId, JSON.stringify(request.lines), idempotencyKey, requestHash, requestId],
+    (value) => wholesaleOrderFulfillResponseSchema.parse(value),
   )

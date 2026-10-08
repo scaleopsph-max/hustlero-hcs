@@ -1,12 +1,14 @@
 # Advanced Wholesale Blueprint
 
-Status: Approved for implementation
+Status: AW1 released to Staging; AW2 approved for local implementation
 
-Date: 2026-10-06
+Date: 2026-10-08
 
 Source: `docs/PROJECT_SPEC.md` section 13.2, ADR-038, and ADR-039
 
 Owner approval: `APPROVED ADVANCED WHOLESALE BLUEPRINT - PROCEED AW1`
+
+AW2 owner approval: `APPROVED ADVANCED WHOLESALE AW2 - PROCEED TO BUILD`
 
 ## Purpose
 
@@ -120,4 +122,4 @@ draft -> confirmed -> partially_fulfilled -> fulfilled
 
 ## Approval gate
 
-The owner approved AW1 development on 2026-10-06. This approval covers local implementation and verification of the AW1 slice. Applying the migration or deploying the feature to Staging or Production remains a separate release action and requires the normal environment-specific verification gate.
+The owner approved AW1 development on 2026-10-06 and AW2 local development on 2026-10-08. AW2 approval covers implementation and verification of partial fulfillment, immutable invoices, Sales archive linkage, printable invoice presentation, and channel-aware reporting. Applying the migration or deploying AW2 to Staging or Production remains a separate release action and requires the normal environment-specific verification gate.

@@ -37,6 +37,7 @@ import {
   wholesaleOrderConfirmResponseSchema,
   wholesaleOrderContextSchema,
   wholesaleOrderDraftResponseSchema,
+  wholesaleOrderFulfillResponseSchema,
   posSaleCompleteResponseSchema,
   posRegisterOpenResponseSchema,
   posSalesContextSchema,
@@ -192,6 +193,7 @@ const wholesaleOrderContext = {
     },
   ],
   orders: [],
+  invoices: [],
 }
 const loadWholesaleOrderContext = vi.fn(async () => wholesaleOrderContext)
 const saveWholesaleOrderDraft = vi.fn(async () => ({
@@ -211,6 +213,16 @@ const cancelWholesaleOrder = vi.fn(async () => ({
   salesOrderId: wholesaleOrderId,
   status: 'cancelled' as const,
   releasedQuantityMilli: 10_000,
+}))
+const fulfillWholesaleOrder = vi.fn(async () => ({
+  salesOrderId: wholesaleOrderId,
+  orderStatus: 'partially_fulfilled' as const,
+  invoiceId: '62000000-0000-4000-8000-000000000001',
+  invoiceNumber: 'INV-20261008-000001',
+  saleId: '63000000-0000-4000-8000-000000000001',
+  fulfilledQuantityMilli: 5_000,
+  totalMinor: 225_000,
+  issuedAt: '2026-10-08T05:00:00.000Z',
 }))
 const loadOpeningInventory = vi.fn(async () => ({
   locations: [{ id: locationId, code: 'MAIN', name: 'Main Store' }],
@@ -571,6 +583,11 @@ const loadSales = vi.fn(async () => ({ sales: [] }))
 const saleReceipt = {
   id: '12000000-0000-4000-8000-000000000001',
   receiptNumber: 'MAIN-20260925-000001',
+  channel: 'pos' as const,
+  invoiceId: null,
+  invoiceNumber: null,
+  salesOrderId: null,
+  orderNumber: null,
   status: 'completed' as const,
   locationName: 'Main Store',
   registerName: 'Register 1',
@@ -1068,6 +1085,7 @@ const authenticatedApp = createApp({
   saveWholesaleOrderDraft,
   confirmWholesaleOrder,
   cancelWholesaleOrder,
+  fulfillWholesaleOrder,
   loadInventoryStock,
   loadInventoryMovements,
   recordInventoryAdjustment,
@@ -1569,6 +1587,7 @@ describe('API', () => {
       saveWholesaleOrderDraft,
       confirmWholesaleOrder,
       cancelWholesaleOrder,
+      fulfillWholesaleOrder,
       loadInventoryStock,
       loadInventoryMovements,
       recordInventoryAdjustment,
@@ -1702,6 +1721,7 @@ describe('API', () => {
       saveWholesaleOrderDraft,
       confirmWholesaleOrder,
       cancelWholesaleOrder,
+      fulfillWholesaleOrder,
       loadInventoryStock,
       loadInventoryMovements,
       recordInventoryAdjustment,
@@ -1968,10 +1988,11 @@ describe('API', () => {
     )
   })
 
-  it('runs the advanced wholesale draft, confirm, and cancel API workflow', async () => {
+  it('runs the advanced wholesale draft, confirm, fulfill, and cancel API workflow', async () => {
     loadWholesaleOrderContext.mockClear()
     saveWholesaleOrderDraft.mockClear()
     confirmWholesaleOrder.mockClear()
+    fulfillWholesaleOrder.mockClear()
     cancelWholesaleOrder.mockClear()
 
     const loaded = await authenticatedApp.request(
@@ -2037,6 +2058,36 @@ describe('API', () => {
       tenantId,
       wholesaleOrderId,
       'wholesale-confirm-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+
+    const fulfillmentRequest = {
+      lines: [{ salesOrderLineId: '64000000-0000-4000-8000-000000000001', quantityMilli: 5_000 }],
+    }
+    const fulfilled = await authenticatedApp.request(
+      `/v1/wholesale/orders/${wholesaleOrderId}/fulfill`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'wholesale-fulfill-001',
+        },
+        body: JSON.stringify(fulfillmentRequest),
+      },
+      bindings,
+    )
+    expect(fulfilled.status).toBe(201)
+    expect(wholesaleOrderFulfillResponseSchema.safeParse(await fulfilled.json()).success).toBe(true)
+    expect(fulfillWholesaleOrder).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      wholesaleOrderId,
+      fulfillmentRequest,
+      'wholesale-fulfill-001',
       expect.stringMatching(/^[0-9a-f]{64}$/),
       expect.any(String),
       bindings,

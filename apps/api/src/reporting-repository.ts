@@ -49,7 +49,7 @@ async function load(
   try {
     await client.connect()
     const result = await client.query(
-      'select app.load_reporting_with_inventory_policy($1::uuid,$2::uuid,$3::date,$4::date,$5::uuid,$6::text) context',
+      'select app.load_reporting_by_channel($1::uuid,$2::uuid,$3::date,$4::date,$5::uuid,$6::text) context',
       [userId, tenantId, filter.from, filter.to, filter.locationId, filter.channel],
     )
     return result.rows[0]?.context as ReportingPayload
@@ -77,6 +77,25 @@ export const loadInventoryReportFromPostgres: InventoryReportLoader = async (use
 }
 
 export const loadShiftReportFromPostgres: ShiftReportLoader = async (userId, tenantId, filter, bindings) => {
+  if (filter.channel === 'wholesale') {
+    const context = await load(userId, tenantId, filter, bindings)
+    return shiftReportContextSchema.parse({
+      scope: context.scope,
+      locations: context.locations,
+      summary: {
+        sessionCount: 0,
+        openCount: 0,
+        closedCount: 0,
+        exceptionCount: 0,
+        netSalesCentavos: 0,
+        expectedCashCentavos: 0,
+        countedCashCentavos: 0,
+        varianceCentavos: 0,
+      },
+      sessions: [],
+    })
+  }
+
   if (!bindings.HYPERDRIVE?.connectionString) throw new Error('HYPERDRIVE binding is not configured.')
   const client = new Client({ connectionString: bindings.HYPERDRIVE.connectionString })
   try {

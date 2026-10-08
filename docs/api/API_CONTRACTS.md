@@ -231,6 +231,16 @@ Current POS sales implementation:
 - Every write requires an `Idempotency-Key`. Identical retries replay the stored result; changed reuse returns 409. Confirm and cancel append one tenant audit event and outbox event on the first committed execution only.
 - Direct browser and general API-role reads or writes to sales-order and reservation tables are denied. Hyperdrive may execute only the narrow security-definer functions, while RLS remains enabled as defense in depth.
 
+### Advanced Wholesale AW2
+
+- `POST /v1/wholesale/orders/{id}/fulfill` requires an `Idempotency-Key` and one or more order-line IDs with integer-thousandth fulfillment quantities. It accepts only confirmed or partially fulfilled orders and rejects quantities above the unfulfilled remainder.
+- The atomic command locks the order, lines, and shared branch-variant balances; decrements `on_hand` and `reserved` by the same fulfilled quantity; appends sale inventory and reservation-ledger movements; and advances the order to `partially_fulfilled` or `fulfilled`.
+- Each committed fulfillment creates exactly one wholesale-channel sale snapshot and one immutable invoice. The server generates a tenant-unique invoice number and snapshots the order, customer, branch, product, SKU, quantity, and unit price used at issue time.
+- `GET /v1/wholesale/orders` includes issued invoices linked to their order and Sales archive record. `GET /v1/sales` combines POS receipts and wholesale invoices, while `GET /v1/sales/{id}` returns the appropriate printable record.
+- Dashboard and sales reports accept `all`, `pos`, or `wholesale`. Wholesale fulfillment has no POS register session; the Wholesale Shift view therefore returns a valid empty register-session report.
+- AW2 records no payment, receivable, or credit balance. Those controls remain AW3 scope. Wholesale returns and credit notes remain AW4 scope, so AW2 invoices cannot be reversed through the POS refund command.
+- Fulfillment retries with the same key and request hash replay the stored invoice result. The first committed execution appends one audit event and one outbox event; browser roles retain no direct table access.
+
 - The API derives tenant, actor, employee, location, and device context from trusted authentication/device state.
 - Clients never submit authoritative cost, COGS, tax outcome, available stock, entitlement, permission, expected cash, or ledger balances.
 - Critical command responses are stored against the idempotency record and replayed for identical retries.

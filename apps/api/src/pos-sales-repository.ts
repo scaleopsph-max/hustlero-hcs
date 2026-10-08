@@ -140,14 +140,19 @@ export const completePosSaleInPostgres: PosSaleCompleter = async (
 
 export const loadSalesFromPostgres: SalesLoader = async (userId, tenantId, bindings) =>
   salesContextSchema.parse(
-    (await query(bindings, 'select app.list_sales($1::uuid,$2::uuid,$3::integer) context', [userId, tenantId, 100]))
-      .rows[0]?.context,
+    (
+      await query(bindings, 'select app.list_sales_archive($1::uuid,$2::uuid,$3::integer) context', [
+        userId,
+        tenantId,
+        100,
+      ])
+    ).rows[0]?.context,
   )
 
 export const loadSaleReceiptFromPostgres: SaleReceiptLoader = async (userId, tenantId, saleId, bindings) =>
   saleReceiptDetailSchema.parse(
     (
-      await query(bindings, 'select app.load_sale_receipt_with_customer($1::uuid,$2::uuid,$3::uuid) receipt', [
+      await query(bindings, 'select app.load_sale_archive_record($1::uuid,$2::uuid,$3::uuid) receipt', [
         userId,
         tenantId,
         saleId,

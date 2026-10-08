@@ -261,10 +261,11 @@ Last updated: 2026-10-08
 - PABL0 has a temporary `advanced_wholesale` add-on through 2026-10-14 23:59:59 Asia/Manila. The owner separately enabled the tenant toggle; entitlement and toggle changes retain audit and outbox evidence.
 - Controlled Staging order `SO-20261008-001` passed the AW1 lifecycle: draft left stock at 9 available with zero reservation; confirmation appended a +6 reservation and reduced available to 3 without changing on-hand; cancellation appended -6, restored available to 9, and preserved the cancelled order. Confirm and cancel each produced exactly one audit event and one outbox event. Evidence is recorded in `docs/qa/STAGING_ADVANCED_WHOLESALE_AW1_UAT_2026-10-08.md`.
 - Post-deployment Supabase advisors report no warning- or error-level findings. The three AW1 tables retain the intentional private-schema RLS-without-browser-policy posture; informational foreign-key index candidates are tracked for measured performance work rather than speculative removal or addition.
+- The owner approved `APPROVED ADVANCED WHOLESALE AW2 - PROCEED TO BUILD` on 2026-10-08 for local implementation only. The AW2 branch now contains partial fulfillment, shared-stock reservation consumption, immutable invoices, combined Sales archive records, printable invoice presentation, and `all`/`pos`/`wholesale` reporting contracts. No AW2 migration or Worker build has been applied to Staging or Production.
 
 ## Next safe action
 
-AW1 Staging migration, isolated Worker deployment, tenant activation, and controlled reservation/cancellation UAT are complete. Shared Staging inventory is restored to its 9-unit available baseline and the cancelled order remains as immutable evidence. The next product slice is AW2 planning and approval for partial fulfillment, immutable invoices, and Sales archive linkage. Production Advanced Wholesale remains unchanged and requires its own future release approval. Online Store remains a separate later add-on.
+Complete the AW2 branch quality gate and fresh-database CI. If it passes, the next safe action is a separate owner-approved AW2 Staging migration and Worker deployment followed by partial-fulfillment, invoice, Sales archive, reporting, and shared-inventory UAT. Production Advanced Wholesale remains unchanged and requires its own future release approval. Online Store remains a separate later add-on.
 
 ## Production state
 

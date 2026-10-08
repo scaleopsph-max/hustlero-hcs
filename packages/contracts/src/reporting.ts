@@ -7,7 +7,7 @@ export const reportingFilterSchema = z.object({
   from: z.iso.date(),
   to: z.iso.date(),
   locationId: id.nullable(),
-  channel: z.enum(['all', 'pos']),
+  channel: z.enum(['all', 'pos', 'wholesale']),
 })
 
 const reportingScopeSchema = reportingFilterSchema.extend({

@@ -8,10 +8,12 @@ import {
   wholesaleOrderConfirmResponseSchema,
   wholesaleOrderContextSchema,
   wholesaleOrderDraftResponseSchema,
+  wholesaleOrderFulfillResponseSchema,
   type WholesaleOrderContext,
 } from '@hcs/contracts'
 import { Button, Chip, Glass, formatPeso } from '@hcs/ui'
-import { Ban, Check, FilePlus2, Save, ShoppingCart } from 'lucide-react'
+import { Ban, Check, FilePlus2, PackageCheck, Printer, Save, ShoppingCart } from 'lucide-react'
+import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL
@@ -45,6 +47,7 @@ export function WholesaleOrdersWorkspace() {
   const [quantities, setQuantities] = useState<Record<string, string>>({})
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
   const [cancelReason, setCancelReason] = useState('')
+  const [fulfillmentQuantities, setFulfillmentQuantities] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -206,6 +209,42 @@ export function WholesaleOrdersWorkspace() {
     }
   }
 
+  async function fulfillOrder() {
+    if (!token || !tenantId || !selectedOrder) return
+    const lines = selectedOrder.lines
+      .map((line) => ({
+        salesOrderLineId: line.id,
+        quantityMilli: Math.round(Number(fulfillmentQuantities[line.id] ?? 0) * 1000),
+      }))
+      .filter((line) => Number.isInteger(line.quantityMilli) && line.quantityMilli > 0)
+    if (!lines.length) {
+      setError('Enter at least one fulfillment quantity.')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    setMessage(null)
+    try {
+      const response = wholesaleOrderFulfillResponseSchema.parse(
+        await call(`/v1/wholesale/orders/${selectedOrder.id}/fulfill`, token, tenantId, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': `wholesale-fulfill-${crypto.randomUUID()}`,
+          },
+          body: JSON.stringify({ lines }),
+        }),
+      )
+      setFulfillmentQuantities({})
+      await load(token, tenantId)
+      setMessage(`Invoice ${response.invoiceNumber} issued for ${formatPeso(response.totalMinor)}.`)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not fulfill the order.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (loading)
     return (
       <Glass variant="light" className="p-8 text-sm text-ink-500">
@@ -299,21 +338,91 @@ export function WholesaleOrdersWorkspace() {
                   <Check size={18} /> Confirm and reserve
                 </Button>
               ) : selectedOrder.status === 'confirmed' || selectedOrder.status === 'partially_fulfilled' ? (
-                <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-                  <input
-                    value={cancelReason}
-                    onChange={(event) => setCancelReason(event.target.value)}
-                    placeholder="Cancellation reason"
-                    maxLength={500}
-                    className="min-h-11 border border-ink-900/15 bg-white px-3"
-                  />
-                  <Button
-                    variant="secondary"
-                    disabled={!data.canManage || busy || cancelReason.trim().length < 2}
-                    onClick={cancelOrder}
-                  >
-                    <Ban size={18} /> Cancel remainder
-                  </Button>
+                <div className="mt-4 grid gap-4">
+                  <div className="border border-ink-900/10 bg-white">
+                    <div className="border-b border-ink-900/10 px-4 py-3">
+                      <strong className="text-sm">Fulfill reserved items</strong>
+                      <p className="mt-1 text-xs text-ink-500">Each fulfillment creates one immutable invoice.</p>
+                    </div>
+                    {selectedOrder.lines.map((line) => {
+                      const remaining =
+                        line.orderedQuantityMilli - line.fulfilledQuantityMilli - line.cancelledQuantityMilli
+                      if (remaining <= 0) return null
+                      return (
+                        <label
+                          key={line.id}
+                          className="grid grid-cols-[minmax(0,1fr)_110px] items-center gap-3 border-b border-ink-900/10 p-3 text-sm last:border-0"
+                        >
+                          <span>
+                            <strong className="block">
+                              {line.productName} / {line.variantName}
+                            </strong>
+                            <span className="text-xs text-ink-500">{quantityText(remaining)} remaining</span>
+                          </span>
+                          <input
+                            inputMode="decimal"
+                            aria-label={`${line.productName} fulfillment quantity`}
+                            value={fulfillmentQuantities[line.id] ?? ''}
+                            onChange={(event) =>
+                              setFulfillmentQuantities((current) => ({
+                                ...current,
+                                [line.id]: event.target.value.replace(/[^0-9.]/g, ''),
+                              }))
+                            }
+                            placeholder="Qty"
+                            className="min-h-10 border border-ink-900/15 bg-white px-3 text-right"
+                          />
+                        </label>
+                      )
+                    })}
+                    <div className="flex justify-end p-3">
+                      <Button disabled={!data.canManage || busy} onClick={fulfillOrder}>
+                        <PackageCheck size={18} /> Issue invoice
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+                    <input
+                      value={cancelReason}
+                      onChange={(event) => setCancelReason(event.target.value)}
+                      placeholder="Cancellation reason"
+                      maxLength={500}
+                      className="min-h-11 border border-ink-900/15 bg-white px-3"
+                    />
+                    <Button
+                      variant="secondary"
+                      disabled={!data.canManage || busy || cancelReason.trim().length < 2}
+                      onClick={cancelOrder}
+                    >
+                      <Ban size={18} /> Cancel remainder
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+              {data.invoices.some((invoice) => invoice.salesOrderId === selectedOrder.id) ? (
+                <div className="mt-5 border-t border-ink-900/10 pt-4">
+                  <h3 className="text-sm font-semibold">Invoices</h3>
+                  <div className="mt-2 grid gap-2">
+                    {data.invoices
+                      .filter((invoice) => invoice.salesOrderId === selectedOrder.id)
+                      .map((invoice) => (
+                        <Link
+                          key={invoice.id}
+                          href={`/sales/${invoice.saleId}`}
+                          className="flex items-center justify-between gap-3 border border-ink-900/10 bg-white px-3 py-2 text-sm hover:bg-ink-900/[0.03]"
+                        >
+                          <span>
+                            <strong>{invoice.invoiceNumber}</strong>
+                            <span className="ml-2 text-ink-500">
+                              {new Date(invoice.issuedAt).toLocaleString('en-PH')}
+                            </span>
+                          </span>
+                          <span className="flex items-center gap-2 font-semibold">
+                            {formatPeso(invoice.totalMinor)} <Printer size={15} />
+                          </span>
+                        </Link>
+                      ))}
+                  </div>
                 </div>
               ) : null}
             </Glass>

@@ -90,7 +90,7 @@ export function ReportingWorkspace({ mode }: { mode: 'dashboard' | 'reports' }) 
   const [from, setFrom] = useState(localDate(-6))
   const [to, setTo] = useState(localDate())
   const [locationId, setLocationId] = useState('')
-  const [channel, setChannel] = useState<'all' | 'pos'>('all')
+  const [channel, setChannel] = useState<'all' | 'pos' | 'wholesale'>('all')
   const [dashboard, setDashboard] = useState<DashboardContext | null>(null)
   const [sales, setSales] = useState<SalesReportContext | null>(null)
   const [inventory, setInventory] = useState<InventoryReportContext | null>(null)
@@ -105,7 +105,7 @@ export function ReportingWorkspace({ mode }: { mode: 'dashboard' | 'reports' }) 
       nextFrom: string,
       nextTo: string,
       nextLocation: string,
-      nextChannel: 'all' | 'pos',
+      nextChannel: 'all' | 'pos' | 'wholesale',
     ) => {
       setLoading(true)
       setError(null)
@@ -180,11 +180,12 @@ export function ReportingWorkspace({ mode }: { mode: 'dashboard' | 'reports' }) 
           Channel
           <select
             value={channel}
-            onChange={(event) => setChannel(event.target.value as 'all' | 'pos')}
+            onChange={(event) => setChannel(event.target.value as 'all' | 'pos' | 'wholesale')}
             className="min-h-11 border border-ink-900/15 bg-white px-3 text-sm text-ink-900"
           >
             <option value="all">All channels</option>
             <option value="pos">POS</option>
+            <option value="wholesale">Advanced wholesale</option>
           </select>
         </label>
         <label className="grid gap-1 text-xs font-semibold text-ink-500">

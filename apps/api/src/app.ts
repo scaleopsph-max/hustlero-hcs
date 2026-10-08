@@ -43,6 +43,8 @@ import {
   wholesaleOrderContextSchema,
   wholesaleOrderDraftRequestSchema,
   wholesaleOrderDraftResponseSchema,
+  wholesaleOrderFulfillRequestSchema,
+  wholesaleOrderFulfillResponseSchema,
   posSaleCompleteRequestSchema,
   posSaleCompleteResponseSchema,
   posRegisterOpenRequestSchema,
@@ -195,12 +197,14 @@ import {
 import {
   cancelWholesaleOrderInPostgres,
   confirmWholesaleOrderInPostgres,
+  fulfillWholesaleOrderInPostgres,
   loadWholesaleOrderContextFromPostgres,
   saveWholesaleOrderDraftInPostgres,
   type WholesaleOrderCanceller,
   type WholesaleOrderConfirmer,
   type WholesaleOrderContextLoader,
   type WholesaleOrderDraftSaver,
+  type WholesaleOrderFulfiller,
 } from './wholesale-orders-repository'
 import { type Bindings, readEnvironment } from './env'
 import {
@@ -365,6 +369,7 @@ interface AppDependencies {
   saveWholesaleOrderDraft: WholesaleOrderDraftSaver
   confirmWholesaleOrder: WholesaleOrderConfirmer
   cancelWholesaleOrder: WholesaleOrderCanceller
+  fulfillWholesaleOrder: WholesaleOrderFulfiller
   loadInventoryStock: InventoryStockLoader
   loadInventoryMovements: InventoryMovementLoader
   recordInventoryAdjustment: InventoryAdjustmentRecorder
@@ -455,6 +460,7 @@ const defaultDependencies: AppDependencies = {
   saveWholesaleOrderDraft: saveWholesaleOrderDraftInPostgres,
   confirmWholesaleOrder: confirmWholesaleOrderInPostgres,
   cancelWholesaleOrder: cancelWholesaleOrderInPostgres,
+  fulfillWholesaleOrder: fulfillWholesaleOrderInPostgres,
   loadInventoryStock: loadInventoryStockFromPostgres,
   loadInventoryMovements: loadInventoryMovementsFromPostgres,
   recordInventoryAdjustment: recordInventoryAdjustmentInPostgres,
@@ -2304,13 +2310,32 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
                           code: 'RESERVATION_BALANCE_CONFLICT',
                           message: 'The inventory reservation balance is inconsistent.',
                         }
-                      : code?.startsWith('HCSQ')
+                      : code === 'HCSR2'
                         ? {
-                            status: 400 as const,
-                            code: 'INVALID_WHOLESALE_ORDER',
-                            message: error instanceof Error ? error.message : 'Check the wholesale order details.',
+                            status: 404 as const,
+                            code: 'WHOLESALE_ORDER_LINE_NOT_FOUND',
+                            message: 'The wholesale order line was not found.',
                           }
-                        : null
+                        : code === 'HCSR3'
+                          ? {
+                              status: 409 as const,
+                              code: 'WHOLESALE_FULFILLMENT_EXCEEDS_REMAINDER',
+                              message: 'Fulfillment exceeds the remaining order quantity.',
+                            }
+                          : code === 'HCSR1'
+                            ? {
+                                status: 400 as const,
+                                code: 'INVALID_WHOLESALE_FULFILLMENT',
+                                message: 'Check the fulfillment quantities.',
+                              }
+                            : code?.startsWith('HCSQ')
+                              ? {
+                                  status: 400 as const,
+                                  code: 'INVALID_WHOLESALE_ORDER',
+                                  message:
+                                    error instanceof Error ? error.message : 'Check the wholesale order details.',
+                                }
+                              : null
     return mapping
       ? context.json(
           apiErrorResponseSchema.parse({
@@ -2425,6 +2450,44 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
             context.env,
           ),
         ),
+      )
+    } catch (error) {
+      const response = wholesaleError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
+  app.post('/v1/wholesale/orders/:id/fulfill', async (context) => {
+    const command = await readWholesaleCommand(context)
+    const salesOrderId = context.req.param('id')
+    const parsed = wholesaleOrderFulfillRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!command || !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(salesOrderId) || !parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_WHOLESALE_FULFILLMENT',
+            message: 'Provide valid remaining order quantities, business, and Idempotency-Key.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      return context.json(
+        wholesaleOrderFulfillResponseSchema.parse(
+          await dependencies.fulfillWholesaleOrder(
+            command.userId,
+            command.tenantId,
+            salesOrderId,
+            parsed.data,
+            command.idempotencyKey,
+            await requestHash({ salesOrderId, ...parsed.data }),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+        201,
       )
     } catch (error) {
       const response = wholesaleError(context, error)

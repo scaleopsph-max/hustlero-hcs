@@ -10,6 +10,34 @@ export const wholesaleOrderStatusSchema = z.enum([
   'cancelled',
 ])
 
+export const wholesaleInvoiceSchema = z.object({
+  id,
+  invoiceNumber: z.string(),
+  salesOrderId: id,
+  orderNumber: z.string(),
+  saleId: id,
+  customerId: id,
+  customerName: z.string(),
+  locationId: id,
+  locationName: z.string(),
+  totalMinor: z.number().int().nonnegative(),
+  issuedAt: z.iso.datetime({ offset: true }),
+  lines: z.array(
+    z.object({
+      id,
+      salesOrderLineId: id,
+      saleLineId: id,
+      variantId: id,
+      productName: z.string(),
+      variantName: z.string(),
+      sku: z.string(),
+      quantityMilli: z.number().int().positive(),
+      unitPriceMinor: z.number().int().nonnegative(),
+      lineTotalMinor: z.number().int().nonnegative(),
+    }),
+  ),
+})
+
 export const wholesaleOrderContextSchema = z.object({
   canManage: z.boolean(),
   customers: z.array(z.object({ id, customerNumber: z.string(), fullName: z.string() })),
@@ -75,6 +103,7 @@ export const wholesaleOrderContextSchema = z.object({
       ),
     }),
   ),
+  invoices: z.array(wholesaleInvoiceSchema).default([]),
 })
 
 export const wholesaleOrderDraftRequestSchema = z
@@ -120,9 +149,36 @@ export const wholesaleOrderCancelResponseSchema = z.object({
   releasedQuantityMilli: z.number().int().positive(),
 })
 
+export const wholesaleOrderFulfillRequestSchema = z
+  .object({
+    lines: z
+      .array(z.object({ salesOrderLineId: id, quantityMilli: z.number().int().positive() }))
+      .min(1)
+      .max(500),
+  })
+  .strict()
+  .refine((request) => new Set(request.lines.map((line) => line.salesOrderLineId)).size === request.lines.length, {
+    message: 'Duplicate order lines are not allowed.',
+    path: ['lines'],
+  })
+
+export const wholesaleOrderFulfillResponseSchema = z.object({
+  salesOrderId: id,
+  orderStatus: z.enum(['partially_fulfilled', 'fulfilled']),
+  invoiceId: id,
+  invoiceNumber: z.string(),
+  saleId: id,
+  fulfilledQuantityMilli: z.number().int().positive(),
+  totalMinor: z.number().int().nonnegative(),
+  issuedAt: z.iso.datetime({ offset: true }),
+})
+
 export type WholesaleOrderContext = z.infer<typeof wholesaleOrderContextSchema>
 export type WholesaleOrderDraftRequest = z.infer<typeof wholesaleOrderDraftRequestSchema>
 export type WholesaleOrderDraftResponse = z.infer<typeof wholesaleOrderDraftResponseSchema>
 export type WholesaleOrderConfirmResponse = z.infer<typeof wholesaleOrderConfirmResponseSchema>
 export type WholesaleOrderCancelRequest = z.infer<typeof wholesaleOrderCancelRequestSchema>
 export type WholesaleOrderCancelResponse = z.infer<typeof wholesaleOrderCancelResponseSchema>
+export type WholesaleInvoice = z.infer<typeof wholesaleInvoiceSchema>
+export type WholesaleOrderFulfillRequest = z.infer<typeof wholesaleOrderFulfillRequestSchema>
+export type WholesaleOrderFulfillResponse = z.infer<typeof wholesaleOrderFulfillResponseSchema>
