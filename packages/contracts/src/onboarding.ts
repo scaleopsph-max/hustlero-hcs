@@ -57,7 +57,14 @@ export const onboardingStepCodeSchema = z.enum([
 export const businessTypeSchema = z.enum(['retail', 'food_and_beverage', 'services', 'mixed'])
 export const salesChannelSchema = z.enum(['in_store', 'online', 'wholesale'])
 export const productSetupMethodSchema = z.enum(['manual', 'csv', 'later'])
-export const selectableFeatureCodeSchema = z.enum(['inventory', 'purchasing', 'customers', 'employees', 'finance'])
+export const selectableFeatureCodeSchema = z.enum([
+  'inventory',
+  'purchasing',
+  'customers',
+  'employees',
+  'finance',
+  'advanced_wholesale',
+])
 
 export const businessSetupQuestionsSchema = z.strictObject({
   step: z.literal('business_questions'),
@@ -69,7 +76,7 @@ export const businessSetupQuestionsSchema = z.strictObject({
 
 export const featureSelectionSchema = z.strictObject({
   step: z.literal('feature_selection'),
-  enabledFeatures: z.array(selectableFeatureCodeSchema).max(5),
+  enabledFeatures: z.array(selectableFeatureCodeSchema).max(6),
 })
 
 export const basicFundSetupSchema = z.strictObject({ step: z.literal('basic_fund_setup') })
@@ -105,7 +112,17 @@ const businessProfileSchema = z.object({
 })
 
 const featureOptionSchema = z.object({
-  code: z.enum(['catalog', 'sales', 'reports', 'inventory', 'purchasing', 'customers', 'employees', 'finance']),
+  code: z.enum([
+    'catalog',
+    'sales',
+    'reports',
+    'inventory',
+    'purchasing',
+    'customers',
+    'employees',
+    'finance',
+    'advanced_wholesale',
+  ]),
   name: z.string(),
   enabled: z.boolean(),
   required: z.boolean(),

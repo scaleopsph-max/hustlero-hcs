@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(30);
+select plan(35);
 
 select has_table('app', 'tenant_onboarding_profiles', 'tenant onboarding profile table exists');
 select ok(
@@ -202,6 +202,58 @@ select is(
   (select count(*)::integer from audit.audit_events where tenant_id = '22000000-0000-4000-8000-000000000001' and action = 'onboarding.feature_selection.saved'),
   1,
   'identical feature retry does not duplicate audit history'
+);
+
+select throws_ok(
+  $$select app.save_feature_selection(
+    '12000000-0000-4000-8000-000000000001',
+    '22000000-0000-4000-8000-000000000001',
+    array['inventory', 'customers', 'advanced_wholesale'], 'features-wholesale-not-entitled'
+  )$$,
+  'HCS07',
+  'Feature selection contains an unavailable feature',
+  'owner cannot enable Advanced Wholesale before entitlement is active'
+);
+
+update app.tenant_entitlements
+set entitled = true,
+    starts_at = now(),
+    ends_at = now() + interval '7 days'
+where tenant_id = '22000000-0000-4000-8000-000000000001'
+  and feature_code = 'advanced_wholesale';
+
+select lives_ok(
+  $$select app.save_feature_selection(
+    '12000000-0000-4000-8000-000000000001',
+    '22000000-0000-4000-8000-000000000001',
+    array['inventory', 'customers', 'advanced_wholesale'], 'features-wholesale-enable'
+  )$$,
+  'owner can enable entitled Advanced Wholesale access'
+);
+select ok(
+  (select enabled from app.tenant_entitlements
+   where tenant_id = '22000000-0000-4000-8000-000000000001'
+     and feature_code = 'advanced_wholesale'),
+  'Advanced Wholesale tenant toggle is persisted'
+);
+select is(
+  (select option->>'code'
+   from pg_catalog.jsonb_array_elements(
+     app.load_onboarding_snapshot(
+       '12000000-0000-4000-8000-000000000001',
+       '22000000-0000-4000-8000-000000000001'
+     )->'featureOptions'
+   ) option
+   where option->>'code' = 'advanced_wholesale'),
+  'advanced_wholesale',
+  'active entitled Advanced Wholesale appears in owner feature choices'
+);
+select is(
+  (select count(*)::integer from audit.audit_events
+   where tenant_id = '22000000-0000-4000-8000-000000000001'
+     and action = 'onboarding.feature_selection.saved'),
+  2,
+  'Advanced Wholesale tenant toggle is audited'
 );
 
 select * from finish();
