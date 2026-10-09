@@ -13,6 +13,7 @@ import {
 } from '@hcs/contracts'
 import { saveActiveTenant, selectActiveTenant } from '@/lib/active-tenant'
 import { businessSlugFromName } from '@/lib/business-slug'
+import { resolveRecoveryMfa } from '@/lib/recovery-mfa'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
@@ -72,6 +73,10 @@ export default function SetupPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [recoveryFactorId, setRecoveryFactorId] = useState<string | null>(null)
+  const [recoveryMfaCode, setRecoveryMfaCode] = useState('')
+  const [recoveryMfaRequired, setRecoveryMfaRequired] = useState<boolean | null>(null)
+  const [recoveryMfaVerified, setRecoveryMfaVerified] = useState(false)
   const [businesses, setBusinesses] = useState<Business[]>([])
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null)
   const [onboarding, setOnboarding] = useState<OnboardingResponse | null>(null)
@@ -174,6 +179,58 @@ export default function SetupPage() {
   }, [token, mode, loadBusinesses])
 
   useEffect(() => {
+    if (!auth || mode !== 'update-password' || !user) return
+
+    let cancelled = false
+    setRecoveryMfaRequired(null)
+    setRecoveryMfaVerified(false)
+    setRecoveryFactorId(null)
+
+    void (async () => {
+      try {
+        const { data: assurance, error: assuranceError } = await auth.auth.mfa.getAuthenticatorAssuranceLevel()
+        if (assuranceError) throw assuranceError
+
+        const { data: factors, error: factorsError } = await auth.auth.mfa.listFactors()
+        if (factorsError) throw factorsError
+
+        const decision = resolveRecoveryMfa(assurance.currentLevel, assurance.nextLevel, factors.totp)
+        if (cancelled) return
+
+        if (decision.kind === 'missing-factor') {
+          setRecoveryMfaRequired(true)
+          setError('MFA verification is required, but no verified authenticator factor is available.')
+          return
+        }
+
+        if (decision.kind === 'challenge') {
+          setRecoveryFactorId(decision.factorId)
+          setRecoveryMfaRequired(true)
+          setNotice('Recovery link verified. Enter the code from your authenticator app to continue.')
+          return
+        }
+
+        setRecoveryMfaRequired(false)
+        setRecoveryMfaVerified(true)
+        setNotice(
+          decision.kind === 'verified'
+            ? 'MFA verified. Create a new password to continue.'
+            : 'Recovery link verified. Create a new password to continue.',
+        )
+      } catch (cause) {
+        if (!cancelled) {
+          setRecoveryMfaRequired(true)
+          setError(cause instanceof Error ? cause.message : 'Could not verify recovery security requirements.')
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [auth, mode, user])
+
+  useEffect(() => {
     if (!token || !selectedTenantId) {
       setOnboarding(null)
       return
@@ -200,6 +257,26 @@ export default function SetupPage() {
         )
       } else if (mode === 'update-password') {
         if (!user) throw new Error('The recovery session is missing or expired. Request a new password reset link.')
+        if (recoveryMfaRequired === null) throw new Error('Recovery security checks are still loading.')
+        if (recoveryMfaRequired && !recoveryMfaVerified) {
+          if (!recoveryFactorId) throw new Error('A verified authenticator factor is required to continue.')
+          if (!/^\d{6}$/.test(recoveryMfaCode)) throw new Error('Enter the 6-digit authenticator code.')
+
+          const { error: verificationError } = await auth.auth.mfa.challengeAndVerify({
+            factorId: recoveryFactorId,
+            code: recoveryMfaCode,
+          })
+          if (verificationError) throw verificationError
+          await auth.auth.refreshSession()
+          const { data: assurance, error: assuranceError } = await auth.auth.mfa.getAuthenticatorAssuranceLevel()
+          if (assuranceError) throw assuranceError
+          if (assurance.currentLevel !== 'aal2') throw new Error('MFA verification did not reach AAL2. Try again.')
+
+          setRecoveryMfaCode('')
+          setRecoveryMfaVerified(true)
+          setNotice('MFA verified. Create a new password to continue.')
+          return
+        }
         if (password !== confirmPassword) throw new Error('The passwords do not match.')
         const { error: authError } = await auth.auth.updateUser({ password })
         if (authError) throw authError
@@ -386,20 +463,38 @@ export default function SetupPage() {
                   </label>
                 ) : null}
                 {mode !== 'forgot-password' ? (
+                  mode !== 'update-password' || recoveryMfaRequired === false || recoveryMfaVerified ? (
+                    <label className="flex flex-col gap-1.5 text-sm font-medium">
+                      {mode === 'update-password' ? 'New password' : 'Password'}
+                      <input
+                        className={inputClass}
+                        type="password"
+                        autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'}
+                        minLength={6}
+                        required
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                      />
+                    </label>
+                  ) : null
+                ) : null}
+                {mode === 'update-password' && recoveryMfaRequired && !recoveryMfaVerified ? (
                   <label className="flex flex-col gap-1.5 text-sm font-medium">
-                    {mode === 'update-password' ? 'New password' : 'Password'}
+                    Authenticator code
                     <input
                       className={inputClass}
-                      type="password"
-                      autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'}
-                      minLength={6}
+                      type="text"
+                      autoComplete="one-time-code"
+                      inputMode="numeric"
+                      pattern="[0-9]{6}"
+                      maxLength={6}
                       required
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
+                      value={recoveryMfaCode}
+                      onChange={(event) => setRecoveryMfaCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
                     />
                   </label>
                 ) : null}
-                {mode === 'update-password' ? (
+                {mode === 'update-password' && (recoveryMfaRequired === false || recoveryMfaVerified) ? (
                   <label className="flex flex-col gap-1.5 text-sm font-medium">
                     Confirm new password
                     <input
@@ -413,14 +508,20 @@ export default function SetupPage() {
                     />
                   </label>
                 ) : null}
-                <button type="submit" disabled={busy} className={buttonClass}>
+                <button
+                  type="submit"
+                  disabled={busy || (mode === 'update-password' && recoveryMfaRequired === null)}
+                  className={buttonClass}
+                >
                   {busy ? <Loader2 size={18} className="animate-spin" /> : null}
                   {mode === 'sign-up'
                     ? 'Create account'
                     : mode === 'forgot-password'
                       ? 'Send reset link'
                       : mode === 'update-password'
-                        ? 'Save new password'
+                        ? recoveryMfaRequired && !recoveryMfaVerified
+                          ? 'Verify MFA'
+                          : 'Save new password'
                         : 'Sign in'}
                   <ArrowRight size={17} />
                 </button>
