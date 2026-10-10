@@ -7,6 +7,8 @@ export {
   wholesaleOpeningReceivableResponseSchema,
   wholesaleReceivablesContextSchema,
   wholesalePaymentAllocationRequestSchema,
+  wholesalePaymentAllocationResponseSchema,
+  type WholesalePaymentAllocationResponse,
   type WholesalePaymentTerm,
   type WholesaleCreditSettingsRequest,
   type WholesaleCreditSettingsResponse,

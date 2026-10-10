@@ -73,6 +73,14 @@ export const wholesalePaymentAllocationRequestSchema = z
   })
 
 export type WholesalePaymentTerm = z.infer<typeof wholesalePaymentTermSchema>
+export const wholesalePaymentAllocationResponseSchema = z.object({
+  paymentId: z.uuid(),
+  customerId: z.uuid(),
+  amountMinor: positiveMinor,
+  allocationCount: z.number().int().min(1).max(500),
+  recordedAt: z.iso.datetime({ offset: true }),
+})
+export type WholesalePaymentAllocationResponse = z.infer<typeof wholesalePaymentAllocationResponseSchema>
 export const wholesaleOpeningReceivableResponseSchema = z.object({
   chargeId: z.uuid(),
   invoiceId: z.uuid(),

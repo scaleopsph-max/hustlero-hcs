@@ -1,4 +1,7 @@
 import {
+  wholesalePaymentAllocationResponseSchema,
+  type WholesalePaymentAllocationResponse,
+  type WholesalePaymentAllocationRequest,
   wholesaleCreditOverridesContextSchema,
   wholesaleCreditOverrideCommandResponseSchema,
   type WholesaleCreditOverrideApprove,
@@ -18,6 +21,31 @@ import {
 import { Client } from 'pg'
 
 import type { Bindings } from './env'
+
+export type WholesalePaymentRecorder = (
+  userId: string,
+  tenantId: string,
+  request: WholesalePaymentAllocationRequest,
+  key: string,
+  hash: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<WholesalePaymentAllocationResponse>
+export const recordWholesalePaymentInPostgres: WholesalePaymentRecorder = (
+  userId,
+  tenantId,
+  request,
+  key,
+  hash,
+  requestId,
+  bindings,
+) =>
+  query(
+    bindings,
+    'select app.record_wholesale_payment($1::uuid,$2::uuid,$3::jsonb,$4::text,$5::text,$6::text) response',
+    [userId, tenantId, JSON.stringify(request), key, hash, requestId],
+    (value) => wholesalePaymentAllocationResponseSchema.parse(value),
+  )
 
 export type WholesaleCreditOverridesLoader = (
   userId: string,

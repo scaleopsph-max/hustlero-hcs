@@ -41,6 +41,16 @@ function setup(code?: string) {
     return creditResponse
   })
   const loadCredit = vi.fn(async () => ({ canManage: true, customers: [] }))
+  const recordPayment = vi.fn(async () => {
+    if (code) throw Object.assign(new Error('Private payment database details'), { code })
+    return {
+      paymentId: response.chargeId,
+      customerId: invoiceId,
+      amountMinor: 10000,
+      allocationCount: 1,
+      recordedAt: '2026-10-10T14:00:00Z',
+    }
+  })
   const overrideCommand = vi.fn(async (_userId: string, _tenantId: string, operation: 'approve' | 'revoke') => {
     if (code) throw Object.assign(new Error('Private database approval details'), { code })
     return {
@@ -69,6 +79,7 @@ function setup(code?: string) {
     loadWholesaleCreditSettings: loadCredit,
     loadWholesaleCreditOverrides: async () => ({ canApprove: true, overrides: [] }),
     commandWholesaleCreditOverride: overrideCommand,
+    recordWholesalePayment: recordPayment,
     confirmWholesaleOrder: async () => {
       throw Object.assign(new Error('Private database details'), { code })
     },
@@ -76,7 +87,7 @@ function setup(code?: string) {
       throw Object.assign(new Error('Private database details'), { code })
     },
   })
-  return { app, record, load, saveCredit, loadCredit, overrideCommand }
+  return { app, record, load, saveCredit, loadCredit, overrideCommand, recordPayment }
 }
 
 function headers(tenant = tenantId) {
@@ -87,6 +98,92 @@ function headers(tenant = tenantId) {
     'content-type': 'application/json',
   }
 }
+
+describe('wholesale payments API', () => {
+  const payment = {
+    customerId: invoiceId,
+    paymentMethodId: response.chargeId,
+    amountMinor: 10000,
+    reference: 'Received cash test',
+    allocations: [{ invoiceId, amountMinor: 10000 }],
+  }
+  it('records explicitly received amounts using authenticated server context', async () => {
+    const { app, recordPayment } = setup()
+    const result = await app.request(
+      '/v1/wholesale/payments',
+      { method: 'POST', headers: headers(), body: JSON.stringify(payment) },
+      bindings,
+    )
+    expect(result.status).toBe(201)
+    expect(recordPayment).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      payment,
+      'opening-receivable-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+  })
+  it.each([
+    { ...payment, tenantId },
+    { ...payment, amountMinor: 0 },
+    { ...payment, amountMinor: 1.5 },
+    { ...payment, allocations: [] },
+    { ...payment, allocations: [{ invoiceId, amountMinor: 9999 }] },
+    {
+      ...payment,
+      allocations: [
+        { invoiceId, amountMinor: 5000 },
+        { invoiceId, amountMinor: 5000 },
+      ],
+    },
+    { ...payment, reference: '' },
+    { ...payment, recordedAt: '2026-10-09T00:00:00Z' },
+  ])('rejects invalid allocation or client projections %j', async (body) => {
+    const { app, recordPayment } = setup()
+    expect(
+      (
+        await app.request(
+          '/v1/wholesale/payments',
+          { method: 'POST', headers: headers(), body: JSON.stringify(body) },
+          bindings,
+        )
+      ).status,
+    ).toBe(400)
+    expect(recordPayment).not.toHaveBeenCalled()
+  })
+  it.each([
+    ['HCAP1', 403],
+    ['HCAP2', 400],
+    ['HCAP3', 404],
+    ['HCAP4', 409],
+    ['HCAP5', 409],
+    ['HCS08', 409],
+  ])('maps payment error %s safely', async (code, status) => {
+    const { app } = setup(code as string)
+    const result = await app.request(
+      '/v1/wholesale/payments',
+      { method: 'POST', headers: headers(), body: JSON.stringify(payment) },
+      bindings,
+    )
+    expect(result.status).toBe(status)
+    expect(JSON.stringify(await result.json())).not.toContain('Private payment')
+  })
+  it('denies a foreign tenant before recording cash', async () => {
+    const { app, recordPayment } = setup()
+    expect(
+      (
+        await app.request(
+          '/v1/wholesale/payments',
+          { method: 'POST', headers: headers(response.chargeId), body: JSON.stringify(payment) },
+          bindings,
+        )
+      ).status,
+    ).toBe(400)
+    expect(recordPayment).not.toHaveBeenCalled()
+  })
+})
 
 describe('wholesale credit override API', () => {
   it('loads the authorized approval history', async () => {

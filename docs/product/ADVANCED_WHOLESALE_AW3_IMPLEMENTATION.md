@@ -2,7 +2,7 @@
 
 Date: 2026-10-10
 
-Status: Domain foundation, opening/settings APIs, credit enforcement, and dedicated override approval persistence verified in isolated CI. Atomic override consumption is the current candidate. Payment allocation and UI remain incomplete. Staging/Production release has not occurred.
+Status: Domain foundation, opening/settings APIs, credit enforcement, dedicated override approval persistence, and atomic consumption verified in isolated CI. Payment allocation, settlement integration, and UI remain incomplete. Staging/Production release has not occurred.
 
 Source: `ADVANCED_WHOLESALE_BLUEPRINT.md`, ADR-038, ADR-039, ADR-041, and owner confirmations on 2026-10-10.
 
@@ -79,7 +79,17 @@ Commands calculate exact whole-customer exposure after current-price confirmatio
 
 Identical completed commands replay the original outcome without requiring the historical approval to remain unexpired or unrevoked; immutable consumption must match the selected approval, order/action, key, and hash. Revocation after committed consumption preserves history and does not reverse a completed business command. New use of revoked or consumed approval is denied. Atomic rollback preserves stock, reservations, invoices, debt, and approval availability on failed commands.
 
-Unit tests and SQL regressions cover strict inputs, explicit selection, retry binding, exact excess, insufficient scope, wrong action, replay, reuse denial, and rollback. Multi-session cases add revocation-first, simultaneous override confirmation retries, expiry after lock wait, and consumption-first followed by revocation and replay. Complete execution verification is pending. No live changes occurred. Approval history UI/read-status integration, payments/allocation/settlement, and Staging UAT remain required.
+Unit tests and SQL regressions cover strict inputs, explicit selection, retry binding, exact excess, insufficient scope, wrong action, replay, reuse denial, and rollback. Multi-session cases add revocation-first, simultaneous override confirmation retries, expiry after lock wait, and consumption-first followed by revocation and replay. Local `npm run check` passed with 208 unit tests, formatting, lint, typechecks, standard/Cloudflare builds, and secret scanning. CI `38060191768` verified commit `5f73b2803f240d9f570ca3f083b7e94ab1ab78c9` with fresh migration reset, 1,018 pgTAP assertions across 34 files, and all seven multi-session cases. Evidence: `../qa/AW3_CREDIT_OVERRIDE_CONSUMPTION_CI_2026-10-10.md`. No live changes occurred. Approval history UI/read-status integration, payments/allocation/settlement, and Staging UAT remain required.
+
+## Payment/allocation backend candidate
+
+Migration `20261010144125` and POST `/v1/wholesale/payments` implement manually received payment recording and exact explicit invoice allocations. Header/allocation ledgers are append-only, tenant-referenced, RLS-enabled, directly inaccessible to browser/Hyperdrive roles, and exposed only through an authorized atomic command. Inputs cannot supply tenant/actor, balance projections, or a backdated receipt timestamp. Allocation sum must equal receipt amount; duplicate invoices, fractional minor units, unclassified invoices, wrong customer/tenant/method/branch, and overpayments are rejected.
+
+The command requires wholesale read plus ownership or explicit `wholesale_payments.record`; nonowners must have an active employee assignment at every invoice location. No cashier or manager automatically receives payment-recording authority. Active entitlement, membership, customer eligibility, and branch access are rechecked on historical retries. Payment-method availability is required for new receipts, not to replay the original completed payment. Customer locking shares credit scope with existing commands; invoice locks use UUID order. Errors roll back the receipt, all allocations, audit, outbox, and replay record together.
+
+Derived invoice balances and credit exposure now subtract successful allocations. Original invoices, revenue, inventory, and due dates are unchanged. This payment ledger is manual settlement truth only: it does not charge a bank/provider, fabricate POS tender/register activity, or split money into business funds. PROJECT_SPEC section 18.4 requires user-confirmed fund allocation, so Finance/fund projection, payment-period reports, receipt/history UI, and paid prepaid/COD fulfillment remain separate incomplete integration work. Existing sales-by-payment reporting is not claimed to include these receipts yet.
+
+Current unit run passed 224 tests. SQL coverage and two additional actual multi-session payment scenarios are written; full candidate verification is pending. No live environment or Production balances changed.
 
 ## Next database and service slice
 

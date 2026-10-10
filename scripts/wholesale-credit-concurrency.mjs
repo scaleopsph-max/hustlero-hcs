@@ -369,6 +369,89 @@ try {
   console.log(
     'AW3 concurrency passed: competing confirmations cannot oversubscribe credit; fulfillment sees committed lower limits; simultaneous fulfillment retry produces one invoice charge and one stock deduction.',
   )
+  const invoiceIds = []
+  for (const order of orders)
+    invoiceIds.push(
+      (await observer.query('select id from app.invoices where tenant_id=$1 and sales_order_id=$2', [tenant, order]))
+        .rows[0].id,
+    )
+  const method = (
+    await observer.query("select id from app.payment_methods where tenant_id=$1 and method_type='cash'", [tenant])
+  ).rows[0].id
+  const payment = (client, key, amountMinor, allocations) =>
+    client.query('select app.record_wholesale_payment($1,$2,$3::jsonb,$4,$4,$4) response', [
+      actor,
+      tenant,
+      JSON.stringify({
+        customerId: customer,
+        paymentMethodId: method,
+        amountMinor,
+        reference: 'Synthetic race received cash',
+        allocations,
+      }),
+      key,
+    ])
+  const allocations = [
+    { invoiceId: invoiceIds[1], amountMinor: 150000 },
+    { invoiceId: invoiceIds[0], amountMinor: 450000 },
+  ]
+  await first.query('begin')
+  const receipt = await payment(first, 'race-payment-replay-001', 600000, allocations)
+  const receiptRetry = payment(second, 'race-payment-replay-001', 600000, allocations)
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await receiptRetry).rows[0].response, receipt.rows[0].response)
+  assert.equal(
+    (await observer.query('select count(*)::int count from app.wholesale_payments where tenant_id=$1', [tenant]))
+      .rows[0].count,
+    1,
+  )
+  assert.equal(
+    (
+      await observer.query('select count(*)::int count from app.wholesale_payment_allocations where tenant_id=$1', [
+        tenant,
+      ])
+    ).rows[0].count,
+    2,
+  )
+  assert.equal(
+    (await observer.query('select app.wholesale_credit_exposure($1,$2)::text exposure', [tenant, customer])).rows[0]
+      .exposure,
+    '3000.00',
+  )
+  const remainingAllocation = [{ invoiceId: invoiceIds[1], amountMinor: 300000 }]
+  await first.query('begin')
+  await payment(first, 'race-payment-winner-001', 300000, remainingAllocation)
+  const competingPayment = payment(second, 'race-payment-loser-001', 300000, remainingAllocation).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await competingPayment, 'HCAP5')
+  assert.equal(
+    (await observer.query('select count(*)::int count from app.wholesale_payments where tenant_id=$1', [tenant]))
+      .rows[0].count,
+    2,
+  )
+  assert.equal(
+    (await observer.query('select sum(amount)::text total from app.wholesale_payments where tenant_id=$1', [tenant]))
+      .rows[0].total,
+    '9000.00',
+  )
+  assert.equal(
+    (await observer.query('select app.wholesale_credit_exposure($1,$2)::text exposure', [tenant, customer])).rows[0]
+      .exposure,
+    '0.00',
+  )
+  assert.equal(
+    (await observer.query('select on_hand::text from app.inventory_balances where tenant_id=$1', [tenant])).rows[0]
+      .on_hand,
+    '80.000',
+  )
+  console.log(
+    'AW3 payment concurrency passed: identical multi-invoice receipt retry posts once; competing payments cannot over-allocate the remaining balance; paid debt releases credit without changing inventory.',
+  )
 } finally {
   await Promise.all(clients.map((client) => client.end()))
 }

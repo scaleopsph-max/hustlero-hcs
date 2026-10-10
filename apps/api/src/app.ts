@@ -47,6 +47,8 @@ import {
   wholesaleOrderFulfillRequestSchema,
   wholesaleOrderFulfillResponseSchema,
   wholesaleOpeningReceivableRequestSchema,
+  wholesalePaymentAllocationRequestSchema,
+  wholesalePaymentAllocationResponseSchema,
   wholesaleOpeningReceivableResponseSchema,
   wholesaleReceivablesContextSchema,
   wholesaleCreditSettingsRequestSchema,
@@ -220,6 +222,7 @@ import {
 import {
   loadWholesaleReceivablesFromPostgres,
   recordWholesaleOpeningReceivableInPostgres,
+  recordWholesalePaymentInPostgres,
   loadWholesaleCreditSettingsFromPostgres,
   loadWholesaleCreditOverridesFromPostgres,
   commandWholesaleCreditOverrideInPostgres,
@@ -230,6 +233,7 @@ import {
   type WholesaleCreditSettingsSaver,
   type WholesaleReceivablesLoader,
   type WholesaleOpeningReceivableRecorder,
+  type WholesalePaymentRecorder,
 } from './wholesale-receivables-repository'
 import { type Bindings, readEnvironment } from './env'
 import {
@@ -397,6 +401,7 @@ interface AppDependencies {
   commandWholesaleCreditOverride: WholesaleCreditOverrideCommander
   saveWholesaleCreditSettings: WholesaleCreditSettingsSaver
   recordWholesaleOpeningReceivable: WholesaleOpeningReceivableRecorder
+  recordWholesalePayment: WholesalePaymentRecorder
   saveWholesaleOrderDraft: WholesaleOrderDraftSaver
   confirmWholesaleOrder: WholesaleOrderConfirmer
   cancelWholesaleOrder: WholesaleOrderCanceller
@@ -494,6 +499,7 @@ const defaultDependencies: AppDependencies = {
   commandWholesaleCreditOverride: commandWholesaleCreditOverrideInPostgres,
   saveWholesaleCreditSettings: saveWholesaleCreditSettingsInPostgres,
   recordWholesaleOpeningReceivable: recordWholesaleOpeningReceivableInPostgres,
+  recordWholesalePayment: recordWholesalePaymentInPostgres,
   saveWholesaleOrderDraft: saveWholesaleOrderDraftInPostgres,
   confirmWholesaleOrder: confirmWholesaleOrderInPostgres,
   cancelWholesaleOrder: cancelWholesaleOrderInPostgres,
@@ -2303,6 +2309,25 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
 
   const wholesaleError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
     const code = postgresErrorCode(error)
+    if (code?.startsWith('HCAP')) {
+      const messages: Record<string, string> = {
+        HCAP1: 'Wholesale payment-recording permission is required.',
+        HCAP2: 'Allocate the exact received amount to distinct invoices using a valid payment method and reference.',
+        HCAP3: 'The authorized customer, payment method, invoice, or location is unavailable.',
+        HCAP4: 'Classify the invoice before allocating a payment.',
+        HCAP5: 'The allocation exceeds the current open invoice balance.',
+      }
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: `WHOLESALE_PAYMENT_${code}`,
+            message: messages[code] ?? 'Invalid wholesale payment.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        code === 'HCAP1' ? 403 : code === 'HCAP3' ? 404 : code === 'HCAP4' || code === 'HCAP5' ? 409 : 400,
+      )
+    }
     if (code?.startsWith('HCCO')) {
       const status = code === 'HCCO1' ? 403 : code === 'HCCO3' ? 404 : code === 'HCCO4' || code === 'HCCO6' ? 409 : 400
       const messages: Record<string, string> = {
@@ -2636,6 +2661,38 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
       )
     } catch (error) {
       const response = receivableError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
+  app.post('/v1/wholesale/payments', async (context) => {
+    const command = await readWholesaleCommand(context)
+    const parsed = wholesalePaymentAllocationRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!command || !parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_WHOLESALE_PAYMENT',
+            message: 'Provide a received payment with exact invoice allocations and an Idempotency-Key.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      const response = await dependencies.recordWholesalePayment(
+        command.userId,
+        command.tenantId,
+        parsed.data,
+        command.idempotencyKey,
+        await requestHash({ userId: command.userId, ...parsed.data }),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(wholesalePaymentAllocationResponseSchema.parse(response), 201)
+    } catch (error) {
+      const response = wholesaleError(context, error)
       if (response) return response
       throw error
     }
