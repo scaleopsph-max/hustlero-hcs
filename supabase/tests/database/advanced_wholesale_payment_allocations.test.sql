@@ -108,7 +108,7 @@ create function pg_temp.payment(p_amount bigint,p_key text,p_allocations jsonb d
  select app.record_wholesale_payment('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001',
  jsonb_build_object('customerId',(select id from app.customers),'paymentMethodId',(select id from app.payment_methods where tenant_id='2f000000-0000-4000-8000-000000000001' and method_type='cash'),
  'amountMinor',p_amount,'reference','Synthetic received cash','allocations',coalesce(p_allocations,jsonb_build_array(jsonb_build_object('invoiceId',(select id from app.invoices where total=1800),'amountMinor',p_amount)))),
- p_key,p_key,'payment-test');
+ p_key,md5(p_amount::text || coalesce(p_allocations::text,'')),'payment-test');
 $$;
 select ok((select relrowsecurity from pg_class where oid='app.wholesale_payments'::regclass),'payment RLS enabled');
 select ok((select relrowsecurity from pg_class where oid='app.wholesale_payment_allocations'::regclass),'allocation RLS enabled');
@@ -172,4 +172,3 @@ select throws_ok($$delete from app.wholesale_payments$$,'P0001','issued invoices
 select throws_ok($$update app.wholesale_payment_allocations set amount=0.01$$,'P0001','issued invoices are immutable','allocation append-only');
 select * from finish();
 rollback;
-
