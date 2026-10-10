@@ -2,7 +2,7 @@
 
 Date: 2026-10-10
 
-Status: Domain foundation and opening-receivable database/API slice implemented and verified in isolated CI. Staging/Production release has not occurred. Credit enforcement, payment allocation persistence, and UI remain unimplemented.
+Status: Domain foundation, opening/settings APIs, and credit enforcement verified in isolated CI. Dedicated override approval persistence is the next candidate. Payment allocation, override consumption, and UI remain incomplete. Staging/Production release has not occurred.
 
 Source: `ADVANCED_WHOLESALE_BLUEPRINT.md`, ADR-038, ADR-039, ADR-041, and owner confirmations on 2026-10-10.
 
@@ -59,7 +59,17 @@ Net-term fulfillment retains the confirmed term while rechecking the latest cred
 
 The current signature has no payment command, so prepaid/COD fulfillment fails closed and never claims cash was received. No unchecked approval bypass exists: dedicated approved overrides and payment/settlement integration remain separate incomplete slices. Application errors expose controlled 409 messages, not private database details.
 
-Regression candidates cover missing/zero/insufficient/exact credit, rollback side effects, limit reduction after confirmation, immutable terms/debt, due dates, partial fulfillment, replay, history classification, and prepaid/COD payment denial. CI adds a fixed-loopback-only disposable database script for competing confirmations, settings reduction versus fulfillment, and simultaneous fulfillment replay. Execution verification for this candidate is pending. No environment migration, live settings change, or Production balance change is authorized by this local implementation step.
+Regression coverage includes missing/zero/insufficient/exact credit, rollback side effects, limit reduction after confirmation, immutable terms/debt, due dates, partial fulfillment, replay, history classification, and COD payment denial. CI includes a fixed-loopback-only disposable database script for competing confirmations, settings reduction versus fulfillment, and simultaneous fulfillment replay. Local checks passed with 184 unit tests. CI run `38057004425` verified commit `04778d2a84ae9da20e0e35b74d5079dcf5f8ad91`: both jobs passed, including fresh reset, 945 pgTAP assertions across 33 files, and all three multi-session scenarios. The initial race-fixture contact omission was corrected without weakening schema constraints. Evidence and remaining verification boundaries are in `../qa/AW3_CREDIT_ENFORCEMENT_CI_2026-10-10.md`. No live migration, settings change, or Production balance change occurred.
+
+## Dedicated credit-override approval candidate
+
+Migration `20261010135722_advanced_wholesale_credit_override_approvals.sql` adds immutable order/action-specific approvals and separate append-only revocations. The database derives the customer from the tenant-authorized order, records the approver, reason, exact approved excess, and future expiry, and atomically writes audit/outbox/idempotency. No existing inventory approval payload is reused.
+
+Writes require active Advanced Wholesale entitlement, active membership, wholesale-management access, and ownership or explicit `approvals.manage` permission. Approval reads use wholesale read access. Confirmation approvals require a draft order; fulfillment approvals require a confirmed or partially fulfilled order. A manager without approval permission cannot authorize an exception. Revocation retains the approval and appends actor/reason/time; repeated identical commands replay without duplicate events. No new self-approval restriction is invented beyond the existing permission model.
+
+API routes are GET/POST `/v1/wholesale/credit-overrides` and POST `/v1/wholesale/credit-overrides/:id/revoke`. Runtime schemas reject client tenant/customer/approver IDs, nonpositive or fractional amounts, and missing offset-aware expiry. SQL validates expiry against wall-clock time again after obtaining scope locks. Replay denotes the original command result, not current validity; future consumption must independently recheck expiry and revocation.
+
+This candidate does not yet consume approvals or bypass the enforced limit. An explicitly tested approved record alone still leaves over-limit confirmation blocked. Order/action/customer matching, exact current excess validation, single-action consumption, expiry/revocation checks, and concurrent revocation versus execution must be wired atomically before release. Payments, UI, and Staging UAT remain separate incomplete work. Execution verification is pending; Production is unchanged.
 
 ## Next database and service slice
 

@@ -1,4 +1,9 @@
 import {
+  wholesaleCreditOverridesContextSchema,
+  wholesaleCreditOverrideCommandResponseSchema,
+  type WholesaleCreditOverrideApprove,
+  type WholesaleCreditOverridesContext,
+  type WholesaleCreditOverrideCommandResponse,
   wholesaleCreditSettingsContextSchema,
   wholesaleCreditSettingsResponseSchema,
   type WholesaleCreditSettingsContext,
@@ -13,6 +18,45 @@ import {
 import { Client } from 'pg'
 
 import type { Bindings } from './env'
+
+export type WholesaleCreditOverridesLoader = (
+  userId: string,
+  tenantId: string,
+  bindings: Bindings,
+) => Promise<WholesaleCreditOverridesContext>
+export type WholesaleCreditOverrideCommander = (
+  userId: string,
+  tenantId: string,
+  operation: 'approve' | 'revoke',
+  request: WholesaleCreditOverrideApprove | { overrideId: string; reason: string },
+  key: string,
+  hash: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<WholesaleCreditOverrideCommandResponse>
+export const loadWholesaleCreditOverridesFromPostgres: WholesaleCreditOverridesLoader = (userId, tenantId, bindings) =>
+  query(
+    bindings,
+    'select app.load_wholesale_credit_overrides($1::uuid,$2::uuid) response',
+    [userId, tenantId],
+    (value) => wholesaleCreditOverridesContextSchema.parse(value),
+  )
+export const commandWholesaleCreditOverrideInPostgres: WholesaleCreditOverrideCommander = (
+  userId,
+  tenantId,
+  operation,
+  request,
+  key,
+  hash,
+  requestId,
+  bindings,
+) =>
+  query(
+    bindings,
+    'select app.command_wholesale_credit_override($1::uuid,$2::uuid,$3::text,$4::jsonb,$5::text,$6::text,$7::text) response',
+    [userId, tenantId, operation, JSON.stringify(request), key, hash, requestId],
+    (value) => wholesaleCreditOverrideCommandResponseSchema.parse(value),
+  )
 
 export type WholesaleCreditSettingsLoader = (
   userId: string,

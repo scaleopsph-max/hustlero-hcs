@@ -51,6 +51,10 @@ import {
   wholesaleCreditSettingsRequestSchema,
   wholesaleCreditSettingsResponseSchema,
   wholesaleCreditSettingsContextSchema,
+  wholesaleCreditOverrideApproveSchema,
+  wholesaleCreditOverrideRevokeSchema,
+  wholesaleCreditOverrideCommandResponseSchema,
+  wholesaleCreditOverridesContextSchema,
   posSaleCompleteRequestSchema,
   posSaleCompleteResponseSchema,
   posRegisterOpenRequestSchema,
@@ -216,6 +220,10 @@ import {
   loadWholesaleReceivablesFromPostgres,
   recordWholesaleOpeningReceivableInPostgres,
   loadWholesaleCreditSettingsFromPostgres,
+  loadWholesaleCreditOverridesFromPostgres,
+  commandWholesaleCreditOverrideInPostgres,
+  type WholesaleCreditOverridesLoader,
+  type WholesaleCreditOverrideCommander,
   saveWholesaleCreditSettingsInPostgres,
   type WholesaleCreditSettingsLoader,
   type WholesaleCreditSettingsSaver,
@@ -384,6 +392,8 @@ interface AppDependencies {
   loadWholesaleOrderContext: WholesaleOrderContextLoader
   loadWholesaleReceivables: WholesaleReceivablesLoader
   loadWholesaleCreditSettings: WholesaleCreditSettingsLoader
+  loadWholesaleCreditOverrides: WholesaleCreditOverridesLoader
+  commandWholesaleCreditOverride: WholesaleCreditOverrideCommander
   saveWholesaleCreditSettings: WholesaleCreditSettingsSaver
   recordWholesaleOpeningReceivable: WholesaleOpeningReceivableRecorder
   saveWholesaleOrderDraft: WholesaleOrderDraftSaver
@@ -479,6 +489,8 @@ const defaultDependencies: AppDependencies = {
   loadWholesaleOrderContext: loadWholesaleOrderContextFromPostgres,
   loadWholesaleReceivables: loadWholesaleReceivablesFromPostgres,
   loadWholesaleCreditSettings: loadWholesaleCreditSettingsFromPostgres,
+  loadWholesaleCreditOverrides: loadWholesaleCreditOverridesFromPostgres,
+  commandWholesaleCreditOverride: commandWholesaleCreditOverrideInPostgres,
   saveWholesaleCreditSettings: saveWholesaleCreditSettingsInPostgres,
   recordWholesaleOpeningReceivable: recordWholesaleOpeningReceivableInPostgres,
   saveWholesaleOrderDraft: saveWholesaleOrderDraftInPostgres,
@@ -2290,6 +2302,26 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
 
   const wholesaleError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
     const code = postgresErrorCode(error)
+    if (code?.startsWith('HCCO')) {
+      const status = code === 'HCCO1' ? 403 : code === 'HCCO3' ? 404 : code === 'HCCO4' ? 409 : 400
+      const messages: Record<string, string> = {
+        HCCO1: 'Wholesale management and approval permission are required.',
+        HCCO2: 'Check the order, action, approved excess amount, expiry, and reason.',
+        HCCO3: 'The authorized credit approval scope was not found.',
+        HCCO4: 'This order or approval no longer allows that action.',
+        HCCO5: 'Choose a future expiry for the credit approval.',
+      }
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: `WHOLESALE_OVERRIDE_${code}`,
+            message: messages[code] ?? 'Invalid credit approval command.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        status,
+      )
+    }
     const creditMessages: Record<string, string> = {
       HCCR1: 'The customer credit limit is exceeded. An approved credit exception is required.',
       HCCR2: 'Explicit customer terms and credit settings are required before this order can proceed.',
@@ -2433,6 +2465,91 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
       status,
     )
   }
+
+  app.get('/v1/wholesale/credit-overrides', async (context) => {
+    const resolved = await resolveWholesaleTenant(context)
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'WHOLESALE_OVERRIDE_ACCESS_DENIED',
+            message: 'Select an authorized business.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    try {
+      return context.json(
+        wholesaleCreditOverridesContextSchema.parse(
+          await dependencies.loadWholesaleCreditOverrides(resolved.userId, resolved.tenantId, context.env),
+        ),
+      )
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCAR1')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'WHOLESALE_OVERRIDE_ACCESS_DENIED',
+              message: 'Wholesale read permission is required.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
+      const response = wholesaleError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+  const creditOverrideCommand = async (context: Context<{ Bindings: Bindings }>, operation: 'approve' | 'revoke') => {
+    const command = await readWholesaleCommand(context)
+    const body = await context.req.json().catch(() => null)
+    const parsed =
+      operation === 'approve'
+        ? wholesaleCreditOverrideApproveSchema.safeParse(body)
+        : wholesaleCreditOverrideRevokeSchema.safeParse(body)
+    const id = context.req.param('id')
+    if (!command || !parsed.success || (operation === 'revoke' && !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id ?? '')))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_WHOLESALE_OVERRIDE',
+            message: 'Provide a valid credit approval command and Idempotency-Key.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    const request =
+      operation === 'approve'
+        ? wholesaleCreditOverrideApproveSchema.parse(parsed.data)
+        : { overrideId: id!, reason: parsed.data.reason }
+    try {
+      return context.json(
+        wholesaleCreditOverrideCommandResponseSchema.parse(
+          await dependencies.commandWholesaleCreditOverride(
+            command.userId,
+            command.tenantId,
+            operation,
+            request,
+            command.idempotencyKey,
+            await requestHash({ userId: command.userId, operation, ...request }),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+        201,
+      )
+    } catch (error) {
+      const response = wholesaleError(context, error)
+      if (response) return response
+      throw error
+    }
+  }
+  app.post('/v1/wholesale/credit-overrides', (context) => creditOverrideCommand(context, 'approve'))
+  app.post('/v1/wholesale/credit-overrides/:id/revoke', (context) => creditOverrideCommand(context, 'revoke'))
 
   app.get('/v1/wholesale/credit-settings', async (context) => {
     const resolved = await resolveWholesaleTenant(context)

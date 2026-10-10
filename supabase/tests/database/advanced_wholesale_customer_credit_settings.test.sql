@@ -68,6 +68,9 @@ select throws_ok($$select pg_temp.save_credit('1c000000-0000-4000-8000-000000000
 insert into app.role_permissions (tenant_id, role_id, permission_code) values ('2c000000-0000-4000-8000-000000000001', '4c000000-0000-4000-8000-000000000001', 'wholesale_orders.manage');
 select lives_ok($$select pg_temp.save_credit('1c000000-0000-4000-8000-000000000003', '2c000000-0000-4000-8000-000000000001', '3c000000-0000-4000-8000-000000000001', 'net_15', 100000, 'credit-manager-001')$$, 'authorized manager can save');
 update app.customers set status = 'inactive' where tenant_id = '2c000000-0000-4000-8000-000000000001';
+select throws_ok($$select app.command_wholesale_credit_override('1c000000-0000-4000-8000-000000000003','2c000000-0000-4000-8000-000000000001','approve','{}'::jsonb,'override-denied-001','hash','request')$$,'HCCO1','Credit approval permission is required','wholesale manager cannot approve without approval permission');
+insert into app.role_permissions(tenant_id,role_id,permission_code) values('2c000000-0000-4000-8000-000000000001','4c000000-0000-4000-8000-000000000001','approvals.manage');
+select ok(app.can_approve_wholesale_credit('1c000000-0000-4000-8000-000000000003','2c000000-0000-4000-8000-000000000001'),'explicit approval permission authorizes non-owner manager');
 select throws_ok($$select pg_temp.save_credit('1c000000-0000-4000-8000-000000000001', '2c000000-0000-4000-8000-000000000001', '3c000000-0000-4000-8000-000000000001', 'cod', 0, 'credit-command-002')$$, 'HCCS3', 'Active reseller not found', 'inactive reseller blocks replay');
 select is((select count(*) from app.wholesale_receivable_charges where tenant_id = '2c000000-0000-4000-8000-000000000001'), 0::bigint, 'configuration does not create debt');
 select is((select count(*) from app.inventory_movements where tenant_id = '2c000000-0000-4000-8000-000000000001'), 0::bigint, 'configuration does not move stock');

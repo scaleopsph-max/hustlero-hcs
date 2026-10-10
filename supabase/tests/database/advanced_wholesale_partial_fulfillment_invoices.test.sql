@@ -107,6 +107,43 @@ select is((select status from app.sales_orders where tenant_id='2f000000-0000-40
 select is((select count(*) from app.sales_order_reservation_ledger where tenant_id='2f000000-0000-4000-8000-000000000001'),0::bigint,'credit failure leaves no reservation ledger');
 select is((select count(*) from audit.audit_events where tenant_id='2f000000-0000-4000-8000-000000000001' and action='sales_order.confirmed'),0::bigint,'credit failure leaves no confirmation audit');
 select pg_temp.aw3_settings('net_7',450000,'aw3-exact-settings-001');
+create function pg_temp.aw3_override(p_action text,p_amount numeric,p_expiry timestamptz,p_key text,p_hash text default 'override-hash') returns jsonb language sql as $$
+  select app.command_wholesale_credit_override('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001','approve',
+    jsonb_build_object('salesOrderId',(select id from app.sales_orders where tenant_id='2f000000-0000-4000-8000-000000000001'),'action',p_action,
+      'approvedExcessMinor',p_amount,'expiresAt',p_expiry,'reason','Explicit scoped test approval'),p_key,p_hash,'override-test');
+$$;
+select ok((select relrowsecurity from pg_class where oid='app.wholesale_credit_overrides'::regclass),'credit approvals use RLS');
+select ok((select relrowsecurity from pg_class where oid='app.wholesale_credit_override_revocations'::regclass),'credit revocations use RLS');
+select ok(not has_table_privilege('hcs_hyperdrive','app.wholesale_credit_overrides','insert'),'API cannot insert approvals directly');
+select ok(not has_function_privilege('authenticated','app.command_wholesale_credit_override(uuid,uuid,text,jsonb,text,text,text)','execute'),'browser cannot approve directly');
+select throws_ok($$select pg_temp.aw3_override('confirm',0,now()+interval '1 hour','override-zero-001')$$,'HCCO2','Invalid credit approval command','zero approved excess rejected');
+select throws_ok($$select pg_temp.aw3_override('confirm',1.5,now()+interval '1 hour','override-fraction-001')$$,'HCCO2','Invalid credit approval command','fractional minor units rejected');
+select throws_ok($$select pg_temp.aw3_override('confirm',50000,now()-interval '1 hour','override-expired-001')$$,'HCCO5','Credit approval expiry must be in the future','expired approval rejected');
+select throws_ok($$select pg_temp.aw3_override('fulfill',50000,now()+interval '1 hour','override-wrong-state-001')$$,'HCCO4','Credit approval scope is unavailable','fulfillment approval cannot apply to draft');
+select lives_ok($$select pg_temp.aw3_override('confirm',50000,now()+interval '1 hour','override-approve-001')$$,'owner approves order-specific excess');
+select lives_ok($$select pg_temp.aw3_override('confirm',50000,now()+interval '1 hour','override-approve-001')$$,'approval retry replays');
+select is((select count(*) from app.wholesale_credit_overrides),1::bigint,'approval replay does not duplicate');
+select is((select approved_excess from app.wholesale_credit_overrides),500::numeric,'approved excess uses exact numeric money');
+select is((select customer_id from app.wholesale_credit_overrides),(select id from app.customers where tenant_id='2f000000-0000-4000-8000-000000000001'),'customer derived from order');
+select throws_ok($$select pg_temp.aw3_override('confirm',60000,now()+interval '1 hour','override-approve-001','changed-hash')$$,'HCS08','Idempotency key conflict','changed replay denied');
+select is((select count(*) from audit.audit_events where action='wholesale_credit_override.approve'),1::bigint,'one approval audit');
+select is((select count(*) from integration.event_outbox where topic='wholesale_credit_override.approve'),1::bigint,'one approval outbox');
+select throws_ok($$update app.wholesale_credit_overrides set approved_excess=999$$,'P0001','issued invoices are immutable','approval amount immutable');
+select pg_temp.aw3_settings('net_7',449999,'override-not-wired-settings-001');
+select throws_ok($$select pg_temp.aw3_confirm('override-not-bypass-001')$$,'HCCR1','Customer credit limit exceeded','approval persistence alone cannot bypass enforcement');
+select pg_temp.aw3_settings('net_7',450000,'override-restore-settings-001');
+create function pg_temp.aw3_revoke(p_key text) returns jsonb language sql as $$
+  select app.command_wholesale_credit_override('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001','revoke',
+    jsonb_build_object('overrideId',(select id from app.wholesale_credit_overrides),'reason','Withdraw test approval'),p_key,'revoke-hash','revoke-test');
+$$;
+select lives_ok($$select pg_temp.aw3_revoke('override-revoke-001')$$,'owner appends revocation');
+select lives_ok($$select pg_temp.aw3_revoke('override-revoke-001')$$,'revocation retry replays');
+select is((select count(*) from app.wholesale_credit_override_revocations),1::bigint,'one revocation retained');
+select is((select count(*) from app.wholesale_credit_overrides),1::bigint,'revocation preserves original approval');
+select throws_ok($$select pg_temp.aw3_revoke('override-revoke-002')$$,'HCCO4','Credit approval scope is unavailable','fresh key cannot revoke twice');
+select throws_ok($$delete from app.wholesale_credit_override_revocations$$,'P0001','issued invoices are immutable','revocation cannot be removed');
+select is(app.load_wholesale_credit_overrides('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->'overrides'->0->>'revokeReason','Withdraw test approval','read model includes revocation');
+select throws_ok($$select app.load_wholesale_credit_overrides('1f000000-0000-4000-8000-000000000002','2f000000-0000-4000-8000-000000000001')$$,'HCAR1','Wholesale receivable access denied','foreign tenant reader denied');
 
 select lives_ok($$
   select app.confirm_wholesale_order(

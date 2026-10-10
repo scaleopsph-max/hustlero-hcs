@@ -41,6 +41,13 @@ function setup(code?: string) {
     return creditResponse
   })
   const loadCredit = vi.fn(async () => ({ canManage: true, customers: [] }))
+  const overrideCommand = vi.fn(async (_userId: string, _tenantId: string, operation: 'approve' | 'revoke') => {
+    if (code) throw Object.assign(new Error('Private database approval details'), { code })
+    return {
+      overrideId: response.chargeId,
+      status: operation === 'approve' ? ('approved' as const) : ('revoked' as const),
+    }
+  })
   const app = createApp({
     verifyAccessToken: async (token) => (token === 'valid' ? { userId } : null),
     loadSessionAccess: async () => [
@@ -60,6 +67,8 @@ function setup(code?: string) {
     recordWholesaleOpeningReceivable: record,
     saveWholesaleCreditSettings: saveCredit,
     loadWholesaleCreditSettings: loadCredit,
+    loadWholesaleCreditOverrides: async () => ({ canApprove: true, overrides: [] }),
+    commandWholesaleCreditOverride: overrideCommand,
     confirmWholesaleOrder: async () => {
       throw Object.assign(new Error('Private database details'), { code })
     },
@@ -67,7 +76,7 @@ function setup(code?: string) {
       throw Object.assign(new Error('Private database details'), { code })
     },
   })
-  return { app, record, load, saveCredit, loadCredit }
+  return { app, record, load, saveCredit, loadCredit, overrideCommand }
 }
 
 function headers(tenant = tenantId) {
@@ -78,6 +87,110 @@ function headers(tenant = tenantId) {
     'content-type': 'application/json',
   }
 }
+
+describe('wholesale credit override API', () => {
+  it('loads the authorized approval history', async () => {
+    const { app } = setup()
+    const result = await app.request('/v1/wholesale/credit-overrides', { headers: headers() }, bindings)
+    expect(result.status).toBe(200)
+    expect(await result.json()).toEqual({ canApprove: true, overrides: [] })
+  })
+  const approval = {
+    salesOrderId: invoiceId,
+    action: 'confirm',
+    approvedExcessMinor: 50000,
+    expiresAt: '2026-10-11T00:00:00Z',
+    reason: 'Approved scoped exception',
+  }
+  it('derives authenticated context and forwards only explicit approval scope', async () => {
+    const { app, overrideCommand } = setup()
+    const result = await app.request(
+      '/v1/wholesale/credit-overrides',
+      { method: 'POST', headers: headers(), body: JSON.stringify(approval) },
+      bindings,
+    )
+    expect(result.status).toBe(201)
+    expect(overrideCommand).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      'approve',
+      approval,
+      expect.any(String),
+      expect.any(String),
+      expect.any(String),
+      bindings,
+    )
+  })
+  it('records explicit revoke reason and server-owned path identifier', async () => {
+    const { app, overrideCommand } = setup()
+    const result = await app.request(
+      `/v1/wholesale/credit-overrides/${response.chargeId}/revoke`,
+      { method: 'POST', headers: headers(), body: JSON.stringify({ reason: 'Withdraw approval' }) },
+      bindings,
+    )
+    expect(result.status).toBe(201)
+    expect(overrideCommand).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      'revoke',
+      { overrideId: response.chargeId, reason: 'Withdraw approval' },
+      expect.any(String),
+      expect.any(String),
+      expect.any(String),
+      bindings,
+    )
+  })
+  it.each([
+    { ...approval, tenantId },
+    { ...approval, approvedBy: userId },
+    { ...approval, approvedExcessMinor: 0 },
+    { ...approval, approvedExcessMinor: 1.5 },
+    { ...approval, action: 'all' },
+    { ...approval, expiresAt: '2026-10-11T00:00:00' },
+  ])('rejects malformed or server-owned approval %#', async (payload) => {
+    const { app, overrideCommand } = setup()
+    expect(
+      (
+        await app.request(
+          '/v1/wholesale/credit-overrides',
+          { method: 'POST', headers: headers(), body: JSON.stringify(payload) },
+          bindings,
+        )
+      ).status,
+    ).toBe(400)
+    expect(overrideCommand).not.toHaveBeenCalled()
+  })
+  it.each([
+    ['HCCO1', 403],
+    ['HCCO2', 400],
+    ['HCCO3', 404],
+    ['HCCO4', 409],
+    ['HCCO5', 400],
+    ['HCS08', 409],
+  ])('maps %s without private details', async (code, status) => {
+    const { app } = setup(code as string)
+    const result = await app.request(
+      '/v1/wholesale/credit-overrides',
+      { method: 'POST', headers: headers(), body: JSON.stringify(approval) },
+      bindings,
+    )
+    expect(result.status).toBe(status)
+    expect(JSON.stringify(await result.json())).not.toContain('Private database')
+  })
+  it('denies foreign tenant before executing approval', async () => {
+    const { app, overrideCommand } = setup()
+    expect(
+      (
+        await app.request(
+          '/v1/wholesale/credit-overrides',
+          { method: 'POST', headers: headers(response.chargeId), body: JSON.stringify(approval) },
+          bindings,
+        )
+      ).status,
+    ).toBe(400)
+    expect(overrideCommand).not.toHaveBeenCalled()
+  })
+})
 
 describe('wholesale credit enforcement errors', () => {
   it.each(['HCCR1', 'HCCR2', 'HCCR3', 'HCCR4'])('returns a controlled credit conflict for %s', async (code) => {
