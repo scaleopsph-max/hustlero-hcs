@@ -1,6 +1,6 @@
 # Project State
 
-Last updated: 2026-10-09
+Last updated: 2026-10-10
 
 ## Phase
 
@@ -287,9 +287,11 @@ Local foundation verification on 2026-10-10 passed `npm run check`, including 15
 
 The AW3 explicit legacy-opening database/API candidate is now written locally. Migration `20261010111813` adds an immutable eligibility registry and opening charge ledger without automatic debt posting. Authorized read/opening routes derive the actor/tenant and invoice amount on the server; the database command requires an active owner, rechecks entitlement, and records idempotency/audit/outbox atomically. The latest Vitest run passed 166 cases. No AW2 fulfillment/confirmation behavior has changed.
 
-Database verification is blocked locally: `npx supabase test db --local` failed with ECONNREFUSED at 127.0.0.1:54322, and Docker is unavailable. The migration and new pgTAP suite are unverified and must not be treated as release-ready. No local or remote SQL migration, push, deployment, or Production opening entry was performed.
+Local database infrastructure remains unavailable, but opening-slice execution verification passed in isolated GitHub CI on 2026-10-10. Feature branch `codex/advanced-wholesale-aw3` was secret-scanned, committed, and pushed; CI run `38052333432` verified commit `7ccae44c14da03ba0e6d972c5eece92a11a95234`. Both jobs passed: dependency security, secret scan across 370 tracked files, formatting, lint, typechecks, 166 Vitest cases, standard/Cloudflare builds, a fresh Supabase reset, and all 881 pgTAP assertions across 32 files (31 new opening checks). The invalid `inactive` membership test fixture was corrected to `suspended` before this run. Evidence is in `docs/qa/AW3_OPENING_RECEIVABLES_CI_2026-10-10.md`. No merge, Staging/Production migration or deployment, or Production opening entry was performed.
 
-The next safe action is to execution-verify the opening migration and database tests in the existing isolated CI/local workflow, then implement customer credit settings, atomic confirm/fulfill credit enforcement and approval overrides, and payment/allocation persistence. Add the Back Office workflow and validate the complete AW3 flow in Staging before a separate Production release. AW4 returns/credits and Online Store remain later slices.
+The AW3 customer credit-settings candidate is now written locally in migration `20261010123904`, with authorized GET/POST `/v1/wholesale/credit-settings` routes. Active resellers have explicit terms and integer-minor-unit credit limits, stored as immutable revisions with actor/reason, audit, outbox, and idempotency. Unconfigured settings remain null. Owner or explicitly authorized wholesale managers can write; readers cannot. The customer row lock serializes revisions. `npm run check` passed with 180 tests, formatting, lint, typechecks, standard/Cloudflare builds, and secret scanning. A post-staging secret scan passed across 373 tracked files. Disposable database CI verification is pending for this candidate. No settings command has run in Staging or Production, and existing AW2 commands do not yet enforce these settings.
+
+The next safe action after settings verification is atomic confirm/fulfill credit enforcement and approval overrides, followed by payment/allocation persistence. Sequential opening tests are verified; actual multi-session concurrency checks still remain. Add the Back Office workflow and validate the complete AW3 flow in Staging before a separate Production release. AW4 returns/credits and Online Store remain later slices.
 
 ## Production state
 

@@ -14,6 +14,34 @@ export const wholesaleCreditSettingsRequestSchema = z
   })
   .strict()
 
+export const wholesaleCreditSettingsResponseSchema = z.object({
+  settingsId: z.uuid(),
+  customerId: z.uuid(),
+  revision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+  paymentTerm: wholesalePaymentTermSchema,
+  creditLimitMinor: minor,
+  recordedAt: z.iso.datetime({ offset: true }),
+})
+
+export const wholesaleCreditSettingsContextSchema = z.object({
+  canManage: z.boolean(),
+  customers: z.array(
+    z
+      .object({
+        customerId: z.uuid(),
+        customerName: z.string(),
+        customerNumber: z.string(),
+        settings: wholesaleCreditSettingsResponseSchema.nullable(),
+      })
+      .refine((customer) => customer.settings === null || customer.settings.customerId === customer.customerId, {
+        message: 'Credit settings must belong to the listed customer.',
+      }),
+  ),
+})
+
+export type WholesaleCreditSettingsResponse = z.infer<typeof wholesaleCreditSettingsResponseSchema>
+export type WholesaleCreditSettingsContext = z.infer<typeof wholesaleCreditSettingsContextSchema>
+
 export const wholesaleOpeningReceivableRequestSchema = z
   .object({
     invoiceId: z.uuid(),

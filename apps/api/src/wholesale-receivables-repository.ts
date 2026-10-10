@@ -1,4 +1,9 @@
 import {
+  wholesaleCreditSettingsContextSchema,
+  wholesaleCreditSettingsResponseSchema,
+  type WholesaleCreditSettingsContext,
+  type WholesaleCreditSettingsRequest,
+  type WholesaleCreditSettingsResponse,
   wholesaleOpeningReceivableResponseSchema,
   wholesaleReceivablesContextSchema,
   type WholesaleOpeningReceivableRequest,
@@ -8,6 +13,45 @@ import {
 import { Client } from 'pg'
 
 import type { Bindings } from './env'
+
+export type WholesaleCreditSettingsLoader = (
+  userId: string,
+  tenantId: string,
+  bindings: Bindings,
+) => Promise<WholesaleCreditSettingsContext>
+export type WholesaleCreditSettingsSaver = (
+  userId: string,
+  tenantId: string,
+  request: WholesaleCreditSettingsRequest,
+  idempotencyKey: string,
+  requestHash: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<WholesaleCreditSettingsResponse>
+
+export const loadWholesaleCreditSettingsFromPostgres: WholesaleCreditSettingsLoader = (userId, tenantId, bindings) =>
+  query(
+    bindings,
+    'select app.load_wholesale_customer_credit_settings($1::uuid, $2::uuid) response',
+    [userId, tenantId],
+    (value) => wholesaleCreditSettingsContextSchema.parse(value),
+  )
+
+export const saveWholesaleCreditSettingsInPostgres: WholesaleCreditSettingsSaver = (
+  userId,
+  tenantId,
+  request,
+  idempotencyKey,
+  requestHash,
+  requestId,
+  bindings,
+) =>
+  query(
+    bindings,
+    'select app.save_wholesale_customer_credit_settings($1::uuid, $2::uuid, $3::jsonb, $4::text, $5::text, $6::text) response',
+    [userId, tenantId, JSON.stringify(request), idempotencyKey, requestHash, requestId],
+    (value) => wholesaleCreditSettingsResponseSchema.parse(value),
+  )
 
 export type WholesaleReceivablesLoader = (
   userId: string,

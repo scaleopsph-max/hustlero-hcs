@@ -14,6 +14,20 @@ const response = {
   status: 'unpaid' as const,
 }
 const bindings = { ENVIRONMENT: 'test' }
+const creditPayload = {
+  customerId: invoiceId,
+  paymentTerm: 'net_7' as const,
+  creditLimitMinor: 500000,
+  reason: 'Approved customer credit configuration',
+}
+const creditResponse = {
+  settingsId: response.chargeId,
+  customerId: invoiceId,
+  paymentTerm: 'net_7' as const,
+  creditLimitMinor: 500000,
+  revision: 1,
+  recordedAt: '2026-10-10T12:00:00Z',
+}
 
 function setup(code?: string) {
   const record = vi.fn(async () => {
@@ -21,6 +35,11 @@ function setup(code?: string) {
     return response
   })
   const load = vi.fn(async () => ({ canRecordOpening: true, invoices: [] }))
+  const saveCredit = vi.fn(async () => {
+    if (code) throw Object.assign(new Error('Database rejected command'), { code })
+    return creditResponse
+  })
+  const loadCredit = vi.fn(async () => ({ canManage: true, customers: [] }))
   const app = createApp({
     verifyAccessToken: async (token) => (token === 'valid' ? { userId } : null),
     loadSessionAccess: async () => [
@@ -38,8 +57,10 @@ function setup(code?: string) {
     ],
     loadWholesaleReceivables: load,
     recordWholesaleOpeningReceivable: record,
+    saveWholesaleCreditSettings: saveCredit,
+    loadWholesaleCreditSettings: loadCredit,
   })
-  return { app, record, load }
+  return { app, record, load, saveCredit, loadCredit }
 }
 
 function headers(tenant = tenantId) {
@@ -50,6 +71,83 @@ function headers(tenant = tenantId) {
     'content-type': 'application/json',
   }
 }
+
+describe('wholesale credit settings API', () => {
+  it('uses authenticated server context for credit revisions', async () => {
+    const { app, saveCredit } = setup()
+    const result = await app.request(
+      '/v1/wholesale/credit-settings',
+      { method: 'POST', headers: headers(), body: JSON.stringify(creditPayload) },
+      bindings,
+    )
+    expect(result.status).toBe(201)
+    expect(await result.json()).toEqual(creditResponse)
+    expect(saveCredit).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      creditPayload,
+      'opening-receivable-001',
+      expect.any(String),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('reads authorized customer configuration', async () => {
+    const { app, loadCredit } = setup()
+    const result = await app.request('/v1/wholesale/credit-settings', { headers: headers() }, bindings)
+    expect(result.status).toBe(200)
+    expect(loadCredit).toHaveBeenCalledWith(userId, tenantId, bindings)
+  })
+
+  it.each([
+    { ...creditPayload, creditLimitMinor: -1 },
+    { ...creditPayload, creditLimitMinor: 1.5 },
+    { ...creditPayload, paymentTerm: 'cash' },
+    { ...creditPayload, tenantId },
+    { ...creditPayload, revision: 1 },
+  ])('rejects invalid or server-owned credit settings %#', async (payload) => {
+    const { app, saveCredit } = setup()
+    const result = await app.request(
+      '/v1/wholesale/credit-settings',
+      { method: 'POST', headers: headers(), body: JSON.stringify(payload) },
+      bindings,
+    )
+    expect(result.status).toBe(400)
+    expect(saveCredit).not.toHaveBeenCalled()
+  })
+
+  it('rejects foreign tenant selection before reading or writing', async () => {
+    const { app, saveCredit, loadCredit } = setup()
+    const result = await app.request(
+      '/v1/wholesale/credit-settings',
+      { method: 'POST', headers: headers('20000000-0000-4000-8000-000000000099'), body: JSON.stringify(creditPayload) },
+      bindings,
+    )
+    expect(result.status).toBe(400)
+    const read = await app.request('/v1/wholesale/credit-settings', { headers: {} }, bindings)
+    expect(read.status).toBe(403)
+    expect(saveCredit).not.toHaveBeenCalled()
+    expect(loadCredit).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['HCCS1', 403],
+    ['HCAR1', 403],
+    ['HCCS2', 400],
+    ['HCCS3', 404],
+    ['HCS08', 409],
+    ['HCSQ0', 403],
+  ] as const)('maps credit command denial %s', async (code, status) => {
+    const { app } = setup(code)
+    const result = await app.request(
+      '/v1/wholesale/credit-settings',
+      { method: 'POST', headers: headers(), body: JSON.stringify(creditPayload) },
+      bindings,
+    )
+    expect(result.status).toBe(status)
+  })
+})
 
 describe('wholesale opening receivable API', () => {
   it('passes server-resolved tenant and authenticated actor to the atomic command', async () => {

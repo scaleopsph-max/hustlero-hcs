@@ -2,7 +2,7 @@
 
 Date: 2026-10-10
 
-Status: Local domain foundation and opening-receivable database/API candidate implemented. SQL execution and environment release are unverified. Credit enforcement, payment allocation persistence, and UI remain unimplemented.
+Status: Domain foundation and opening-receivable database/API slice implemented and verified in isolated CI. Staging/Production release has not occurred. Credit enforcement, payment allocation persistence, and UI remain unimplemented.
 
 Source: `ADVANCED_WHOLESALE_BLUEPRINT.md`, ADR-038, ADR-039, ADR-041, and owner confirmations on 2026-10-10.
 
@@ -39,7 +39,15 @@ Migration `20261010111813_advanced_wholesale_opening_receivables.sql` registers 
 
 `GET /v1/wholesale/receivables` exposes tenant-authorized invoice classification and opening balances. Unclassified invoices retain null balance and due date; null must never be rendered as paid/zero debt. Opening classification is owner-only; read access follows the existing wholesale read permission. This read model does not yet account for payments, so no payment-posting route is exposed in this slice.
 
-The database test candidate covers RLS/grants, tenant denial, owner and entitlement checks, server-derived amount, idempotent replay, changed-hash conflict, duplicate classification, immutability, single audit/outbox events, and no revenue/payment/inventory side effects. These pgTAP assertions have not run locally.
+The database tests cover RLS/grants, tenant denial, owner and entitlement checks, server-derived amount, idempotent replay, changed-hash conflict, duplicate classification, immutability, single audit/outbox events, and no revenue/payment/inventory side effects. These pgTAP assertions passed in disposable CI, not on the local Windows machine.
+
+## Customer credit-settings candidate
+
+Migration `20261010123904_advanced_wholesale_customer_credit_settings.sql` stores immutable, tenant-scoped customer settings revisions: explicit prepaid/COD/net terms, exact numeric credit limit, actor, reason, and timestamp. No default agreement is inferred for unconfigured customers. A zero credit limit remains zero, not unlimited. Settings changes do not create debt, move stock, or modify existing invoices.
+
+Authorized GET/POST `/v1/wholesale/credit-settings` routes resolve actor and tenant on the server. Writes require active entitlement and membership, wholesale read access, and ownership or explicit `wholesale_orders.manage` permission. Customer eligibility and permissions are rechecked on retries. Commands lock the customer row, serialize revision numbers, and atomically persist history, audit, outbox, and replay response. The latest revision is selected by ordinal, not timestamp. Tables use RLS, browser/direct Hyperdrive revokes, and narrow function execute grants.
+
+This is persistence and API only. Existing AW2 confirmation/fulfillment commands do not yet enforce these settings; immutable commercial snapshots, credit exposure enforcement, approvals, payment persistence, UI, and concurrency verification follow separately. Local unit coverage passed 180 cases. Disposable database verification is pending.
 
 ## Next database and service slice
 
@@ -66,7 +74,7 @@ The database test candidate covers RLS/grants, tenant denial, owner and entitlem
 - The opening API tests passed; the latest full Vitest run passed 166 cases across ten files.
 - `npm run check` completed successfully with 165 tests, tracked-file secret scanning, formatting, lint, typechecks, standard builds, API dry run, and Cloudflare builds. A subsequent classification-contract regression brought the latest unit run to 166 passing cases. Database verification remains separate.
 - `npx supabase test db --local` was executed and failed to connect to `127.0.0.1:54322`. Docker is unavailable on PATH and absent from the standard Windows Docker installation path. No remote database was substituted.
-- The SQL migration and pgTAP tests are written but not execution-verified. Do not merge or release them until the existing CI database job, or a local Supabase reset and full pgTAP run, passes. Command concurrency still needs actual database-session testing.
+- Subsequent isolated CI run `38052333432` verified commit `7ccae44c14da03ba0e6d972c5eece92a11a95234`: both jobs passed, including 166 Vitest cases, fresh Supabase reset, and 881 pgTAP assertions across 32 files. The opening suite contributed 31 passing assertions. Evidence is in `../qa/AW3_OPENING_RECEIVABLES_CI_2026-10-10.md`. Actual multi-session command concurrency and complete AW3 release validation remain required.
 
 ### Opening release and rollback constraints
 
@@ -76,4 +84,4 @@ Roll back API traffic to the previous immutable Worker version if necessary whil
 
 ## Release boundaries
 
-No database migration has been applied, and no Production balance change, payment posting, Worker deployment, or opening-entry execution has occurred. AW4 return/credit-note/refund behavior remains unavailable. The two PHP 2,250.00 invoices remain unpaid and unchanged until the explicit opening command is database-verified, released, and executed.
+The migration was applied only to a disposable CI database. No Staging/Production migration, Production balance change, real payment posting, Worker deployment, or real opening-entry execution has occurred. AW4 return/credit-note/refund behavior remains unavailable. The two PHP 2,250.00 invoices remain unpaid and unchanged until the explicit opening command is released and executed after complete validation.

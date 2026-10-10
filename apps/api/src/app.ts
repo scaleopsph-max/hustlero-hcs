@@ -48,6 +48,9 @@ import {
   wholesaleOpeningReceivableRequestSchema,
   wholesaleOpeningReceivableResponseSchema,
   wholesaleReceivablesContextSchema,
+  wholesaleCreditSettingsRequestSchema,
+  wholesaleCreditSettingsResponseSchema,
+  wholesaleCreditSettingsContextSchema,
   posSaleCompleteRequestSchema,
   posSaleCompleteResponseSchema,
   posRegisterOpenRequestSchema,
@@ -212,6 +215,10 @@ import {
 import {
   loadWholesaleReceivablesFromPostgres,
   recordWholesaleOpeningReceivableInPostgres,
+  loadWholesaleCreditSettingsFromPostgres,
+  saveWholesaleCreditSettingsInPostgres,
+  type WholesaleCreditSettingsLoader,
+  type WholesaleCreditSettingsSaver,
   type WholesaleReceivablesLoader,
   type WholesaleOpeningReceivableRecorder,
 } from './wholesale-receivables-repository'
@@ -376,6 +383,8 @@ interface AppDependencies {
   upsertPriceList: PriceListUpserter
   loadWholesaleOrderContext: WholesaleOrderContextLoader
   loadWholesaleReceivables: WholesaleReceivablesLoader
+  loadWholesaleCreditSettings: WholesaleCreditSettingsLoader
+  saveWholesaleCreditSettings: WholesaleCreditSettingsSaver
   recordWholesaleOpeningReceivable: WholesaleOpeningReceivableRecorder
   saveWholesaleOrderDraft: WholesaleOrderDraftSaver
   confirmWholesaleOrder: WholesaleOrderConfirmer
@@ -469,6 +478,8 @@ const defaultDependencies: AppDependencies = {
   upsertPriceList: upsertPriceListInPostgres,
   loadWholesaleOrderContext: loadWholesaleOrderContextFromPostgres,
   loadWholesaleReceivables: loadWholesaleReceivablesFromPostgres,
+  loadWholesaleCreditSettings: loadWholesaleCreditSettingsFromPostgres,
+  saveWholesaleCreditSettings: saveWholesaleCreditSettingsInPostgres,
   recordWholesaleOpeningReceivable: recordWholesaleOpeningReceivableInPostgres,
   saveWholesaleOrderDraft: saveWholesaleOrderDraftInPostgres,
   confirmWholesaleOrder: confirmWholesaleOrderInPostgres,
@@ -2387,6 +2398,86 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
       status,
     )
   }
+
+  const creditSettingsError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
+    const code = postgresErrorCode(error)
+    if (code !== 'HCAR1' && !code?.startsWith('HCCS')) return wholesaleError(context, error)
+    const status = code === 'HCCS1' || code === 'HCAR1' ? 403 : code === 'HCCS3' ? 404 : 400
+    const message =
+      status === 403
+        ? 'You do not have wholesale credit settings permission.'
+        : status === 404
+          ? 'The active reseller was not found.'
+          : 'Check the customer payment term and credit limit.'
+    return context.json(
+      apiErrorResponseSchema.parse({
+        error: { code: `WHOLESALE_CREDIT_${code}`, message, requestId: context.get('requestId') },
+      }),
+      status,
+    )
+  }
+
+  app.get('/v1/wholesale/credit-settings', async (context) => {
+    const resolved = await resolveWholesaleTenant(context)
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'WHOLESALE_CREDIT_ACCESS_DENIED',
+            message: 'Sign in and select an authorized business.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    try {
+      return context.json(
+        wholesaleCreditSettingsContextSchema.parse(
+          await dependencies.loadWholesaleCreditSettings(resolved.userId, resolved.tenantId, context.env),
+        ),
+      )
+    } catch (error) {
+      const response = creditSettingsError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
+  app.post('/v1/wholesale/credit-settings', async (context) => {
+    const command = await readWholesaleCommand(context)
+    const parsed = wholesaleCreditSettingsRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!command || !parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_WHOLESALE_CREDIT_SETTINGS',
+            message: 'Provide a customer, payment term, credit limit, reason, and valid Idempotency-Key.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      return context.json(
+        wholesaleCreditSettingsResponseSchema.parse(
+          await dependencies.saveWholesaleCreditSettings(
+            command.userId,
+            command.tenantId,
+            parsed.data,
+            command.idempotencyKey,
+            await requestHash({ userId: command.userId, ...parsed.data }),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+        201,
+      )
+    } catch (error) {
+      const response = creditSettingsError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
 
   app.get('/v1/wholesale/receivables', async (context) => {
     const resolved = await resolveWholesaleTenant(context)
