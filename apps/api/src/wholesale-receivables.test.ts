@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { apiErrorResponseSchema } from '@hcs/contracts'
 
 import { createApp } from './app'
 
@@ -59,6 +60,12 @@ function setup(code?: string) {
     recordWholesaleOpeningReceivable: record,
     saveWholesaleCreditSettings: saveCredit,
     loadWholesaleCreditSettings: loadCredit,
+    confirmWholesaleOrder: async () => {
+      throw Object.assign(new Error('Private database details'), { code })
+    },
+    fulfillWholesaleOrder: async () => {
+      throw Object.assign(new Error('Private database details'), { code })
+    },
   })
   return { app, record, load, saveCredit, loadCredit }
 }
@@ -71,6 +78,27 @@ function headers(tenant = tenantId) {
     'content-type': 'application/json',
   }
 }
+
+describe('wholesale credit enforcement errors', () => {
+  it.each(['HCCR1', 'HCCR2', 'HCCR3', 'HCCR4'])('returns a controlled credit conflict for %s', async (code) => {
+    const { app } = setup(code)
+    for (const action of ['confirm', 'fulfill']) {
+      const result = await app.request(
+        `/v1/wholesale/orders/${invoiceId}/${action}`,
+        {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({ lines: [{ salesOrderLineId: invoiceId, quantityMilli: 1000 }] }),
+        },
+        bindings,
+      )
+      expect(result.status).toBe(409)
+      const body = apiErrorResponseSchema.parse(await result.json())
+      expect(body.error.code).toBe(`WHOLESALE_CREDIT_${code}`)
+      expect(body.error.message).not.toContain('Private database details')
+    }
+  })
+})
 
 describe('wholesale credit settings API', () => {
   it('uses authenticated server context for credit revisions', async () => {

@@ -2290,6 +2290,23 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
 
   const wholesaleError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
     const code = postgresErrorCode(error)
+    const creditMessages: Record<string, string> = {
+      HCCR1: 'The customer credit limit is exceeded. An approved credit exception is required.',
+      HCCR2: 'Explicit customer terms and credit settings are required before this order can proceed.',
+      HCCR3: 'Prepaid and COD fulfillment require a recorded full payment.',
+      HCCR4: 'Classify the historical invoices before using customer credit.',
+    }
+    if (code && creditMessages[code])
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: `WHOLESALE_CREDIT_${code}`,
+            message: creditMessages[code],
+            requestId: context.get('requestId'),
+          },
+        }),
+        409,
+      )
     const mapping =
       code === 'HCSQ0'
         ? {

@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(56);
+select no_plan();
 
 select has_table('app', 'invoices', 'invoice table exists');
 select has_table('app', 'invoice_lines', 'invoice line table exists');
@@ -82,6 +82,32 @@ select lives_ok($$
     'aw2-draft-001', 'aw2-draft-hash', 'aw2-draft-request'
   )
 $$, 'AW2 draft is created');
+create function pg_temp.aw3_settings(p_term text,p_limit bigint,p_key text) returns jsonb language sql as $$
+  select app.save_wholesale_customer_credit_settings('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001',
+    jsonb_build_object('customerId',(select id from app.customers where tenant_id='2f000000-0000-4000-8000-000000000001'),
+      'paymentTerm',p_term,'creditLimitMinor',p_limit,'reason','Explicit test agreement'),p_key,p_key,'aw3-test');
+$$;
+create function pg_temp.aw3_confirm(p_key text) returns jsonb language sql as $$
+  select app.confirm_wholesale_order('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001',
+    (select id from app.sales_orders where tenant_id='2f000000-0000-4000-8000-000000000001'),p_key,p_key,'aw3-test');
+$$;
+create function pg_temp.aw3_fulfill(p_key text) returns jsonb language sql as $$
+  select app.fulfill_wholesale_order('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001',
+    (select id from app.sales_orders where tenant_id='2f000000-0000-4000-8000-000000000001'),
+    jsonb_build_array(jsonb_build_object('salesOrderLineId',(select id from app.sales_order_lines where tenant_id='2f000000-0000-4000-8000-000000000001'),'quantityMilli',4000)),
+    p_key,p_key,'aw3-test');
+$$;
+select throws_ok($$select pg_temp.aw3_confirm('aw3-missing-settings-001')$$,'HCCR2','Explicit customer credit settings are required','no default agreement inferred');
+select is((select reserved from app.inventory_balances where tenant_id='2f000000-0000-4000-8000-000000000001'),0::numeric,'missing settings rollback reservation');
+select pg_temp.aw3_settings('net_7',0,'aw3-zero-settings-001');
+select throws_ok($$select pg_temp.aw3_confirm('aw3-zero-confirm-001')$$,'HCCR1','Customer credit limit exceeded','zero credit is not unlimited');
+select pg_temp.aw3_settings('net_7',449999,'aw3-low-settings-001');
+select throws_ok($$select pg_temp.aw3_confirm('aw3-low-confirm-001')$$,'HCCR1','Customer credit limit exceeded','one cent below order total rejected');
+select is((select status from app.sales_orders where tenant_id='2f000000-0000-4000-8000-000000000001'),'draft','credit failure rolls back order status');
+select is((select count(*) from app.sales_order_reservation_ledger where tenant_id='2f000000-0000-4000-8000-000000000001'),0::bigint,'credit failure leaves no reservation ledger');
+select is((select count(*) from audit.audit_events where tenant_id='2f000000-0000-4000-8000-000000000001' and action='sales_order.confirmed'),0::bigint,'credit failure leaves no confirmation audit');
+select pg_temp.aw3_settings('net_7',450000,'aw3-exact-settings-001');
+
 select lives_ok($$
   select app.confirm_wholesale_order(
     '1f000000-0000-4000-8000-000000000001', '2f000000-0000-4000-8000-000000000001',
@@ -90,6 +116,14 @@ select lives_ok($$
   )
 $$, 'AW2 order confirms');
 select is((select reserved from app.inventory_balances where tenant_id = '2f000000-0000-4000-8000-000000000001'), 10.000::numeric, 'confirmation reserves ten units');
+
+select is((select payment_term from app.wholesale_order_credit_snapshots where tenant_id='2f000000-0000-4000-8000-000000000001'),'net_7','confirmation locks terms');
+select pg_temp.aw3_settings('net_30',449999,'aw3-lower-after-confirm-001');
+select throws_ok($$select pg_temp.aw3_fulfill('aw3-low-fulfill-001')$$,'HCCR1','Customer credit limit exceeded','fulfillment rechecks current limit');
+select is((select count(*) from app.invoices where tenant_id='2f000000-0000-4000-8000-000000000001'),0::bigint,'failed credit fulfillment leaves no invoice');
+select is((select count(*) from app.wholesale_invoice_charges where tenant_id='2f000000-0000-4000-8000-000000000001'),0::bigint,'failed fulfillment leaves no charge');
+select is((select on_hand from app.inventory_balances where tenant_id='2f000000-0000-4000-8000-000000000001'),25::numeric,'failed credit fulfillment leaves stock unchanged');
+select pg_temp.aw3_settings('net_30',450000,'aw3-restore-credit-001');
 
 select lives_ok($$
   select app.fulfill_wholesale_order(
@@ -190,5 +224,35 @@ select throws_ok($$
 $$, 'HCSQ1', 'Wholesale order access is not allowed', 'cross-tenant invoice listing is rejected');
 select ok(not has_function_privilege('authenticated', 'app.fulfill_wholesale_order(uuid,uuid,uuid,jsonb,text,text,text)', 'execute'), 'browser role cannot fulfill orders directly');
 
+select ok((select relrowsecurity from pg_class where oid='app.wholesale_invoice_charges'::regclass),'invoice charges use RLS');
+select ok((select relrowsecurity from pg_class where oid='app.wholesale_order_credit_snapshots'::regclass),'term snapshots use RLS');
+select ok(not has_function_privilege('hcs_hyperdrive','app.confirm_wholesale_order_inventory_core(uuid,uuid,uuid,text,text,text)','execute'),'API cannot bypass confirmation credit wrapper');
+select ok(not has_function_privilege('hcs_hyperdrive','app.fulfill_wholesale_order_inventory_core(uuid,uuid,uuid,jsonb,text,text,text)','execute'),'API cannot bypass fulfillment credit wrapper');
+select ok(not has_function_privilege('hcs_hyperdrive','app.assert_wholesale_credit_capacity(uuid,uuid,numeric)','execute'),'internal capacity helper is private');
+select ok(not has_table_privilege('hcs_hyperdrive','app.wholesale_invoice_charges','insert'),'API cannot insert debt directly');
+select is((select count(*) from app.wholesale_invoice_charges where tenant_id='2f000000-0000-4000-8000-000000000001'),2::bigint,'one charge per invoice including replay');
+select is((select sum(amount) from app.wholesale_invoice_charges where tenant_id='2f000000-0000-4000-8000-000000000001'),4500::numeric,'full debt equals invoice totals without duplicated commitment');
+select ok((select bool_and(payment_term='net_7') from app.wholesale_invoice_charges where tenant_id='2f000000-0000-4000-8000-000000000001'),'new net_30 settings do not replace confirmed net_7 terms');
+select ok((select bool_and(charge.due_date=(invoice.issued_at at time zone coalesce(location.timezone,tenant.timezone))::date+7)
+  from app.wholesale_invoice_charges charge join app.invoices invoice on invoice.tenant_id=charge.tenant_id and invoice.id=charge.invoice_id
+  join app.locations location on location.tenant_id=invoice.tenant_id and location.id=invoice.location_id
+  join app.tenants tenant on tenant.id=invoice.tenant_id where charge.tenant_id='2f000000-0000-4000-8000-000000000001'),'due dates use branch business date and original term');
+select is(app.load_wholesale_receivables('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->'invoices'->0->>'classification','invoice','normal debt is classified, not a legacy opening');
+select is((select count(*) from audit.audit_events where tenant_id='2f000000-0000-4000-8000-000000000001' and action='wholesale_receivable.charged'),2::bigint,'charges audited exactly once');
+select throws_ok($$update app.wholesale_order_credit_snapshots set payment_term='cod'$$,'P0001','issued invoices are immutable','confirmed terms immutable');
+select throws_ok($$delete from app.wholesale_invoice_charges$$,'P0001','issued invoices are immutable','invoice charges immutable');
+select pg_temp.aw3_settings('cod',1000000,'aw3-cod-settings-001');
+select app.save_wholesale_order_draft('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001',
+  jsonb_build_object('orderNumber','SO-AW3-COD','customerId',(select id from app.customers where tenant_id='2f000000-0000-4000-8000-000000000001'),
+    'locationId','3f000000-0000-4000-8000-000000000001','priceListId',(select id from app.price_lists where tenant_id='2f000000-0000-4000-8000-000000000001'),
+    'pricingType','wholesale','notes',null,'lines',jsonb_build_array(jsonb_build_object('variantId','5f000000-0000-4000-8000-000000000001','quantityMilli',10000))),
+  'aw3-cod-draft-001','cod-draft','aw3-test');
+select app.confirm_wholesale_order('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001',
+  (select id from app.sales_orders where order_number='SO-AW3-COD'),'aw3-cod-confirm-001','cod-confirm','aw3-test');
+select throws_ok($$select app.fulfill_wholesale_order('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001',
+  (select id from app.sales_orders where order_number='SO-AW3-COD'),jsonb_build_array(jsonb_build_object('salesOrderLineId',(select id from app.sales_order_lines where sales_order_id=(select id from app.sales_orders where order_number='SO-AW3-COD')),'quantityMilli',10000)),
+  'aw3-cod-fulfill-001','cod-fulfill','aw3-test')$$,'HCCR3','Full payment is required at fulfillment','COD cannot manufacture a payment');
+select is((select count(*) from app.invoices where tenant_id='2f000000-0000-4000-8000-000000000001'),2::bigint,'blocked COD leaves invoices unchanged');
+select is((select count(*) from app.sale_payments where tenant_id='2f000000-0000-4000-8000-000000000001'),0::bigint,'no fake cash payment');
 select * from finish();
 rollback;

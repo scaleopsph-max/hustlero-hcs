@@ -42,6 +42,11 @@ select lives_ok($$
   )
 $$, 'reseller customer is created');
 
+select app.save_wholesale_customer_credit_settings('1e000000-0000-4000-8000-000000000001','2e000000-0000-4000-8000-000000000001',
+  jsonb_build_object('customerId',(select id from app.customers where tenant_id='2e000000-0000-4000-8000-000000000001'),
+    'paymentTerm','net_7','creditLimitMinor',1000000,'reason','Explicit test agreement'),
+  'aw1-credit-settings-001','aw1-credit-hash','aw1-credit-request');
+
 insert into app.locations (id, tenant_id, code, name) values
   ('3e000000-0000-4000-8000-000000000001', '2e000000-0000-4000-8000-000000000001', 'MAIN', 'Main Warehouse');
 insert into app.products (id, tenant_id, name, created_by) values

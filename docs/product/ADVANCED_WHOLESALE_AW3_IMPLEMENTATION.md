@@ -47,7 +47,19 @@ Migration `20261010123904_advanced_wholesale_customer_credit_settings.sql` store
 
 Authorized GET/POST `/v1/wholesale/credit-settings` routes resolve actor and tenant on the server. Writes require active entitlement and membership, wholesale read access, and ownership or explicit `wholesale_orders.manage` permission. Customer eligibility and permissions are rechecked on retries. Commands lock the customer row, serialize revision numbers, and atomically persist history, audit, outbox, and replay response. The latest revision is selected by ordinal, not timestamp. Tables use RLS, browser/direct Hyperdrive revokes, and narrow function execute grants.
 
-This is persistence and API only. Existing AW2 confirmation/fulfillment commands do not yet enforce these settings; immutable commercial snapshots, credit exposure enforcement, approvals, payment persistence, UI, and concurrency verification follow separately. Local unit coverage passed 180 cases. Disposable database verification is pending.
+This is persistence and API only. Existing AW2 confirmation/fulfillment commands do not yet enforce these settings; immutable commercial snapshots, credit exposure enforcement, approvals, payment persistence, UI, and concurrency verification follow separately. Local `npm run check` passed with 180 tests. Isolated CI run `38054006849` verified commit `76b4f188c8dc6507508e9b1c797b1d8c753ab1ce`, including fresh migration reset and 913 pgTAP assertions across 33 files (32 new settings checks). Evidence and remaining verification boundaries are in `../qa/AW3_CREDIT_SETTINGS_CI_2026-10-10.md`.
+
+## Credit-enforcement candidate
+
+Migration `20261010133336_advanced_wholesale_credit_enforcement.sql` wraps the existing tested inventory commands with server-side credit controls. The inventory cores lose all browser/Hyperdrive execute grants; callers cannot bypass the wrappers. Order and customer locks precede inventory locks. Settings writes and explicit opening classification share the customer credit-scope lock.
+
+Confirmation refreshes prices using the existing inventory core, checks the resulting whole-customer exposure, then records an immutable settings/term snapshot. Any failure rolls back the complete command, including reservations, idempotency, audit, and outbox. Customers without explicit settings cannot proceed. No historical confirmed-order agreement is invented on replay.
+
+Net-term fulfillment retains the confirmed term while rechecking the latest credit limit. It issues the existing immutable invoice and appends a linked invoice charge with a branch-timezone business date plus calendar-day term. Exposure includes opening debt, issued invoice debt, and remaining confirmed/partially fulfilled line value. Released fulfilled commitment is not counted twice. Unknown historical invoice balances block credit use instead of becoming zero debt. The receivables context distinguishes `invoice`, `opening`, and `unclassified` records.
+
+The current signature has no payment command, so prepaid/COD fulfillment fails closed and never claims cash was received. No unchecked approval bypass exists: dedicated approved overrides and payment/settlement integration remain separate incomplete slices. Application errors expose controlled 409 messages, not private database details.
+
+Regression candidates cover missing/zero/insufficient/exact credit, rollback side effects, limit reduction after confirmation, immutable terms/debt, due dates, partial fulfillment, replay, history classification, and prepaid/COD payment denial. CI adds a fixed-loopback-only disposable database script for competing confirmations, settings reduction versus fulfillment, and simultaneous fulfillment replay. Execution verification for this candidate is pending. No environment migration, live settings change, or Production balance change is authorized by this local implementation step.
 
 ## Next database and service slice
 

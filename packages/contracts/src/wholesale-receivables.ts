@@ -93,7 +93,7 @@ export const wholesaleReceivablesContextSchema = z.object({
         locationId: z.uuid(),
         locationName: z.string(),
         totalMinor: minor,
-        classification: z.enum(['opening', 'unclassified']),
+        classification: z.enum(['opening', 'invoice', 'unclassified']),
         eligibleForOpening: z.boolean(),
         openBalanceMinor: minor.nullable(),
         dueDate: z.iso.date().nullable(),
@@ -102,7 +102,7 @@ export const wholesaleReceivablesContextSchema = z.object({
         if (
           (invoice.classification === 'unclassified' &&
             (invoice.openBalanceMinor !== null || invoice.dueDate !== null)) ||
-          (invoice.classification === 'opening' &&
+          (invoice.classification !== 'unclassified' &&
             (invoice.openBalanceMinor === null || invoice.dueDate === null || invoice.eligibleForOpening))
         ) {
           context.addIssue({ code: 'custom', message: 'Invoice classification and balance disagree.' })
