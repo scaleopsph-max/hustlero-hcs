@@ -31,6 +31,7 @@ export {
   wholesaleOrderCancelRequestSchema,
   wholesaleOrderCancelResponseSchema,
   wholesaleOrderConfirmResponseSchema,
+  wholesaleOrderConfirmRequestSchema,
   wholesaleOrderContextSchema,
   wholesaleOrderDraftRequestSchema,
   wholesaleOrderDraftResponseSchema,

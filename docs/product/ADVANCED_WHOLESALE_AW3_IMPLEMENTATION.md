@@ -2,7 +2,7 @@
 
 Date: 2026-10-10
 
-Status: Domain foundation, opening/settings APIs, and credit enforcement verified in isolated CI. Dedicated override approval persistence is the next candidate. Payment allocation, override consumption, and UI remain incomplete. Staging/Production release has not occurred.
+Status: Domain foundation, opening/settings APIs, credit enforcement, and dedicated override approval persistence verified in isolated CI. Atomic override consumption is the current candidate. Payment allocation and UI remain incomplete. Staging/Production release has not occurred.
 
 Source: `ADVANCED_WHOLESALE_BLUEPRINT.md`, ADR-038, ADR-039, ADR-041, and owner confirmations on 2026-10-10.
 
@@ -10,10 +10,10 @@ Source: `ADVANCED_WHOLESALE_BLUEPRINT.md`, ADR-038, ADR-039, ADR-041, and owner 
 
 The owner explicitly selected unpaid opening receivables for the two existing Production invoices and confirmed the same cash payment method and due date, 2026-10-10, for both.
 
-| Invoice | Original amount | Opening amount | Due date | Payment recorded |
-| --- | --- | --- | --- | --- |
-| INV-20261010-000001 | PHP 2,250.00 | PHP 2,250.00 | 2026-10-10 | None |
-| INV-20261010-000002 | PHP 2,250.00 | PHP 2,250.00 | 2026-10-10 | None |
+| Invoice             | Original amount | Opening amount | Due date   | Payment recorded |
+| ------------------- | --------------- | -------------- | ---------- | ---------------- |
+| INV-20261010-000001 | PHP 2,250.00    | PHP 2,250.00   | 2026-10-10 | None             |
+| INV-20261010-000002 | PHP 2,250.00    | PHP 2,250.00   | 2026-10-10 | None             |
 
 This is authority for an explicit, audited opening command after release verification, not evidence that the command has run. Cash identifies the intended payment method, not proof of payment or a new default customer payment term. Do not infer `cod`, a credit limit, or a new customer agreement from it.
 
@@ -69,7 +69,17 @@ Writes require active Advanced Wholesale entitlement, active membership, wholesa
 
 API routes are GET/POST `/v1/wholesale/credit-overrides` and POST `/v1/wholesale/credit-overrides/:id/revoke`. Runtime schemas reject client tenant/customer/approver IDs, nonpositive or fractional amounts, and missing offset-aware expiry. SQL validates expiry against wall-clock time again after obtaining scope locks. Replay denotes the original command result, not current validity; future consumption must independently recheck expiry and revocation.
 
-This candidate does not yet consume approvals or bypass the enforced limit. An explicitly tested approved record alone still leaves over-limit confirmation blocked. Order/action/customer matching, exact current excess validation, single-action consumption, expiry/revocation checks, and concurrent revocation versus execution must be wired atomically before release. Payments, UI, and Staging UAT remain separate incomplete work. Execution verification is pending; Production is unchanged.
+This candidate does not yet consume approvals or bypass the enforced limit. An explicitly tested approved record alone still leaves over-limit confirmation blocked. Order/action/customer matching, exact current excess validation, single-action consumption, expiry/revocation checks, and concurrent revocation versus execution must be wired atomically before release. Payments, UI, and Staging UAT remain separate incomplete work. Local checks passed; isolated CI `38058245765` verified commit `23197715855568f202610552e2e760a40b93b849` with 200 unit tests, fresh reset, 973 pgTAP assertions across 33 files, and three existing credit-enforcement concurrency scenarios. Approval-consumption/revocation races remain untested until consumption is implemented. Evidence: `../qa/AW3_CREDIT_OVERRIDE_APPROVALS_CI_2026-10-10.md`. Production is unchanged.
+
+## Atomic override consumption candidate
+
+Migration `20261010142545` adds an append-only consumption ledger and narrow confirmation/fulfillment commands requiring an explicit approval ID. Existing no-override commands still enforce the normal limit. Strict API inputs accept only the optional `creditOverrideId`; the selected approval participates in request hashing. The database resolves customer/tenant/actor and holds order/customer locks shared with approval/revocation commands.
+
+Commands calculate exact whole-customer exposure after current-price confirmation or replacement of fulfilled commitment with invoice debt. Approval must match the order, customer, and action, be unrevoked and unexpired at wall-clock execution time, not previously consumed, and cover the positive current excess. Unneeded approvals are rejected instead of consumed. The actual excess, current limit, exposure, actor, action, and command identity are immutable audit/outbox-backed truth. Confirmation and each partial fulfillment require separate approvals when over limit. Prepaid/COD still require genuine payment and cannot bypass that requirement using credit approval.
+
+Identical completed commands replay the original outcome without requiring the historical approval to remain unexpired or unrevoked; immutable consumption must match the selected approval, order/action, key, and hash. Revocation after committed consumption preserves history and does not reverse a completed business command. New use of revoked or consumed approval is denied. Atomic rollback preserves stock, reservations, invoices, debt, and approval availability on failed commands.
+
+Unit tests and SQL regressions cover strict inputs, explicit selection, retry binding, exact excess, insufficient scope, wrong action, replay, reuse denial, and rollback. Multi-session cases add revocation-first, simultaneous override confirmation retries, expiry after lock wait, and consumption-first followed by revocation and replay. Complete execution verification is pending. No live changes occurred. Approval history UI/read-status integration, payments/allocation/settlement, and Staging UAT remain required.
 
 ## Next database and service slice
 

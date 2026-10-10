@@ -203,7 +203,7 @@ const saveWholesaleOrderDraft = vi.fn(async () => ({
   lineCount: 1,
   totalMinor: 450_000,
 }))
-const confirmWholesaleOrder = vi.fn(async () => ({
+const confirmWholesaleOrder = vi.fn<import('./wholesale-orders-repository').WholesaleOrderConfirmer>(async () => ({
   salesOrderId: wholesaleOrderId,
   status: 'confirmed' as const,
   reservedLineCount: 1,
@@ -1982,6 +1982,96 @@ describe('API', () => {
       tenantId,
       request,
       'price-list-request-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+  })
+
+  it('forwards an explicit approval and binds it to the confirmation request hash', async () => {
+    confirmWholesaleOrder.mockClear()
+    const creditOverrideId = '65000000-0000-4000-8000-000000000001'
+    const request = (body: unknown) =>
+      authenticatedApp.request(
+        `/v1/wholesale/orders/${wholesaleOrderId}/confirm`,
+        {
+          method: 'POST',
+          headers: {
+            authorization: 'Bearer valid-token',
+            'x-tenant-id': tenantId,
+            'idempotency-key': 'override-confirm-api-001',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        },
+        bindings,
+      )
+    expect((await request({ creditOverrideId })).status).toBe(200)
+    expect(confirmWholesaleOrder).toHaveBeenLastCalledWith(
+      userId,
+      tenantId,
+      wholesaleOrderId,
+      'override-confirm-api-001',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.any(String),
+      bindings,
+      creditOverrideId,
+    )
+    const firstHash = confirmWholesaleOrder.mock.calls.at(-1)?.[4]
+    expect((await request({ creditOverrideId: '65000000-0000-4000-8000-000000000002' })).status).toBe(200)
+    expect(confirmWholesaleOrder.mock.calls.at(-1)?.[4]).not.toBe(firstHash)
+  })
+
+  it.each([{ creditOverrideId: 'bad' }, { creditOverrideId: null }, { bypassCreditLimit: true }, { tenantId }, []])(
+    'rejects unsafe confirmation payload %j',
+    async (body) => {
+      confirmWholesaleOrder.mockClear()
+      const result = await authenticatedApp.request(
+        `/v1/wholesale/orders/${wholesaleOrderId}/confirm`,
+        {
+          method: 'POST',
+          headers: {
+            authorization: 'Bearer valid-token',
+            'x-tenant-id': tenantId,
+            'idempotency-key': 'override-invalid-api-001',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        },
+        bindings,
+      )
+      expect(result.status).toBe(400)
+      expect(confirmWholesaleOrder).not.toHaveBeenCalled()
+    },
+  )
+
+  it('forwards the selected fulfillment approval without tenant or approver fields', async () => {
+    fulfillWholesaleOrder.mockClear()
+    const request = {
+      creditOverrideId: '65000000-0000-4000-8000-000000000001',
+      lines: [{ salesOrderLineId: '64000000-0000-4000-8000-000000000001', quantityMilli: 5000 }],
+    }
+    const result = await authenticatedApp.request(
+      `/v1/wholesale/orders/${wholesaleOrderId}/fulfill`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer valid-token',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'override-fulfill-api-001',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(request),
+      },
+      bindings,
+    )
+    expect(result.status).toBe(201)
+    expect(fulfillWholesaleOrder).toHaveBeenLastCalledWith(
+      userId,
+      tenantId,
+      wholesaleOrderId,
+      request,
+      'override-fulfill-api-001',
       expect.stringMatching(/^[0-9a-f]{64}$/),
       expect.any(String),
       bindings,

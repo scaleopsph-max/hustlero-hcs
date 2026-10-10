@@ -40,6 +40,7 @@ import {
   wholesaleOrderCancelRequestSchema,
   wholesaleOrderCancelResponseSchema,
   wholesaleOrderConfirmResponseSchema,
+  wholesaleOrderConfirmRequestSchema,
   wholesaleOrderContextSchema,
   wholesaleOrderDraftRequestSchema,
   wholesaleOrderDraftResponseSchema,
@@ -2303,13 +2304,14 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
   const wholesaleError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
     const code = postgresErrorCode(error)
     if (code?.startsWith('HCCO')) {
-      const status = code === 'HCCO1' ? 403 : code === 'HCCO3' ? 404 : code === 'HCCO4' ? 409 : 400
+      const status = code === 'HCCO1' ? 403 : code === 'HCCO3' ? 404 : code === 'HCCO4' || code === 'HCCO6' ? 409 : 400
       const messages: Record<string, string> = {
         HCCO1: 'Wholesale management and approval permission are required.',
         HCCO2: 'Check the order, action, approved excess amount, expiry, and reason.',
         HCCO3: 'The authorized credit approval scope was not found.',
         HCCO4: 'This order or approval no longer allows that action.',
         HCCO5: 'Choose a future expiry for the credit approval.',
+        HCCO6: 'The credit approval is unavailable or does not cover this command and current excess.',
       }
       return context.json(
         apiErrorResponseSchema.parse({
@@ -2747,7 +2749,15 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
   app.post('/v1/wholesale/orders/:id/confirm', async (context) => {
     const command = await readWholesaleCommand(context)
     const salesOrderId = context.req.param('id')
-    if (!command || !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(salesOrderId))
+    const body = await context.req.text()
+    let payload: unknown
+    try {
+      payload = body.length ? JSON.parse(body) : {}
+    } catch {
+      payload = null
+    }
+    const parsed = wholesaleOrderConfirmRequestSchema.safeParse(payload)
+    if (!command || !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(salesOrderId) || !parsed.success)
       return context.json(
         apiErrorResponseSchema.parse({
           error: {
@@ -2766,9 +2776,10 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
             command.tenantId,
             salesOrderId,
             command.idempotencyKey,
-            await requestHash({ salesOrderId }),
+            await requestHash({ salesOrderId, ...parsed.data }),
             context.get('requestId'),
             context.env,
+            ...(parsed.data.creditOverrideId ? [parsed.data.creditOverrideId] : []),
           ),
         ),
       )

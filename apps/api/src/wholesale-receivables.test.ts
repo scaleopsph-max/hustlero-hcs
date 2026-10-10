@@ -166,6 +166,7 @@ describe('wholesale credit override API', () => {
     ['HCCO3', 404],
     ['HCCO4', 409],
     ['HCCO5', 400],
+    ['HCCO6', 409],
     ['HCS08', 409],
   ])('maps %s without private details', async (code, status) => {
     const { app } = setup(code as string)
@@ -201,7 +202,9 @@ describe('wholesale credit enforcement errors', () => {
         {
           method: 'POST',
           headers: headers(),
-          body: JSON.stringify({ lines: [{ salesOrderLineId: invoiceId, quantityMilli: 1000 }] }),
+          body: JSON.stringify(
+            action === 'confirm' ? {} : { lines: [{ salesOrderLineId: invoiceId, quantityMilli: 1000 }] },
+          ),
         },
         bindings,
       )

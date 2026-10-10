@@ -40,6 +40,7 @@ export type WholesaleOrderConfirmer = (
   requestHash: string,
   requestId: string,
   bindings: Bindings,
+  creditOverrideId?: string,
 ) => Promise<WholesaleOrderConfirmResponse>
 
 export type WholesaleOrderCanceller = (
@@ -125,11 +126,22 @@ export const confirmWholesaleOrderInPostgres: WholesaleOrderConfirmer = (
   requestHash,
   requestId,
   bindings,
+  creditOverrideId,
 ) =>
   queryFunction(
     bindings,
-    'select app.confirm_wholesale_order($1::uuid, $2::uuid, $3::uuid, $4::text, $5::text, $6::text) response',
-    [userId, tenantId, salesOrderId, idempotencyKey, requestHash, requestId],
+    creditOverrideId
+      ? 'select app.confirm_wholesale_order_with_credit_override($1::uuid, $2::uuid, $3::uuid, $4::text, $5::text, $6::text, $7::uuid) response'
+      : 'select app.confirm_wholesale_order($1::uuid, $2::uuid, $3::uuid, $4::text, $5::text, $6::text) response',
+    [
+      userId,
+      tenantId,
+      salesOrderId,
+      idempotencyKey,
+      requestHash,
+      requestId,
+      ...(creditOverrideId ? [creditOverrideId] : []),
+    ],
     (value) => wholesaleOrderConfirmResponseSchema.parse(value),
   )
 
@@ -162,7 +174,18 @@ export const fulfillWholesaleOrderInPostgres: WholesaleOrderFulfiller = (
 ) =>
   queryFunction(
     bindings,
-    'select app.fulfill_wholesale_order($1::uuid, $2::uuid, $3::uuid, $4::jsonb, $5::text, $6::text, $7::text) response',
-    [userId, tenantId, salesOrderId, JSON.stringify(request.lines), idempotencyKey, requestHash, requestId],
+    request.creditOverrideId
+      ? 'select app.fulfill_wholesale_order_with_credit_override($1::uuid, $2::uuid, $3::uuid, $4::jsonb, $5::text, $6::text, $7::text, $8::uuid) response'
+      : 'select app.fulfill_wholesale_order($1::uuid, $2::uuid, $3::uuid, $4::jsonb, $5::text, $6::text, $7::text) response',
+    [
+      userId,
+      tenantId,
+      salesOrderId,
+      JSON.stringify(request.lines),
+      idempotencyKey,
+      requestHash,
+      requestId,
+      ...(request.creditOverrideId ? [request.creditOverrideId] : []),
+    ],
     (value) => wholesaleOrderFulfillResponseSchema.parse(value),
   )

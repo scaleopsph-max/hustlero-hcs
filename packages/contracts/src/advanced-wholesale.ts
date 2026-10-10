@@ -134,6 +134,8 @@ export const wholesaleOrderDraftResponseSchema = z.object({
   totalMinor: z.number().int().nonnegative(),
 })
 
+export const wholesaleOrderConfirmRequestSchema = z.strictObject({ creditOverrideId: id.optional() })
+
 export const wholesaleOrderConfirmResponseSchema = z.object({
   salesOrderId: id,
   status: z.literal('confirmed'),
@@ -151,6 +153,7 @@ export const wholesaleOrderCancelResponseSchema = z.object({
 
 export const wholesaleOrderFulfillRequestSchema = z
   .object({
+    creditOverrideId: id.optional(),
     lines: z
       .array(z.object({ salesOrderLineId: id, quantityMilli: z.number().int().positive() }))
       .min(1)
