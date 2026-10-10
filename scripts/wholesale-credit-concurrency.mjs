@@ -39,7 +39,7 @@ try {
     [tenant],
   )
   await first.query(
-    "insert into app.customers(id,tenant_id,customer_number,full_name,customer_type,origin,created_by_user_id) values($1,$2,'RACE-001','Race reseller','reseller','backoffice',$3)",
+    "insert into app.customers(id,tenant_id,customer_number,full_name,email,customer_type,origin,created_by_user_id) values($1,$2,'RACE-001','Race reseller','race@example.invalid','reseller','backoffice',$3)",
     [customer, tenant, actor],
   )
   await first.query("insert into app.locations(id,tenant_id,code,name) values($1,$2,'MAIN','Main')", [location, tenant])
