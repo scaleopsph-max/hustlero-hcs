@@ -275,7 +275,21 @@ Last updated: 2026-10-09
 
 ## Next safe action
 
-The next safe action is for the owner to complete the MFA-aware Production password recovery using the newest email. After authenticated Super Admin access is restored, grant `SAH RESTORATION` the Production `advanced_wholesale` add-on as a separate audited platform action, let the owner separately enable it in Business Setup, and execute the controlled AW2 sales-order partial-fulfillment and immutable-invoice UAT. AW3 payment terms/allocations, AW4 returns/credits, and Online Store remain later slices.
+Production Super Admin access was verified on 2026-10-10 with MFA and the provisioned owner role. The owner retained the existing password. The audited Advanced Wholesale grant for SAH RESTORATION was submitted with an activation reason and no expiry; the platform UI confirmed Granted. The owner-authorized Business Setup feature save enabled Advanced Wholesale and returned Setup progress saved. The Production wholesale workspace loaded zero orders, the existing reseller, Main Store, Dealer/Wholesale price lists, and SAH-00001 with 95 available shared-stock units. No order, reservation, fulfillment, invoice, or payment was created during activation.
+
+The owner approved the permanent Production AW2 order on 2026-10-10. Order SO-20261010-001 fulfilled 10 SAH-00001 units at PHP 450.00 in two five-unit batches. Invoices INV-20261010-000001 and INV-20261010-000002 each total PHP 2,250.00. The authenticated UI verified final shared inventory of 85 on hand, zero reserved, and 85 available, with two -5 sale movements. No payment was posted; AW3 payment allocations and AW4 returns/credits remain unavailable. Evidence and verification limits are recorded in `docs/qa/PRODUCTION_ADVANCED_WHOLESALE_AW2_UAT_2026-10-10.md`.
+
+The owner confirmed on 2026-10-10 that both retained PHP 2,250.00 Production invoices should become explicit unpaid opening receivables, with cash as the intended payment method and the same due date of 2026-10-10. No payment or opening entry has been posted. Cash does not authorize an inferred customer payment term or credit limit.
+
+AW3 local foundation now contains strict command contracts and framework-independent due-date, aging, credit-exposure, fulfillment-payment, and allocation rules. These are not connected to the database, API, or UI yet. The implementation sequence and historical-invoice boundary are recorded in `docs/product/ADVANCED_WHOLESALE_AW3_IMPLEMENTATION.md`.
+
+Local foundation verification on 2026-10-10 passed `npm run check`, including 151 Vitest cases (51 new), formatting, lint, typechecks, standard/Cloudflare builds, and the tracked-file secret scan. No SQL migration, database integration test, browser UAT, push, or deployment was performed for AW3.
+
+The AW3 explicit legacy-opening database/API candidate is now written locally. Migration `20261010111813` adds an immutable eligibility registry and opening charge ledger without automatic debt posting. Authorized read/opening routes derive the actor/tenant and invoice amount on the server; the database command requires an active owner, rechecks entitlement, and records idempotency/audit/outbox atomically. The latest Vitest run passed 166 cases. No AW2 fulfillment/confirmation behavior has changed.
+
+Database verification is blocked locally: `npx supabase test db --local` failed with ECONNREFUSED at 127.0.0.1:54322, and Docker is unavailable. The migration and new pgTAP suite are unverified and must not be treated as release-ready. No local or remote SQL migration, push, deployment, or Production opening entry was performed.
+
+The next safe action is to execution-verify the opening migration and database tests in the existing isolated CI/local workflow, then implement customer credit settings, atomic confirm/fulfill credit enforcement and approval overrides, and payment/allocation persistence. Add the Back Office workflow and validate the complete AW3 flow in Staging before a separate Production release. AW4 returns/credits and Online Store remain later slices.
 
 ## Production state
 
@@ -288,6 +302,6 @@ The next safe action is for the owner to complete the MFA-aware Production passw
 - Staging Back Office URL: `https://hustlero-hcs-backoffice-staging.scaleopsph.workers.dev`
 - Staging POS URL: `https://hustlero-hcs-pos-staging.scaleopsph.workers.dev`
 - Staging Super Admin URL: `https://hustlero-hcs-admin-staging.scaleopsph.workers.dev`
-- Production data: one controlled owner, one configured pilot tenant, one catalog variant, one opening balance, one cashier, one register, one active POS device, four controlled UAT receipts, one live-pilot receipt, two active Basic Wholesale price lists, and one controlled reseller profile; AW2 tenant entitlement and enablement remain off
+- Production data: one controlled owner, one configured pilot tenant, one catalog variant, one opening balance, one cashier, one register, one active POS device, four controlled UAT receipts, one live-pilot receipt, two active Basic Wholesale price lists, and one controlled reseller profile; SAH Advanced Wholesale is enabled with one fulfilled order, two retained invoices totaling PHP 4,500.00, and 85 shared-stock units available
 - Production deployment: provisioned, smoke-tested, UAT sale/refund/reconciliation validated, rollback exception approved, live pilot go-live approved, first live shift transaction plus zero-variance close validated, Basic Wholesale/Dealer activation UAT completed with both receipts fully reversed and its register reconciled at zero variance, and AW2 schema/API/Back Office deployed fail-closed; no register session is open
 - Rollback point: previous immutable Worker versions remain available; database recovery follows `docs/operations/RECOVERY_RUNBOOK.md`

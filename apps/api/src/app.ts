@@ -45,6 +45,9 @@ import {
   wholesaleOrderDraftResponseSchema,
   wholesaleOrderFulfillRequestSchema,
   wholesaleOrderFulfillResponseSchema,
+  wholesaleOpeningReceivableRequestSchema,
+  wholesaleOpeningReceivableResponseSchema,
+  wholesaleReceivablesContextSchema,
   posSaleCompleteRequestSchema,
   posSaleCompleteResponseSchema,
   posRegisterOpenRequestSchema,
@@ -206,6 +209,12 @@ import {
   type WholesaleOrderDraftSaver,
   type WholesaleOrderFulfiller,
 } from './wholesale-orders-repository'
+import {
+  loadWholesaleReceivablesFromPostgres,
+  recordWholesaleOpeningReceivableInPostgres,
+  type WholesaleReceivablesLoader,
+  type WholesaleOpeningReceivableRecorder,
+} from './wholesale-receivables-repository'
 import { type Bindings, readEnvironment } from './env'
 import {
   addCustomerNoteInPostgres,
@@ -366,6 +375,8 @@ interface AppDependencies {
   loadPricingContext: PricingContextLoader
   upsertPriceList: PriceListUpserter
   loadWholesaleOrderContext: WholesaleOrderContextLoader
+  loadWholesaleReceivables: WholesaleReceivablesLoader
+  recordWholesaleOpeningReceivable: WholesaleOpeningReceivableRecorder
   saveWholesaleOrderDraft: WholesaleOrderDraftSaver
   confirmWholesaleOrder: WholesaleOrderConfirmer
   cancelWholesaleOrder: WholesaleOrderCanceller
@@ -457,6 +468,8 @@ const defaultDependencies: AppDependencies = {
   loadPricingContext: loadPricingContextFromPostgres,
   upsertPriceList: upsertPriceListInPostgres,
   loadWholesaleOrderContext: loadWholesaleOrderContextFromPostgres,
+  loadWholesaleReceivables: loadWholesaleReceivablesFromPostgres,
+  recordWholesaleOpeningReceivable: recordWholesaleOpeningReceivableInPostgres,
   saveWholesaleOrderDraft: saveWholesaleOrderDraftInPostgres,
   confirmWholesaleOrder: confirmWholesaleOrderInPostgres,
   cancelWholesaleOrder: cancelWholesaleOrderInPostgres,
@@ -558,7 +571,8 @@ async function sha256(value: string): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
-export function createApp(dependencies: AppDependencies = defaultDependencies) {
+export function createApp(overrides: Partial<AppDependencies> = {}) {
+  const dependencies: AppDependencies = { ...defaultDependencies, ...overrides }
   const app = new Hono<{ Bindings: Bindings }>()
 
   app.use('*', requestId())
@@ -2353,6 +2367,88 @@ export function createApp(dependencies: AppDependencies = defaultDependencies) {
     if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)) return null
     return { ...resolved, idempotencyKey }
   }
+
+  const receivableError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
+    const code = postgresErrorCode(error)
+    if (!code?.startsWith('HCAR')) return wholesaleError(context, error)
+    const status = code === 'HCAR1' ? 403 : code === 'HCAR3' ? 404 : code === 'HCAR4' ? 409 : 400
+    const message =
+      code === 'HCAR1'
+        ? 'Only an active business owner may record opening receivables.'
+        : code === 'HCAR3'
+          ? 'The eligible legacy invoice was not found.'
+          : code === 'HCAR4'
+            ? 'This invoice already has an opening receivable.'
+            : 'Check the opening receivable details.'
+    return context.json(
+      apiErrorResponseSchema.parse({
+        error: { code: `WHOLESALE_RECEIVABLE_${code}`, message, requestId: context.get('requestId') },
+      }),
+      status,
+    )
+  }
+
+  app.get('/v1/wholesale/receivables', async (context) => {
+    const resolved = await resolveWholesaleTenant(context)
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'WHOLESALE_RECEIVABLE_ACCESS_DENIED',
+            message: 'Sign in and select an authorized business.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    try {
+      return context.json(
+        wholesaleReceivablesContextSchema.parse(
+          await dependencies.loadWholesaleReceivables(resolved.userId, resolved.tenantId, context.env),
+        ),
+      )
+    } catch (error) {
+      const response = receivableError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
+  app.post('/v1/wholesale/receivables/opening', async (context) => {
+    const command = await readWholesaleCommand(context)
+    const parsed = wholesaleOpeningReceivableRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!command || !parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_WHOLESALE_OPENING_RECEIVABLE',
+            message: 'Provide an invoice, due date, reason, authorized business, and Idempotency-Key.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      return context.json(
+        wholesaleOpeningReceivableResponseSchema.parse(
+          await dependencies.recordWholesaleOpeningReceivable(
+            command.userId,
+            command.tenantId,
+            parsed.data,
+            command.idempotencyKey,
+            await requestHash({ userId: command.userId, ...parsed.data }),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+        201,
+      )
+    } catch (error) {
+      const response = receivableError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
 
   app.get('/v1/wholesale/orders', async (context) => {
     const resolved = await resolveWholesaleTenant(context)
