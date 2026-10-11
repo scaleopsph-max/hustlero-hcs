@@ -89,9 +89,17 @@ The command requires wholesale read plus ownership or explicit `wholesale_paymen
 
 Derived invoice balances and credit exposure now subtract successful allocations. Original invoices, revenue, inventory, and due dates are unchanged. This payment ledger is manual settlement truth only: it does not charge a bank/provider, fabricate POS tender/register activity, or split money into business funds. PROJECT_SPEC section 18.4 requires user-confirmed fund allocation, so Finance/fund projection, payment-period reports, receipt/history UI, and paid prepaid/COD fulfillment remain separate incomplete integration work. Existing sales-by-payment reporting is not claimed to include these receipts yet.
 
-Current unit run passed 224 tests. SQL coverage and two additional actual multi-session payment scenarios are written; full candidate verification is pending. No live environment or Production balances changed.
+Execution verification passed in isolated CI `38063757985` for commit `6cda83c92488939d01397ad27bf9d35c5115189c`: 224 unit tests, fresh reset, 1,074 pgTAP assertions across 35 files (56 dedicated payment assertions), nine actual multi-session scenarios, and full application/security/build checks. The two new payment scenarios verify simultaneous multi-invoice replay and competing distinct payments against the same remaining balance. Initial changed-replay failure was a fixture hash mistake, corrected to reflect payload changes. Evidence: `../qa/AW3_PAYMENT_ALLOCATIONS_CI_2026-10-10.md`. No live environment or Production balances changed.
 
 ## Next database and service slice
+
+### Receipt history and payment screen candidate (2026-10-11)
+
+Migration `20261011013731` adds a private authorized payment-context reader, exposed through GET `/v1/wholesale/payments`. Receipt amounts, allocations, references, and timestamps come from immutable ledgers; customer/payment-method display names are current labels, not newly introduced legal receipt snapshots. Wholesale readers can view tenant history consistently with the existing receivables reader. Recording permission is separate, and per-invoice branch eligibility comes from the same server check as the write command.
+
+Back Office `/wholesale/payments` supports customer filtering, exact money entry, explicit invoice allocation, read-only access, and expandable receipt history. Unclassified invoices cannot accept allocations. Pending submissions preserve key/payload through reload in tenant-and-account-scoped session storage; known rejected commands unlock editing, while uncertain outcomes retain the same retry command. Client calculations do not replace database authorization or balance checks. This is not settlement/report integration or complete AW3 release.
+
+Synthetic desktop/mobile browser checks passed entry, uncertain response followed by reload/retry with identical request identity, receipt expansion, no page errors, and no document horizontal overflow. No real account or live payment was used. Complete database/application CI remains pending for this candidate.
 
 1. Add tenant-scoped customer credit configuration and immutable confirmation/fulfillment term snapshots. Resolve configuration on the server; do not apply later settings changes retroactively to confirmed commercial snapshots.
 2. Add append-only invoice charges, payments, and allocations. Preserve original invoices. Use composite tenant foreign keys, RLS, explicit revokes, narrow authorized command functions, idempotency, audit, and outbox records.

@@ -121,6 +121,33 @@ export const wholesaleReceivablesContextSchema = z.object({
 
 export type WholesaleOpeningReceivableResponse = z.infer<typeof wholesaleOpeningReceivableResponseSchema>
 export type WholesaleReceivablesContext = z.infer<typeof wholesaleReceivablesContextSchema>
+export const wholesalePaymentsContextSchema = z.object({
+  canRecord: z.boolean(),
+  invoices: z.array(wholesaleReceivablesContextSchema.shape.invoices.element.safeExtend({ canAllocate: z.boolean() })),
+  paymentMethods: z.array(z.object({ id: z.uuid(), name: z.string() })),
+  payments: z.array(
+    z
+      .object({
+        paymentId: z.uuid(),
+        customerId: z.uuid(),
+        customerName: z.string(),
+        paymentMethodName: z.string(),
+        amountMinor: positiveMinor,
+        reference: z.string(),
+        recordedAt: z.iso.datetime({ offset: true }),
+        allocations: z
+          .array(z.object({ invoiceId: z.uuid(), invoiceNumber: z.string(), amountMinor: positiveMinor }))
+          .min(1),
+      })
+      .superRefine((payment, context) => {
+        if (
+          payment.allocations.reduce((sum, item) => sum + BigInt(item.amountMinor), 0n) !== BigInt(payment.amountMinor)
+        )
+          context.addIssue({ code: 'custom', message: 'Receipt allocations must reconcile.' })
+      }),
+  ),
+})
+export type WholesalePaymentsContext = z.infer<typeof wholesalePaymentsContextSchema>
 export type WholesaleCreditSettingsRequest = z.infer<typeof wholesaleCreditSettingsRequestSchema>
 export type WholesaleOpeningReceivableRequest = z.infer<typeof wholesaleOpeningReceivableRequestSchema>
 export type WholesalePaymentAllocationRequest = z.infer<typeof wholesalePaymentAllocationRequestSchema>

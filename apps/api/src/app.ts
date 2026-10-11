@@ -48,6 +48,7 @@ import {
   wholesaleOrderFulfillResponseSchema,
   wholesaleOpeningReceivableRequestSchema,
   wholesalePaymentAllocationRequestSchema,
+  wholesalePaymentsContextSchema,
   wholesalePaymentAllocationResponseSchema,
   wholesaleOpeningReceivableResponseSchema,
   wholesaleReceivablesContextSchema,
@@ -221,6 +222,8 @@ import {
 } from './wholesale-orders-repository'
 import {
   loadWholesaleReceivablesFromPostgres,
+  loadWholesalePaymentsFromPostgres,
+  type WholesalePaymentsLoader,
   recordWholesaleOpeningReceivableInPostgres,
   recordWholesalePaymentInPostgres,
   loadWholesaleCreditSettingsFromPostgres,
@@ -396,6 +399,7 @@ interface AppDependencies {
   upsertPriceList: PriceListUpserter
   loadWholesaleOrderContext: WholesaleOrderContextLoader
   loadWholesaleReceivables: WholesaleReceivablesLoader
+  loadWholesalePayments: WholesalePaymentsLoader
   loadWholesaleCreditSettings: WholesaleCreditSettingsLoader
   loadWholesaleCreditOverrides: WholesaleCreditOverridesLoader
   commandWholesaleCreditOverride: WholesaleCreditOverrideCommander
@@ -494,6 +498,7 @@ const defaultDependencies: AppDependencies = {
   upsertPriceList: upsertPriceListInPostgres,
   loadWholesaleOrderContext: loadWholesaleOrderContextFromPostgres,
   loadWholesaleReceivables: loadWholesaleReceivablesFromPostgres,
+  loadWholesalePayments: loadWholesalePaymentsFromPostgres,
   loadWholesaleCreditSettings: loadWholesaleCreditSettingsFromPostgres,
   loadWholesaleCreditOverrides: loadWholesaleCreditOverridesFromPostgres,
   commandWholesaleCreditOverride: commandWholesaleCreditOverrideInPostgres,
@@ -2657,6 +2662,32 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
       return context.json(
         wholesaleReceivablesContextSchema.parse(
           await dependencies.loadWholesaleReceivables(resolved.userId, resolved.tenantId, context.env),
+        ),
+      )
+    } catch (error) {
+      const response = receivableError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
+  app.get('/v1/wholesale/payments', async (context) => {
+    const resolved = await resolveWholesaleTenant(context)
+    if (!resolved)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'WHOLESALE_PAYMENT_ACCESS_DENIED',
+            message: 'Sign in and select an authorized business.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
+    try {
+      return context.json(
+        wholesalePaymentsContextSchema.parse(
+          await dependencies.loadWholesalePayments(resolved.userId, resolved.tenantId, context.env),
         ),
       )
     } catch (error) {

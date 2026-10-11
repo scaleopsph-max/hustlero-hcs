@@ -41,6 +41,10 @@ function setup(code?: string) {
     return creditResponse
   })
   const loadCredit = vi.fn(async () => ({ canManage: true, customers: [] }))
+  const loadPayments = vi.fn(async () => {
+    if (code) throw Object.assign(new Error('Private history database details'), { code })
+    return { canRecord: false, invoices: [], paymentMethods: [], payments: [] }
+  })
   const recordPayment = vi.fn(async () => {
     if (code) throw Object.assign(new Error('Private payment database details'), { code })
     return {
@@ -80,6 +84,7 @@ function setup(code?: string) {
     loadWholesaleCreditOverrides: async () => ({ canApprove: true, overrides: [] }),
     commandWholesaleCreditOverride: overrideCommand,
     recordWholesalePayment: recordPayment,
+    loadWholesalePayments: loadPayments,
     confirmWholesaleOrder: async () => {
       throw Object.assign(new Error('Private database details'), { code })
     },
@@ -87,7 +92,7 @@ function setup(code?: string) {
       throw Object.assign(new Error('Private database details'), { code })
     },
   })
-  return { app, record, load, saveCredit, loadCredit, overrideCommand, recordPayment }
+  return { app, record, load, saveCredit, loadCredit, overrideCommand, recordPayment, loadPayments }
 }
 
 function headers(tenant = tenantId) {
@@ -100,6 +105,25 @@ function headers(tenant = tenantId) {
 }
 
 describe('wholesale payments API', () => {
+  it('loads history through authenticated server context', async () => {
+    const { app, loadPayments } = setup()
+    const result = await app.request('/v1/wholesale/payments', { headers: headers() }, bindings)
+    expect(result.status).toBe(200)
+    expect(loadPayments).toHaveBeenCalledWith(userId, tenantId, bindings)
+    expect(await result.json()).toEqual({ canRecord: false, invoices: [], paymentMethods: [], payments: [] })
+  })
+  it('denies foreign tenant history before database access', async () => {
+    const { app, loadPayments } = setup()
+    const result = await app.request('/v1/wholesale/payments', { headers: headers(invoiceId) }, bindings)
+    expect(result.status).toBe(403)
+    expect(loadPayments).not.toHaveBeenCalled()
+  })
+  it('sanitizes history access errors', async () => {
+    const { app } = setup('HCSQ0')
+    const result = await app.request('/v1/wholesale/payments', { headers: headers() }, bindings)
+    expect(result.status).toBe(403)
+    expect(await result.text()).not.toContain('Private history')
+  })
   const payment = {
     customerId: invoiceId,
     paymentMethodId: response.chargeId,

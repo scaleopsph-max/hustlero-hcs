@@ -1,5 +1,7 @@
 export {
   wholesalePaymentTermSchema,
+  wholesalePaymentsContextSchema,
+  type WholesalePaymentsContext,
   wholesaleCreditSettingsRequestSchema,
   wholesaleCreditSettingsResponseSchema,
   wholesaleCreditSettingsContextSchema,

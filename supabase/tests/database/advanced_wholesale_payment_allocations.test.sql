@@ -170,5 +170,18 @@ select is((select count(*) from app.cash_movements),0::bigint,'no invented regis
 select is((select count(*) from app.fund_ledger_entries),0::bigint,'no automatic fund allocation');
 select throws_ok($$delete from app.wholesale_payments$$,'P0001','issued invoices are immutable','receipt append-only');
 select throws_ok($$update app.wholesale_payment_allocations set amount=0.01$$,'P0001','issued invoices are immutable','allocation append-only');
+select ok(has_function_privilege('hcs_hyperdrive','app.load_wholesale_payments(uuid,uuid)','execute'),'history narrowly executable');
+select ok(not has_function_privilege('authenticated','app.load_wholesale_payments(uuid,uuid)','execute'),'browser history execute denied');
+select is(jsonb_array_length(app.load_wholesale_payments('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->'payments'),3,'history has three receipts');
+select is((app.load_wholesale_payments('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->>'canRecord')::boolean,true,'explicit permission exposed');
+select is((select sum((value->>'openBalanceMinor')::bigint) from jsonb_array_elements(app.load_wholesale_payments('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->'invoices')),0::numeric,'context balances reconcile');
+select is(jsonb_array_length(app.load_wholesale_payments('1f000000-0000-4000-8000-000000000002','2f000000-0000-4000-8000-000000000002')->'payments'),0,'other tenant cannot see receipts');
+select is((select sum((payment->>'amountMinor')::bigint) from jsonb_array_elements(app.load_wholesale_payments('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->'payments') payment),450000::numeric,'history receipt total reconciles');
+update app.employees set status='suspended';
+select ok(not exists(select 1 from jsonb_array_elements(app.load_wholesale_payments('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->'invoices') invoice where (invoice->>'canAllocate')::boolean),'no allocation offered without branch assignment');
+delete from app.role_permissions where permission_code='wholesale_payments.record';
+select is((app.load_wholesale_payments('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->>'canRecord')::boolean,false,'reader history does not imply payment authority');
+select is(jsonb_array_length(app.load_wholesale_payments('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->'payments'),3,'authorized reader retains history');
+select throws_ok($$select app.load_wholesale_payments('1f000000-0000-4000-8000-000000000002','2f000000-0000-4000-8000-000000000001')$$,'HCAR1','Wholesale receivable access denied','foreign actor history denied');
 select * from finish();
 rollback;

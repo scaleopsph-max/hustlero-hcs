@@ -1,4 +1,6 @@
 import {
+  wholesalePaymentsContextSchema,
+  type WholesalePaymentsContext,
   wholesalePaymentAllocationResponseSchema,
   type WholesalePaymentAllocationResponse,
   type WholesalePaymentAllocationRequest,
@@ -21,6 +23,16 @@ import {
 import { Client } from 'pg'
 
 import type { Bindings } from './env'
+
+export type WholesalePaymentsLoader = (
+  userId: string,
+  tenantId: string,
+  bindings: Bindings,
+) => Promise<WholesalePaymentsContext>
+export const loadWholesalePaymentsFromPostgres: WholesalePaymentsLoader = (userId, tenantId, bindings) =>
+  query(bindings, 'select app.load_wholesale_payments($1::uuid,$2::uuid) response', [userId, tenantId], (value) =>
+    wholesalePaymentsContextSchema.parse(value),
+  )
 
 export type WholesalePaymentRecorder = (
   userId: string,
