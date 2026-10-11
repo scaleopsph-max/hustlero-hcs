@@ -7,7 +7,7 @@ import {
   type WholesaleCreditOverridesContext,
 } from '@hcs/contracts'
 import { formatPeso } from '@hcs/ui'
-import { ArrowLeft, RefreshCw } from 'lucide-react'
+import { ArrowLeft, RefreshCw, ShieldCheck } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 const apiUrl = process.env.NEXT_PUBLIC_API_URL,
@@ -97,6 +97,12 @@ export function WholesaleApprovalHistoryWorkspace() {
           <ArrowLeft size={18} />
           Orders
         </Link>
+        {history?.canApprove && (
+          <Link href="/wholesale/approvals/manage" className="inline-flex items-center gap-2 text-sm">
+            <ShieldCheck size={18} />
+            Manage exceptions
+          </Link>
+        )}
         <button
           type="button"
           title="Refresh approval history"

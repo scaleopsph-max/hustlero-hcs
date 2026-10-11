@@ -614,6 +614,248 @@ try {
   console.log(
     'AW3 paid fulfillment concurrency passed: prepaid retry posts one invoice/receipt; competing deliveries cannot double deduct stock or create unpaid debt.',
   )
+
+  // Separate customers isolate each ordering while using the same shared-stock variant.
+  async function crossFixture(name, limit = 450000, legacy = false, quantityMilli = 10000) {
+    const customerId = randomUUID()
+    await observer.query(
+      "insert into app.customers(id,tenant_id,customer_number,full_name,email,customer_type,origin,created_by_user_id) values($1,$2,$3,$3,'cross@example.invalid','reseller','backoffice',$4)",
+      [customerId, tenant, name, actor],
+    )
+    await observer.query('select app.save_wholesale_customer_credit_settings($1,$2,$3::jsonb,$4,$4,$4)', [
+      actor,
+      tenant,
+      JSON.stringify({
+        customerId,
+        paymentTerm: 'net_7',
+        creditLimitMinor: limit,
+        reason: 'Synthetic cross-command agreement',
+      }),
+      `cross-settings-${name}`,
+    ])
+    const create = async (suffix) => {
+      const draft = await observer.query('select app.save_wholesale_order_draft($1,$2,$3::jsonb,$4,$4,$4) response', [
+        actor,
+        tenant,
+        JSON.stringify({
+          orderNumber: `${name}-${suffix}`,
+          customerId,
+          locationId: location,
+          priceListId: price,
+          pricingType: 'wholesale',
+          notes: null,
+          lines: [{ variantId: variant, quantityMilli: 10000 }],
+        }),
+        `cross-draft-${name}-${suffix}`,
+      ])
+      return draft.rows[0].response.salesOrderId
+    }
+    const orderId = await create('issued')
+    await confirm(observer, orderId, `cross-confirm-${name}`)
+    const lineId = (
+      await observer.query('select id from app.sales_order_lines where tenant_id=$1 and sales_order_id=$2', [
+        tenant,
+        orderId,
+      ])
+    ).rows[0].id
+    const result = await observer.query(
+      `select app.${legacy ? 'fulfill_wholesale_order_inventory_core' : 'fulfill_wholesale_order'}($1,$2,$3,$4::jsonb,$5,$5,$5) response`,
+      [actor, tenant, orderId, JSON.stringify([{ salesOrderLineId: lineId, quantityMilli }]), `cross-issue-${name}`],
+    )
+    const invoiceId = result.rows[0].response.invoiceId
+    if (legacy)
+      await observer.query('insert into app.wholesale_legacy_invoices(tenant_id,invoice_id) values($1,$2)', [
+        tenant,
+        invoiceId,
+      ])
+    const record = (client, commandKey = `cross-payment-${name}`) =>
+      client.query('select app.record_wholesale_payment($1,$2,$3::jsonb,$4,$4,$4) response', [
+        actor,
+        tenant,
+        JSON.stringify({
+          customerId,
+          paymentMethodId: method,
+          amountMinor: quantityMilli * 45,
+          reference: 'Synthetic cross-command received cash',
+          allocations: [{ invoiceId, amountMinor: quantityMilli * 45 }],
+        }),
+        commandKey,
+      ])
+    const open = (client) =>
+      client.query('select app.record_wholesale_opening_receivable($1,$2,$3::jsonb,$4,$4,$4) response', [
+        actor,
+        tenant,
+        JSON.stringify({ invoiceId, dueDate: '2026-10-11', reason: 'Synthetic verified unpaid legacy invoice' }),
+        `cross-opening-${name}`,
+      ])
+    const cancel = (client, target = orderId) =>
+      client.query('select app.cancel_wholesale_order_remaining($1,$2,$3,$4,$5,$5,$5) response', [
+        actor,
+        tenant,
+        target,
+        'Synthetic cancellation of remaining reservation',
+        `cross-cancel-${name}-${target}`,
+      ])
+    return { customerId, orderId, invoiceId, create, record, open, cancel }
+  }
+  async function crossState(fixture, expectedExposure, expectedReserved = '0.000', expectedBalance = '0.00') {
+    const state = (
+      await observer.query(
+        `select app.wholesale_credit_exposure($1,$2)::text exposure,
+      app.wholesale_invoice_open_balance($1,$3)::text balance,
+      (select reserved::text from app.inventory_balances where tenant_id=$1 and location_id=$4 and variant_id=$5) reserved,
+      (select count(*)::int from app.wholesale_payments where tenant_id=$1 and customer_id=$2) payments,
+      (select count(*)::int from app.wholesale_payment_allocations where tenant_id=$1 and invoice_id=$3) allocations`,
+        [tenant, fixture.customerId, fixture.invoiceId, location, variant],
+      )
+    ).rows[0]
+    assert.deepEqual(state, {
+      exposure: expectedExposure,
+      balance: expectedBalance,
+      reserved: expectedReserved,
+      payments: 1,
+      allocations: 1,
+    })
+    assert.equal(
+      (
+        await observer.query(
+          "select count(*)::int count from audit.audit_events where tenant_id=$1 and action='wholesale_payment.recorded' and entity_id in (select id from app.wholesale_payments where tenant_id=$1 and customer_id=$2)",
+          [tenant, fixture.customerId],
+        )
+      ).rows[0].count,
+      1,
+    )
+    assert.equal(
+      (
+        await observer.query(
+          "select count(*)::int count from integration.event_outbox where tenant_id=$1 and topic='wholesale_payment.recorded' and aggregate_id in (select id from app.wholesale_payments where tenant_id=$1 and customer_id=$2)",
+          [tenant, fixture.customerId],
+        )
+      ).rows[0].count,
+      1,
+    )
+  }
+
+  const paymentFirst = await crossFixture('payment-first')
+  const afterPaymentOrder = await paymentFirst.create('next')
+  await first.query('begin')
+  await paymentFirst.record(first)
+  const confirmationAfterPayment = confirm(second, afterPaymentOrder, 'cross-confirm-after-payment')
+  await waitForLock()
+  await first.query('commit')
+  await confirmationAfterPayment
+  await crossState(paymentFirst, '4500.00', '10.000')
+  await paymentFirst.cancel(observer, afterPaymentOrder)
+  await crossState(paymentFirst, '0.00')
+
+  const confirmationFirst = await crossFixture('confirmation-first', 900000)
+  const beforePaymentOrder = await confirmationFirst.create('next')
+  await first.query('begin')
+  await confirm(first, beforePaymentOrder, 'cross-confirm-before-payment')
+  const paymentAfterConfirmation = confirmationFirst.record(second)
+  await waitForLock()
+  await first.query('commit')
+  await paymentAfterConfirmation
+  await crossState(confirmationFirst, '4500.00', '10.000')
+  await confirmationFirst.cancel(observer, beforePaymentOrder)
+  await crossState(confirmationFirst, '0.00')
+
+  const openingFirst = await crossFixture('opening-first', 450000, true)
+  await first.query('begin')
+  const openingResult = await openingFirst.open(first)
+  const paymentAfterOpening = openingFirst.record(second)
+  await waitForLock()
+  await first.query('commit')
+  await paymentAfterOpening
+  assert.deepEqual((await openingFirst.open(observer)).rows[0].response, openingResult.rows[0].response)
+  await crossState(openingFirst, '0.00')
+
+  const unclassifiedFirst = await crossFixture('unclassified-first', 450000, true)
+  await first.query('begin')
+  // Keep an outer customer lock after the expected failed payment's savepoint rollback,
+  // so the opening command is demonstrably overlapping on another database session.
+  await first.query('select id from app.customers where tenant_id=$1 and id=$2 for update', [
+    tenant,
+    unclassifiedFirst.customerId,
+  ])
+  await first.query('savepoint unclassified_payment')
+  assert.equal(
+    await unclassifiedFirst.record(first).then(
+      () => 'unexpected-success',
+      (error) => error.code,
+    ),
+    'HCAP4',
+  )
+  await first.query('rollback to savepoint unclassified_payment')
+  const openingAfterDeniedPayment = unclassifiedFirst.open(second)
+  await waitForLock()
+  assert.equal(
+    (
+      await observer.query(
+        'select count(*)::int count from app.wholesale_payments where tenant_id=$1 and customer_id=$2',
+        [tenant, unclassifiedFirst.customerId],
+      )
+    ).rows[0].count,
+    0,
+  )
+  await first.query('commit')
+  await openingAfterDeniedPayment
+  await unclassifiedFirst.record(observer)
+  await crossState(unclassifiedFirst, '0.00')
+  for (const fixture of [openingFirst, unclassifiedFirst]) {
+    assert.equal(
+      (
+        await observer.query(
+          'select count(*)::int count from app.wholesale_receivable_charges where tenant_id=$1 and invoice_id=$2',
+          [tenant, fixture.invoiceId],
+        )
+      ).rows[0].count,
+      1,
+    )
+  }
+
+  // Cancellation releases only remaining reservations; issued invoice debt is independent.
+  // These commands need not block each other, so require the second to finish before
+  // the first commits rather than inventing a lock requirement.
+  const cancelFirst = await crossFixture('cancel-first', 450000, false, 4000)
+  await first.query('begin')
+  const cancellation = await cancelFirst.cancel(first)
+  assert.equal(cancellation.rows[0].response.releasedQuantityMilli, 6000)
+  await cancelFirst.record(second)
+  await first.query('commit')
+  await crossState(cancelFirst, '0.00')
+  const receiptFirst = await crossFixture('receipt-first', 450000, false, 4000)
+  await first.query('begin')
+  await receiptFirst.record(first)
+  await receiptFirst.cancel(second)
+  await first.query('commit')
+  await crossState(receiptFirst, '0.00')
+  for (const fixture of [cancelFirst, receiptFirst]) {
+    const state = (
+      await observer.query(
+        `select orders.status,line.fulfilled_quantity::text fulfilled,line.cancelled_quantity::text cancelled,
+      (select count(*)::int from app.sales_order_reservation_ledger where tenant_id=$1 and sales_order_id=$2 and reason='order_cancelled') cancellations
+      from app.sales_orders orders join app.sales_order_lines line on line.tenant_id=orders.tenant_id and line.sales_order_id=orders.id
+      where orders.tenant_id=$1 and orders.id=$2`,
+        [tenant, fixture.orderId],
+      )
+    ).rows[0]
+    assert.deepEqual(state, { status: 'cancelled', fulfilled: '4.000', cancelled: '6.000', cancellations: 1 })
+  }
+  assert.deepEqual(
+    (
+      await observer.query('select on_hand::text,reserved::text from app.inventory_balances where tenant_id=$1', [
+        tenant,
+      ])
+    ).rows[0],
+    { on_hand: '12.000', reserved: '0.000' },
+  )
+  console.log(
+    'AW3 cross-command concurrency passed: payment-first/confirmation-first, opening-first/unclassified-payment-first, cancellation-first/payment-first; exact balances, released reservations, immutable charges, one receipt/allocation/audit/outbox per command, and reconciled shared stock.',
+  )
 } finally {
+  // Release any held fixture transaction before closing another session waiting on it.
+  await first.query('rollback').catch(() => {})
+  await second.query('rollback').catch(() => {})
   await Promise.all(clients.map((client) => client.end()))
 }

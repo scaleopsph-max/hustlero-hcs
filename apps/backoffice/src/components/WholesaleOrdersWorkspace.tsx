@@ -6,20 +6,29 @@ import { nextWholesaleOrderNumber } from '@/lib/wholesale-order-number'
 import {
   sessionContextResponseSchema,
   wholesaleOrderCancelResponseSchema,
-  wholesaleOrderConfirmResponseSchema,
   wholesaleOrderContextSchema,
   wholesaleOrderDraftResponseSchema,
-  wholesaleOrderFulfillResponseSchema,
-  wholesaleOrderFulfillRequestSchema,
+  wholesaleOrderConfirmRequestSchema,
+  wholesaleCreditOverridesContextSchema,
   wholesalePaymentsContextSchema,
-  type WholesaleOrderFulfillRequest,
+  type WholesaleCreditOverridesContext,
   type WholesaleOrderContext,
 } from '@hcs/contracts'
 import { Button, Chip, Glass, formatPeso } from '@hcs/ui'
 import { Ban, Check, FilePlus2, PackageCheck, Printer, Save, ShoppingCart } from 'lucide-react'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState, useRef, type FormEvent } from 'react'
-import { preparePaidFulfillment, paidFulfillmentDefinitivelyRejected } from '@/lib/wholesale-paid-fulfillment'
+import { preparePaidFulfillment } from '@/lib/wholesale-paid-fulfillment'
+import {
+  pendingOrderActionSchema,
+  restoreOrderAction,
+  eligibleOrderOverrides,
+  prepareOrderOverride,
+  prepareCreditFulfillment,
+  orderActionDefinitivelyRejected,
+  validateOrderActionResponse,
+  type PendingOrderAction,
+} from '@/lib/wholesale-order-actions'
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -61,12 +70,10 @@ export function WholesaleOrdersWorkspace() {
     [paymentAmount, setPaymentAmount] = useState(''),
     [paymentReference, setPaymentReference] = useState('')
   const [paymentMethods, setPaymentMethods] = useState<{ id: string; name: string }[]>([])
-  const [paidScope, setPaidScope] = useState<{ user: string; storage: string } | null>(null)
-  const [pendingPaid, setPendingPaid] = useState<{
-    orderId: string
-    key: string
-    payload: WholesaleOrderFulfillRequest
-  } | null>(null)
+  const [actionScope, setActionScope] = useState<{ user: string; storage: string; legacyStorage: string } | null>(null)
+  const [pendingAction, setPendingAction] = useState<PendingOrderAction | null>(null)
+  const [overrides, setOverrides] = useState<WholesaleCreditOverridesContext | null>(null)
+  const [selectedOverrideId, setSelectedOverrideId] = useState('')
   const fulfillmentLocked = useRef(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -74,8 +81,14 @@ export function WholesaleOrdersWorkspace() {
   const [message, setMessage] = useState<string | null>(null)
 
   const load = useCallback(async (nextToken: string, nextTenant: string) => {
+    setData(null)
+    setOverrides(null)
     const context = wholesaleOrderContextSchema.parse(await call('/v1/wholesale/orders', nextToken, nextTenant))
+    const approvals = wholesaleCreditOverridesContextSchema.parse(
+      await call('/v1/wholesale/credit-overrides', nextToken, nextTenant),
+    )
     setData(context)
+    setOverrides(approvals)
     setSelectedOrderId((current) => current ?? context.orders[0]?.id ?? null)
     setCustomerId((current) => current || context.customers[0]?.id || '')
     setLocationId((current) => current || context.locations[0]?.id || '')
@@ -98,21 +111,17 @@ export function WholesaleOrdersWorkspace() {
         if (!tenant) throw new Error('Create or select a business first.')
         setToken(nextToken)
         setTenantId(tenant.tenantId)
-        const storage = `hcs-paid-fulfillment:${sessionData.session.user.id}:${tenant.tenantId}`
-        setPaidScope({ user: sessionData.session.user.id, storage })
+        const storage = `hcs-wholesale-order-action:${sessionData.session.user.id}:${tenant.tenantId}`
+        const legacyStorage = `hcs-paid-fulfillment:${sessionData.session.user.id}:${tenant.tenantId}`
+        const pending = restoreOrderAction(sessionStorage.getItem(storage), sessionStorage.getItem(legacyStorage))
+        setActionScope({ user: sessionData.session.user.id, storage, legacyStorage })
+        if (pending) {
+          setPendingAction(pending)
+          setSelectedOrderId(pending.orderId)
+          setPaidMode(pending.kind === 'fulfill' && !!pending.payload.payment)
+        }
         const context = await load(nextToken, tenant.tenantId)
         setOrderNumber(nextWholesaleOrderNumber(context.orders.map((order) => order.orderNumber)))
-        const stored = sessionStorage.getItem(storage)
-        if (stored) {
-          const pending = JSON.parse(stored) as { orderId: string; key: string; payload: WholesaleOrderFulfillRequest }
-          if (!/^[A-Za-z0-9_-]{16,128}$/.test(pending.key) || !/^[0-9a-f-]{36}$/i.test(pending.orderId))
-            throw new Error('Invalid pending fulfillment identity.')
-          const payload = wholesaleOrderFulfillRequestSchema.parse(pending.payload)
-          if (!payload.payment) throw new Error('Invalid pending paid fulfillment.')
-          setPendingPaid({ ...pending, payload })
-          setSelectedOrderId(pending.orderId)
-          setPaidMode(true)
-        }
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : 'Could not load wholesale orders.')
       } finally {
@@ -152,6 +161,10 @@ export function WholesaleOrdersWorkspace() {
   }
 
   function editDraft(order: WholesaleOrderContext['orders'][number]) {
+    if (pendingAction || fulfillmentLocked.current) return
+    setSelectedOverrideId('')
+    setFulfillmentQuantities({})
+    setPaidMode(false)
     setSelectedOrderId(order.id)
     if (order.status !== 'draft') return
     setEditingId(order.id)
@@ -168,7 +181,8 @@ export function WholesaleOrdersWorkspace() {
 
   async function save(event: FormEvent) {
     event.preventDefault()
-    if (!token || !tenantId || !selectedPriceList || !linePreview.length) return
+    if (!token || !tenantId || !selectedPriceList || !linePreview.length || pendingAction || fulfillmentLocked.current)
+      return
     setBusy(true)
     setError(null)
     setMessage(null)
@@ -201,27 +215,12 @@ export function WholesaleOrdersWorkspace() {
   }
 
   async function confirmOrder() {
-    if (!token || !tenantId || !selectedOrder || selectedOrder.status !== 'draft') return
-    setBusy(true)
-    setError(null)
-    try {
-      wholesaleOrderConfirmResponseSchema.parse(
-        await call(`/v1/wholesale/orders/${selectedOrder.id}/confirm`, token, tenantId, {
-          method: 'POST',
-          headers: { 'Idempotency-Key': `wholesale-confirm-${crypto.randomUUID()}` },
-        }),
-      )
-      await load(token, tenantId)
-      setMessage('Order confirmed and shared inventory reserved.')
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not confirm the order.')
-    } finally {
-      setBusy(false)
-    }
+    await executeAction('confirm')
   }
 
   async function cancelOrder() {
-    if (!token || !tenantId || !selectedOrder || !cancelReason.trim()) return
+    if (!token || !tenantId || !selectedOrder || !cancelReason.trim() || pendingAction || fulfillmentLocked.current)
+      return
     setBusy(true)
     setError(null)
     try {
@@ -243,82 +242,131 @@ export function WholesaleOrdersWorkspace() {
   }
 
   async function fulfillOrder() {
-    if (!token || !tenantId || !selectedOrder || fulfillmentLocked.current) return
+    await executeAction('fulfill')
+  }
+
+  async function executeAction(kind: PendingOrderAction['kind']) {
+    if (
+      !tenantId ||
+      !auth ||
+      !actionScope ||
+      !data?.canManage ||
+      fulfillmentLocked.current ||
+      (pendingAction && pendingAction.kind !== kind)
+    )
+      return
     fulfillmentLocked.current = true
-    const lines = selectedOrder.lines
-      .map((line) => ({
-        salesOrderLineId: line.id,
-        quantityMilli: Math.round(Number(fulfillmentQuantities[line.id] ?? 0) * 1000),
-      }))
-      .filter((line) => Number.isInteger(line.quantityMilli) && line.quantityMilli > 0)
-    if (!lines.length) {
-      if (!pendingPaid) {
-        setError('Enter at least one fulfillment quantity.')
-        fulfillmentLocked.current = false
-        return
-      }
-    }
+    let executing = pendingAction
     setBusy(true)
     setError(null)
     setMessage(null)
     try {
-      let nextToken = token
-      let orderId = selectedOrder.id
-      let payload: WholesaleOrderFulfillRequest = { lines }
-      let commandKey = `wholesale-fulfill-${crypto.randomUUID()}`
-      if (paidMode || pendingPaid) {
-        if (!auth || !paidScope) throw new Error('Sign in to the original account.')
-        const { data: session, error: sessionError } = await auth.auth.getSession()
-        if (sessionError) throw sessionError
-        if (!session.session || session.session.user.id !== paidScope.user)
-          throw new Error('Sign in to the original account.')
-        nextToken = session.session.access_token
-        const pending = pendingPaid ?? {
-          orderId,
-          key: commandKey,
-          payload: preparePaidFulfillment(
-            selectedOrder,
-            fulfillmentQuantities,
-            paymentMethod,
-            paymentAmount,
-            paymentReference,
-          ),
-        }
-        sessionStorage.setItem(paidScope.storage, JSON.stringify(pending))
-        setPendingPaid(pending)
-        orderId = pending.orderId
-        commandKey = pending.key
-        payload = pending.payload
+      const { data: session, error: sessionError } = await auth.auth.getSession()
+      if (sessionError) throw sessionError
+      if (!session.session || session.session.user.id !== actionScope.user)
+        throw new Error('Sign in to the original account.')
+      const nextToken = session.session.access_token
+      let command = pendingAction
+      if (!command) {
+        if (!selectedOrder || !overrides) throw new Error('Reload the current order and approval context.')
+        if (
+          kind === 'confirm'
+            ? selectedOrder.status !== 'draft'
+            : !['confirmed', 'partially_fulfilled'].includes(selectedOrder.status)
+        )
+          throw new Error('The order no longer allows that action.')
+        const override = prepareOrderOverride(overrides, selectedOrder, kind, selectedOverrideId)
+        command =
+          kind === 'confirm'
+            ? {
+                kind,
+                orderId: selectedOrder.id,
+                key: crypto.randomUUID(),
+                payload: wholesaleOrderConfirmRequestSchema.parse(override),
+              }
+            : {
+                kind,
+                orderId: selectedOrder.id,
+                key: crypto.randomUUID(),
+                payload: paidMode
+                  ? preparePaidFulfillment(
+                      selectedOrder,
+                      fulfillmentQuantities,
+                      paymentMethod,
+                      paymentAmount,
+                      paymentReference,
+                    )
+                  : prepareCreditFulfillment(selectedOrder, fulfillmentQuantities, override),
+              }
+        if (kind === 'fulfill' && paidMode && selectedOverrideId)
+          throw new Error('Paid fulfillment cannot use a credit override.')
+        command = pendingOrderActionSchema.parse(command)
+        sessionStorage.setItem(actionScope.storage, JSON.stringify(command))
+        setPendingAction(command)
       }
-      const response = wholesaleOrderFulfillResponseSchema.parse(
-        await call(`/v1/wholesale/orders/${orderId}/fulfill`, nextToken, tenantId, {
+      executing = command
+      const response = validateOrderActionResponse(
+        command,
+        await call(`/v1/wholesale/orders/${command.orderId}/${command.kind}`, nextToken, tenantId, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Idempotency-Key': commandKey,
+            'Idempotency-Key': command.key,
           },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(command.payload),
         }),
       )
-      if (payload.payment && paidScope) {
-        sessionStorage.removeItem(paidScope.storage)
-        setPendingPaid(null)
-        setPaymentAmount('')
-        setPaymentReference('')
-      }
+      sessionStorage.removeItem(actionScope.storage)
+      sessionStorage.removeItem(actionScope.legacyStorage)
+      setPendingAction(null)
+      setSelectedOverrideId('')
+      setPaymentAmount('')
+      setPaymentReference('')
       setFulfillmentQuantities({})
       await load(nextToken, tenantId)
-      setMessage(`Invoice ${response.invoiceNumber} issued for ${formatPeso(response.totalMinor)}.`)
+      setMessage(
+        'invoiceNumber' in response
+          ? `Invoice ${response.invoiceNumber} issued for ${formatPeso(response.totalMinor)}.`
+          : 'Order confirmed and shared inventory reserved.',
+      )
     } catch (cause) {
-      if (paidScope && paidFulfillmentDefinitivelyRejected((cause as { code?: string }).code)) {
-        sessionStorage.removeItem(paidScope.storage)
-        setPendingPaid(null)
+      if (executing && orderActionDefinitivelyRejected(executing, (cause as { code?: string }).code)) {
+        sessionStorage.removeItem(actionScope.storage)
+        sessionStorage.removeItem(actionScope.legacyStorage)
+        setPendingAction(null)
       }
-      setError(cause instanceof Error ? cause.message : 'Could not fulfill the order.')
+      setError(cause instanceof Error ? cause.message : 'Could not execute the original order action.')
     } finally {
       fulfillmentLocked.current = false
       setBusy(false)
     }
+  }
+
+  function overrideControl(action: 'confirm' | 'fulfill') {
+    if (!selectedOrder || !overrides) return null
+    const choices = eligibleOrderOverrides(overrides, selectedOrder, action)
+    const selected = choices.find((row) => row.overrideId === selectedOverrideId)
+    return (
+      <label className="grid min-w-0 gap-2 text-sm">
+        <span>Credit approval</span>
+        <select
+          aria-label={`${action === 'confirm' ? 'Confirmation' : 'Fulfillment'} credit approval`}
+          value={selectedOverrideId}
+          disabled={busy || !!pendingAction || !data?.canManage || (action === 'fulfill' && paidMode)}
+          onChange={(event) => setSelectedOverrideId(event.target.value)}
+          className="w-full min-w-0 border border-ink-900/15 bg-white p-2"
+        >
+          <option value="">No credit exception</option>
+          {choices.map((row) => (
+            <option key={row.overrideId} value={row.overrideId}>
+              {formatPeso(row.approvedExcessMinor)} / expires {new Date(row.expiresAt).toLocaleString('en-PH')} /{' '}
+              {row.overrideId}
+            </option>
+          ))}
+        </select>
+        {selected && <span className="break-words text-ink-500">{selected.reason}</span>}
+      </label>
+    )
   }
 
   if (loading)
@@ -344,12 +392,15 @@ export function WholesaleOrdersWorkspace() {
         Statements and aging
       </Link>
       {error ? <div className="border-l-2 border-red-600 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
-      {pendingPaid && (
+      {pendingAction && (
         <div className="flex flex-wrap items-center gap-3 border-l-2 border-amber-500 bg-amber-50 p-3">
-          <span>Pending paid fulfillment. Original receipt and quantities are preserved.</span>
-          <Button disabled={busy || !data.canManage} onClick={fulfillOrder}>
+          <span className="break-all">
+            Pending {pendingAction.kind}: {pendingAction.orderId}
+            {pendingAction.payload.creditOverrideId ? ` / approval ${pendingAction.payload.creditOverrideId}` : ''}
+          </span>
+          <Button disabled={busy || !data.canManage} onClick={() => void executeAction(pendingAction.kind)}>
             <PackageCheck size={18} />
-            Retry paid fulfillment
+            Retry original order action
           </Button>
         </div>
       )}
@@ -367,6 +418,7 @@ export function WholesaleOrdersWorkspace() {
             <button
               type="button"
               title="New draft"
+              disabled={busy || !!pendingAction}
               onClick={() => resetDraft()}
               className="grid size-10 place-items-center border border-ink-900/15 bg-white hover:bg-ink-900/[0.04]"
             >
@@ -378,6 +430,7 @@ export function WholesaleOrdersWorkspace() {
               <button
                 key={order.id}
                 type="button"
+                disabled={busy || !!pendingAction}
                 onClick={() => editDraft(order)}
                 className={`grid w-full gap-2 border-b border-ink-900/10 p-5 text-left ${selectedOrderId === order.id ? 'bg-gold-500/10' : 'hover:bg-ink-900/[0.03]'}`}
               >
@@ -431,9 +484,12 @@ export function WholesaleOrdersWorkspace() {
                 ))}
               </div>
               {selectedOrder.status === 'draft' ? (
-                <Button className="mt-4" disabled={!data.canManage || busy} onClick={confirmOrder}>
-                  <Check size={18} /> Confirm and reserve
-                </Button>
+                <div className="mt-4 grid gap-3">
+                  {overrideControl('confirm')}
+                  <Button disabled={!data.canManage || busy || !!pendingAction} onClick={confirmOrder}>
+                    <Check size={18} /> Confirm and reserve
+                  </Button>
+                </div>
               ) : selectedOrder.status === 'confirmed' || selectedOrder.status === 'partially_fulfilled' ? (
                 <div className="mt-4 grid gap-4">
                   <div className="border border-ink-900/10 bg-white">
@@ -457,14 +513,14 @@ export function WholesaleOrdersWorkspace() {
                             <span className="text-xs text-ink-500">{quantityText(remaining)} remaining</span>
                           </span>
                           <input
-                            disabled={busy || !!pendingPaid}
+                            disabled={busy || !!pendingAction || !data.canManage}
                             inputMode="decimal"
                             aria-label={`${line.productName} fulfillment quantity`}
                             value={fulfillmentQuantities[line.id] ?? ''}
                             onChange={(event) =>
                               setFulfillmentQuantities((current) => ({
                                 ...current,
-                                [line.id]: event.target.value.replace(/[^0-9.]/g, ''),
+                                [line.id]: event.target.value,
                               }))
                             }
                             placeholder="Qty"
@@ -473,13 +529,15 @@ export function WholesaleOrdersWorkspace() {
                         </label>
                       )
                     })}
-                    <fieldset disabled={busy || !!pendingPaid || !data.canManage} className="space-y-3 p-3">
+                    <fieldset disabled={busy || !!pendingAction || !data.canManage} className="space-y-3 p-3">
+                      {overrideControl('fulfill')}
                       <label className="flex items-center gap-2">
                         <input
                           type="checkbox"
                           checked={paidMode}
                           onChange={(event) => {
                             setPaidMode(event.target.checked)
+                            if (event.target.checked) setSelectedOverrideId('')
                             if (event.target.checked && token && tenantId)
                               void call('/v1/wholesale/payments', token, tenantId)
                                 .then((value) =>
@@ -532,7 +590,7 @@ export function WholesaleOrdersWorkspace() {
                       )}
                     </fieldset>
                     <div className="flex justify-end p-3">
-                      <Button disabled={!data.canManage || busy} onClick={fulfillOrder}>
+                      <Button disabled={!data.canManage || busy || !!pendingAction} onClick={fulfillOrder}>
                         <PackageCheck size={18} /> Issue invoice
                       </Button>
                     </div>
@@ -547,7 +605,7 @@ export function WholesaleOrdersWorkspace() {
                     />
                     <Button
                       variant="secondary"
-                      disabled={!data.canManage || busy || cancelReason.trim().length < 2}
+                      disabled={!data.canManage || busy || !!pendingAction || cancelReason.trim().length < 2}
                       onClick={cancelOrder}
                     >
                       <Ban size={18} /> Cancel remainder
@@ -590,119 +648,124 @@ export function WholesaleOrdersWorkspace() {
               <h2 className="font-display text-xl font-bold">{editingId ? 'Edit draft' : 'New draft'}</h2>
             </div>
             <form className="mt-5 grid gap-4" onSubmit={save}>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <fieldset disabled={!data.canManage || busy || !!pendingAction} className="contents">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="grid gap-2 text-sm font-medium">
+                    Order number
+                    <input
+                      value={orderNumber}
+                      onChange={(event) => setOrderNumber(event.target.value)}
+                      maxLength={64}
+                      className="min-h-11 border border-ink-900/15 bg-white px-3"
+                    />
+                  </label>
+                  <label className="grid gap-2 text-sm font-medium">
+                    Reseller
+                    <select
+                      value={customerId}
+                      onChange={(event) => {
+                        setCustomerId(event.target.value)
+                        setPriceListId('')
+                      }}
+                      className="min-h-11 border border-ink-900/15 bg-white px-3"
+                    >
+                      {data.customers.map((customer) => (
+                        <option key={customer.id} value={customer.id}>
+                          {customer.fullName} ({customer.customerNumber})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="grid gap-2 text-sm font-medium">
+                    Fulfillment location
+                    <select
+                      value={locationId}
+                      onChange={(event) => setLocationId(event.target.value)}
+                      className="min-h-11 border border-ink-900/15 bg-white px-3"
+                    >
+                      {data.locations.map((location) => (
+                        <option key={location.id} value={location.id}>
+                          {location.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="grid gap-2 text-sm font-medium">
+                    Price list
+                    <select
+                      value={selectedPriceList?.id ?? ''}
+                      onChange={(event) => setPriceListId(event.target.value)}
+                      className="min-h-11 border border-ink-900/15 bg-white px-3"
+                    >
+                      {eligiblePriceLists.map((list) => (
+                        <option key={list.id} value={list.id}>
+                          {list.name} · minimum {quantityText(list.entries[0]?.thresholdMilli ?? 0)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="max-h-80 overflow-y-auto border border-ink-900/10">
+                  {selectedPriceList?.entries.map((entry) => {
+                    const variant = data.variants.find((item) => item.id === entry.variantId)
+                    const stock = data.inventory.find(
+                      (item) => item.locationId === locationId && item.variantId === entry.variantId,
+                    )
+                    if (!variant) return null
+                    return (
+                      <label
+                        key={entry.variantId}
+                        className="grid grid-cols-[minmax(0,1fr)_105px] items-center gap-3 border-b border-ink-900/10 p-3 text-sm last:border-0"
+                      >
+                        <span>
+                          <strong className="block">
+                            {variant.productName} / {variant.variantName}
+                          </strong>
+                          <span className="text-xs text-ink-500">
+                            {variant.sku} · {formatPeso(entry.unitPriceMinor)} ·{' '}
+                            {quantityText(stock?.availableMilli ?? 0)} available
+                          </span>
+                        </span>
+                        <input
+                          inputMode="decimal"
+                          aria-label={`${variant.productName} quantity`}
+                          value={quantities[entry.variantId] ?? ''}
+                          onChange={(event) =>
+                            setQuantities((current) => ({
+                              ...current,
+                              [entry.variantId]: event.target.value.replace(/[^0-9.]/g, ''),
+                            }))
+                          }
+                          placeholder="Qty"
+                          className="min-h-10 border border-ink-900/15 bg-white px-3 text-right"
+                        />
+                      </label>
+                    )
+                  }) ?? <p className="p-4 text-sm text-ink-500">Choose an eligible reseller and price list.</p>}
+                </div>
                 <label className="grid gap-2 text-sm font-medium">
-                  Order number
-                  <input
-                    value={orderNumber}
-                    onChange={(event) => setOrderNumber(event.target.value)}
-                    maxLength={64}
-                    className="min-h-11 border border-ink-900/15 bg-white px-3"
+                  Notes
+                  <textarea
+                    value={notes}
+                    onChange={(event) => setNotes(event.target.value)}
+                    maxLength={1000}
+                    rows={3}
+                    className="border border-ink-900/15 bg-white p-3"
                   />
                 </label>
-                <label className="grid gap-2 text-sm font-medium">
-                  Reseller
-                  <select
-                    value={customerId}
-                    onChange={(event) => {
-                      setCustomerId(event.target.value)
-                      setPriceListId('')
-                    }}
-                    className="min-h-11 border border-ink-900/15 bg-white px-3"
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-ink-900/10 pt-4">
+                  <span>
+                    <span className="block text-xs text-ink-500">Draft total</span>
+                    <strong className="text-xl">{formatPeso(totalMinor)}</strong>
+                  </span>
+                  <Button
+                    type="submit"
+                    disabled={!data.canManage || busy || !!pendingAction || !selectedPriceList || !linePreview.length}
                   >
-                    {data.customers.map((customer) => (
-                      <option key={customer.id} value={customer.id}>
-                        {customer.fullName} ({customer.customerNumber})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="grid gap-2 text-sm font-medium">
-                  Fulfillment location
-                  <select
-                    value={locationId}
-                    onChange={(event) => setLocationId(event.target.value)}
-                    className="min-h-11 border border-ink-900/15 bg-white px-3"
-                  >
-                    {data.locations.map((location) => (
-                      <option key={location.id} value={location.id}>
-                        {location.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="grid gap-2 text-sm font-medium">
-                  Price list
-                  <select
-                    value={selectedPriceList?.id ?? ''}
-                    onChange={(event) => setPriceListId(event.target.value)}
-                    className="min-h-11 border border-ink-900/15 bg-white px-3"
-                  >
-                    {eligiblePriceLists.map((list) => (
-                      <option key={list.id} value={list.id}>
-                        {list.name} · minimum {quantityText(list.entries[0]?.thresholdMilli ?? 0)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <div className="max-h-80 overflow-y-auto border border-ink-900/10">
-                {selectedPriceList?.entries.map((entry) => {
-                  const variant = data.variants.find((item) => item.id === entry.variantId)
-                  const stock = data.inventory.find(
-                    (item) => item.locationId === locationId && item.variantId === entry.variantId,
-                  )
-                  if (!variant) return null
-                  return (
-                    <label
-                      key={entry.variantId}
-                      className="grid grid-cols-[minmax(0,1fr)_105px] items-center gap-3 border-b border-ink-900/10 p-3 text-sm last:border-0"
-                    >
-                      <span>
-                        <strong className="block">
-                          {variant.productName} / {variant.variantName}
-                        </strong>
-                        <span className="text-xs text-ink-500">
-                          {variant.sku} · {formatPeso(entry.unitPriceMinor)} ·{' '}
-                          {quantityText(stock?.availableMilli ?? 0)} available
-                        </span>
-                      </span>
-                      <input
-                        inputMode="decimal"
-                        aria-label={`${variant.productName} quantity`}
-                        value={quantities[entry.variantId] ?? ''}
-                        onChange={(event) =>
-                          setQuantities((current) => ({
-                            ...current,
-                            [entry.variantId]: event.target.value.replace(/[^0-9.]/g, ''),
-                          }))
-                        }
-                        placeholder="Qty"
-                        className="min-h-10 border border-ink-900/15 bg-white px-3 text-right"
-                      />
-                    </label>
-                  )
-                }) ?? <p className="p-4 text-sm text-ink-500">Choose an eligible reseller and price list.</p>}
-              </div>
-              <label className="grid gap-2 text-sm font-medium">
-                Notes
-                <textarea
-                  value={notes}
-                  onChange={(event) => setNotes(event.target.value)}
-                  maxLength={1000}
-                  rows={3}
-                  className="border border-ink-900/15 bg-white p-3"
-                />
-              </label>
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-ink-900/10 pt-4">
-                <span>
-                  <span className="block text-xs text-ink-500">Draft total</span>
-                  <strong className="text-xl">{formatPeso(totalMinor)}</strong>
-                </span>
-                <Button type="submit" disabled={!data.canManage || busy || !selectedPriceList || !linePreview.length}>
-                  <Save size={18} /> {editingId ? 'Update draft' : 'Save draft'}
-                </Button>
-              </div>
+                    <Save size={18} /> {editingId ? 'Update draft' : 'Save draft'}
+                  </Button>
+                </div>
+              </fieldset>
             </form>
           </Glass>
         </div>

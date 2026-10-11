@@ -2,13 +2,41 @@
 
 Last updated: 2026-10-11
 
-## Current increment: customer terms and explicit opening UI
+## Current increment: cross-command concurrency verification
+
+The loopback-only disposable CI concurrency harness now adds six independent-session orderings: payment-before-confirmation, confirmation-before-payment, opening-before-payment, unclassified-payment rejection before opening, cancellation-before-payment, and payment-before-cancellation. Customer locks are observed for serialized credit/opening commands; payment/cancellation are deliberately allowed to commute while the first transaction is still open. Assertions reconcile exact credit exposure, invoice balances, reservation releases, immutable opening counts, payment/allocation/audit/outbox uniqueness, and shared stock. A failed payment uses an outer customer lock and savepoint so the competing opening is demonstrably overlapping without recording money against unknown debt. No live connection is accepted.
+
+JavaScript syntax and focused formatting passed. Full isolated CI execution is pending; Docker is not installed locally. The existing thirteen independent-session scenarios remain in the same harness, for nineteen total once executed. No new migration or live command was performed. The prior two UI increments are included in the candidate for full application and fresh-database verification.
+
+## Previous increment: order-action approval selection and durable retry
+
+Wholesale Orders now offers explicit optional credit approval selection for confirmation and regular fulfillment. Choices match the loaded order/customer/action and exclude expired, revoked or consumed approvals. No approval is selected by default, browser choice does not bypass the server's exact-excess check, and prepaid/COD payment mode clears/disables override selection. Regular fulfillment now shares the exact three-decimal reserved-remainder parser used by paid fulfillment rather than rounding arbitrary input.
+
+Confirmation, regular fulfillment and paid fulfillment share one authenticated user/tenant-scoped pending command. Original operation, order, approval, quantities/payment, key and body survive reload. A dedicated retry remains available after the order changes state or the selected approval is consumed. New draft writes, cancellation and other actions are blocked while recovery is pending. Legacy paid-fulfillment records replay unchanged and are removed only after validated success/definite rejection; conflicting legacy/new records fail closed. Response order identity and fulfilled quantity are validated before clearing recovery.
+
+Full local `npm run check` passed: tracked-file secret scan, formatting/lint/typechecks, 484 unit tests across 21 files, standard application builds, API dry run and Cloudflare builds. This includes 44 new action/selection/recovery cases. Synthetic desktop/mobile browser checks passed stale approval rejection unlocking, no default or wrong-scope approval, confirm/fulfill committed-lost-response reload/replay with identical key/body, consumed-approval and fully fulfilled order recovery, one confirmation/invoice, exact quantity rejection, paid-mode exclusion, unchanged legacy paid retry, read-only controls, no overflow and no page errors. Existing vinext notices remain non-failing build warnings. No new database/API changes, migration, push, live financial command or deployment.
+
+Next: remaining cross-command concurrency tests (payment versus confirmation/opening and cancellation), complete isolated CI and Staging release/UAT. Separate Production approval remains required.
+
+## Previous increment: credit-exception approval and revocation UI
+
+Back Office `/wholesale/approvals/manage`, linked only for authorized approvers from approval history, connects the existing dedicated approval/revocation APIs. Order choices are scoped to authorized loaded orders and the selected confirm/fulfill action. Exact positive excess, explicit future local-time expiry, reason, and separate approval/revocation attestations are required. Revocation is append-only and does not remove consumed history. No tenant/customer/actor identifiers are sent in command bodies.
+
+One pending command is stored under the authenticated user/tenant before POST. Reload retries preserve the original key, body, operation, and revocation target even when the approval is already revoked after a lost response. Permission/scope/unknown failures retain recovery; definite HCCO2/HCCO4/HCCO5 failures unlock editing. Response status and revocation ID are checked before recovery is cleared. Stale refresh results are removed, and read-only accounts receive no write controls.
+
+Full local `npm run check` passed: tracked-file secret scanning, formatting, lint, typechecks, 440 unit cases across twenty files, standard application builds, API dry run and Cloudflare builds. This includes 39 new command-rule tests. Synthetic desktop/mobile browser checks passed exact money, independent attestations, approval/revocation lost-response replay, one record per command, already-revoked retry, definitive rejection unlocking, read-only controls, stale-result clearing/recovery, no horizontal overflow and no page errors. Dependency audit found no unaccepted high/critical advisories. Existing vinext chunk/static-classification notices remain non-failing build warnings. No database/API change, migration, live financial command, deployment, or push occurred.
+
+Next: add approved-exception selection with durable confirmation/fulfillment retry identity, finish cross-command concurrency (payment versus confirmation/opening and cancellation), then complete isolated CI and Staging release/UAT. Production release still requires its separate gate.
+
+## Previous increment: customer terms and explicit opening UI
 
 Back Office `/wholesale/credit`, linked from Orders, now connects the existing authorized credit-settings and opening-receivable APIs. Active resellers have explicit payment terms, exact centavo credit limits, and reasoned revisions; unconfigured values remain blank rather than receiving invented defaults. Opening is owner-only, restricted to eligible unclassified legacy invoices, and requires a selected due date, reason, and explicit unpaid confirmation. Original invoice money remains server-derived; the UI sends no amount or tenant in either payload. No automatic opening posting or payment occurs.
 
 One pending command is saved under the original user/tenant before POST. Unknown outcomes and authorization/scope errors retain the exact key/payload across reload, including an invoice now classified after a committed-but-lost response. Definitive validation/duplicate-classification rejection unlocks editing. Shared response checks require the pending customer/term/limit or invoice/due date to match before clearing recovery. Refresh clears stale results and preserves pending identity.
 
 Local format/lint/typechecks and all 401 unit cases across nineteen files passed, including 44 new command/recovery rules. Synthetic desktop/mobile browser checks passed exact money, explicit terms, pre-POST validation, lost-response reload/replay for both commands, no duplicate revision/charge, classified-invoice recovery, read-only controls, and failed-refresh clearing/recovery. Local C: disk space was initially critically low, so full application build/security and disposable database verification will run in isolated CI before release. No Staging/Production command, migration, or deployment was executed.
+
+Candidate `f9f664b42995fde655f992d139c7632919beb1ed` passed isolated CI `38142174465`: both jobs, dependency security, secret scanning across 429 tracked files, formatting/lint/typechecks, 401 unit cases, standard/Cloudflare builds and API dry run, fresh database reset, 1,204 pgTAP assertions across 35 files, thirteen independent-session scenarios, and cleanup. No new migration was required. Evidence: `docs/qa/AW3_CREDIT_OPENING_UI_CI_2026-10-11.md`. Local available disk space subsequently improved to over 38 GiB; the development server remains available on port 3001. No live environment changed.
 
 ## Previous increment: customer statements and aging
 
@@ -341,7 +369,7 @@ Prepaid/COD candidate local `npm run check` passed with 322 unit tests across si
 
 Approval history local `npm run check` passed: 330 unit cases across seventeen files, format/lint/typechecks, standard builds, API dry run, and Cloudflare builds. Staged secret scanning passed across 416 files. CI `38112931956` verified commit `6fddb741202d40124c5c5680e651a7951230cebc`: both jobs passed with fresh reset, 1,181 pgTAP assertions across 35 files, thirteen independent-session scenarios, and cleanup. Twelve new history assertions verify accurate statuses, exact consumed amounts, preserved revocation, read-only behavior, and private execute grants. Browser tests verified read-only history and failed-refresh recovery with synthetic fixtures. Evidence: `docs/qa/AW3_APPROVAL_HISTORY_CI_2026-10-11.md`.
 
-Next: verify the customer terms/opening UI candidate in CI, then build approval/revocation/selection controls and remaining cross-command concurrency before the complete Staging release/UAT gate. Production release remains separate. Payment versus confirmation/opening and cancellation races remain required as affected commands are completed. AW4 returns/credits and Online Store remain later slices. No live environment has received any AW3 migration or command.
+Next: build approval/revocation/selection controls and remaining cross-command concurrency before the complete Staging release/UAT gate. Production release remains separate. Payment versus confirmation/opening and cancellation races remain required as affected commands are completed. AW4 returns/credits and Online Store remain later slices. No live environment has received any AW3 migration or command.
 
 ## Production state
 
