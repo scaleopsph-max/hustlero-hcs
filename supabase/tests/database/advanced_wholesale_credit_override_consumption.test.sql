@@ -155,5 +155,22 @@ select is((select count(*) from app.wholesale_invoice_charges),1::bigint,'fulfil
 select throws_ok($$select pg_temp.aw3_consumption_fulfill((select id from app.wholesale_credit_overrides where action='fulfill'),'consume-fulfill-reuse-001')$$,'HCCO6','Credit approval is not valid for this command','fresh partial fulfillment cannot reuse approval');
 select is((select on_hand from app.inventory_balances where tenant_id='2f000000-0000-4000-8000-000000000001'),21::numeric,'failed reuse rolls back extra deduction');
 select throws_ok($$delete from app.wholesale_credit_override_consumptions$$,'P0001','issued invoices are immutable','consumption immutable');
+create function pg_temp.history() returns jsonb language sql as $$ select app.load_wholesale_credit_overrides('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001'); $$;
+select ok(pg_temp.history()->>'asOf' is not null,'history includes server snapshot time');
+select is((select count(*) from jsonb_array_elements(pg_temp.history()->'overrides') item where item->>'status'='consumed'),2::bigint,'both used approvals reported consumed');
+select is((select count(*) from jsonb_array_elements(pg_temp.history()->'overrides') item where item->>'status'='revoked'),1::bigint,'unused revoked approval distinguished');
+select ok((select bool_and(item->>'orderNumber'='SO-AW2-001') from jsonb_array_elements(pg_temp.history()->'overrides') item),'history resolves order number in same tenant');
+select ok((select bool_and((item->'consumption'->>'excessMinor')::bigint=1) from jsonb_array_elements(pg_temp.history()->'overrides') item where item->>'status'='consumed'),'history shows actual excess not approved cap');
+select app.command_wholesale_credit_override('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001','revoke',jsonb_build_object('overrideId',(select override_id from app.wholesale_credit_override_consumptions where action='confirm'),'reason','Revoked after synthetic use'),'history-revoke-used-001','history-revoke-used','history-test');
+select is((select item->>'status' from jsonb_array_elements(pg_temp.history()->'overrides') item where item->>'action'='confirm' and item->'consumption'<>'null'::jsonb),'consumed','revocation does not erase historical use');
+select is((select item->>'revokeReason' from jsonb_array_elements(pg_temp.history()->'overrides') item where item->>'action'='confirm' and item->'consumption'<>'null'::jsonb),'Revoked after synthetic use','consumed record retains later revocation reason');
+select pg_temp.aw3_override('fulfill',100,clock_timestamp()+interval '1 hour','history-active-001');
+select is((select count(*) from jsonb_array_elements(pg_temp.history()->'overrides') item where item->>'status'='approved'),1::bigint,'active unused approval distinguished');
+insert into app.wholesale_credit_overrides(tenant_id,sales_order_id,customer_id,action,approved_excess,expires_at,reason,approved_by,approved_at)
+select tenant_id,id,customer_id,'fulfill',1,clock_timestamp()-interval '1 minute','Synthetic expired approval','1f000000-0000-4000-8000-000000000001',clock_timestamp()-interval '1 hour' from app.sales_orders where tenant_id='2f000000-0000-4000-8000-000000000001';
+select is((select count(*) from jsonb_array_elements(pg_temp.history()->'overrides') item where item->>'status'='expired'),1::bigint,'expiry computed on server without row mutation');
+select is((select count(*) from app.wholesale_credit_override_consumptions),2::bigint,'history reads never consume approvals');
+select is((select on_hand from app.inventory_balances),21::numeric,'history reads do not alter stock');
+select ok(not has_function_privilege('authenticated','app.load_wholesale_credit_overrides(uuid,uuid)','execute'),'history reader not granted directly to browser');
 select * from finish();
 rollback;

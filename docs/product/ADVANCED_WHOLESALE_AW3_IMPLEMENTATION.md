@@ -144,6 +144,14 @@ Roll back API traffic to the previous immutable Worker version if necessary whil
 
 ## Release boundaries
 
+### Approval history candidate (2026-10-11)
+
+Migration `20261011044216` replaces only the existing authorized override loader, keeping private tables, tenant/actor authorization, and narrow execute grants. It returns one server `asOf` timestamp, order number joined within tenant, and consumption details (actor, time, exact used excess, exposure, and limit at use). Status is a display projection: consumed takes precedence over later revocation/expiry, then revoked, expired, and approved. Revocation metadata is retained even when status is consumed. This does not make consumed/revoked approvals reusable or change any command rule.
+
+Back Office `/wholesale/approvals` links from Orders. It is a read-only history surface with status/search filters, audit disclosure, snapshot time, and explicit refresh. Refresh validates the current original authenticated account and clears stale results on failures. No approval, revocation, fulfillment, fund, or payment command is sent from this screen. No identifiers are inferred from client tenant input in the database. Full local/database CI and complete Staging validation remain separate gates.
+
+Install the read-model migration before the updated API/UI in a controlled environment; new shared contracts require snapshot/status/consumption fields. Prior API versions ignore additive loader fields, so application rollback can leave the richer loader in place without deleting or rewriting history. There is no historical backfill or financial mutation.
+
 ### Atomic prepaid/COD fulfillment candidate (2026-10-11)
 
 Migration `20261011035621` introduces `fulfill_wholesale_order_paid` behind the existing fulfillment endpoint. Explicit payment method, exact received amount, and reference are required. Each partial delivery must be paid in full for that delivery's invoice. The immutable confirmation payment-term snapshot determines prepaid/COD eligibility; later customer settings do not rewrite it. Confirmation still checks all confirmed exposure against available credit, as approved. Net-term and override paths are unchanged.
@@ -151,6 +159,8 @@ Migration `20261011035621` introduces `fulfill_wholesale_order_paid` behind the 
 The order/customer locks, invoice, inventory/reservation ledgers, charge, receipt, full invoice allocation, paid replay mapping, audit, outbox, and idempotency commit together. Wrong amount or inactive method rolls everything back. The new private mapping has tenant-composite foreign keys, RLS, no direct API/browser grants, and immutable rows. Current management, receivables, payment-recording, branch, and tenant access are required. Actor-bound hashes prevent sharing a replay between users. No automatic fund allocation, POS tender, register cash movement, or bank transfer is inferred.
 
 Back Office preserves paid command identity and payload in user-and-tenant-scoped session storage before sending. Uncertain/authentication failures retain that identity, including reload after the order has already been fulfilled; exact historical response is replayed. Explicit paid validation/term/amount rejection releases editing. Browser checks used entirely synthetic auth/API fixtures and verified lost-response replay, amount-mismatch unlock, read-only controls, desktop/mobile overflow, and no page errors. Database CI and complete Staging release/UAT remain separate gates.
+
+Candidate `d1cd3b537c1f1662f60182d08e0f053a351a6195` subsequently passed CI `38110566169`: both jobs, full application/security/build checks, 322 unit cases, fresh reset, 1,169 pgTAP assertions across 35 files, thirteen independent-session scenarios, and cleanup. No live environment changed. Evidence: `../qa/AW3_PAID_FULFILLMENT_CI_2026-10-11.md`. Complete Staging UAT and separate Production approval remain required.
 
 Roll back application traffic to a verified previous Worker version without deleting paid invoice/receipt truth. Do not restore the narrower invoice-charge term constraint after prepaid/COD charges exist. Use a reviewed compensating migration or recovery runbook; AW4 payment reversal/credit-note behavior remains separate.
 

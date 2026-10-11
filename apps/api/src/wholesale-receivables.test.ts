@@ -106,7 +106,7 @@ function setup(code?: string) {
     recordWholesaleOpeningReceivable: record,
     saveWholesaleCreditSettings: saveCredit,
     loadWholesaleCreditSettings: loadCredit,
-    loadWholesaleCreditOverrides: async () => ({ canApprove: true, overrides: [] }),
+    loadWholesaleCreditOverrides: async () => ({ asOf: '2026-10-11T04:00:00Z', canApprove: true, overrides: [] }),
     commandWholesaleCreditOverride: overrideCommand,
     recordWholesalePayment: recordPayment,
     loadWholesalePayments: loadPayments,
@@ -279,7 +279,7 @@ describe('wholesale credit override API', () => {
     const { app } = setup()
     const result = await app.request('/v1/wholesale/credit-overrides', { headers: headers() }, bindings)
     expect(result.status).toBe(200)
-    expect(await result.json()).toEqual({ canApprove: true, overrides: [] })
+    expect(await result.json()).toEqual({ asOf: '2026-10-11T04:00:00Z', canApprove: true, overrides: [] })
   })
   const approval = {
     salesOrderId: invoiceId,
