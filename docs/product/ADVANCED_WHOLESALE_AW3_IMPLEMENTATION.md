@@ -144,11 +144,21 @@ Roll back API traffic to the previous immutable Worker version if necessary whil
 
 ## Release boundaries
 
+### Customer statement and aging candidate (2026-10-11)
+
+Migration `20261011050534` introduces private `app.load_wholesale_statement` and GET `/v1/wholesale/statements`. Active owner or reports permission plus authorized wholesale receivable access is required. Tenant, actor, invoice money, and cutoff are server-resolved. Strict filters accept an as-of date and optional customer/location belonging to that tenant; future dates are rejected. Snapshot charges and payment allocations are filtered by recorded time. Tenant-local midnight bounds the snapshot; each location timezone defines aging business date. Due today is current, followed by 1-30, 31-60, 61-90, and over-90 bands. Unknown historical invoices retain null balance and an explicit separate count/value, never invented debt/settlement.
+
+Back Office `/wholesale/statements` links from Orders and exposes invoice aging, charge/payment entries, snapshot scope, filters, and exact CSV export. CSV sanitizes formula-like text and explicitly preserves unknown values. There are no financial command buttons or automatic postings. Failed refresh clears the old statement and disables export. Synthetic desktop/mobile browser checks passed; full local checks and disposable CI verification are pending. This is not complete AW3 Staging UAT or a live release.
+
+Install this additive read-function migration before the updated API/UI. Application rollback may leave the read function installed; never delete or rewrite existing financial truth. Settings/approval command UX, cross-command concurrency, complete Staging UAT, and a separately approved Production release remain gates.
+
 ### Approval history candidate (2026-10-11)
 
 Migration `20261011044216` replaces only the existing authorized override loader, keeping private tables, tenant/actor authorization, and narrow execute grants. It returns one server `asOf` timestamp, order number joined within tenant, and consumption details (actor, time, exact used excess, exposure, and limit at use). Status is a display projection: consumed takes precedence over later revocation/expiry, then revoked, expired, and approved. Revocation metadata is retained even when status is consumed. This does not make consumed/revoked approvals reusable or change any command rule.
 
 Back Office `/wholesale/approvals` links from Orders. It is a read-only history surface with status/search filters, audit disclosure, snapshot time, and explicit refresh. Refresh validates the current original authenticated account and clears stale results on failures. No approval, revocation, fulfillment, fund, or payment command is sent from this screen. No identifiers are inferred from client tenant input in the database. Full local/database CI and complete Staging validation remain separate gates.
+
+Candidate `6fddb741202d40124c5c5680e651a7951230cebc` passed isolated CI `38112931956`: both jobs, 330 unit tests, complete application/security/build verification, fresh reset, 1,181 pgTAP assertions across 35 files, thirteen independent-session regressions, and cleanup. Synthetic browser verification also passed. Evidence: `../qa/AW3_APPROVAL_HISTORY_CI_2026-10-11.md`. No live environment changed; complete Staging validation and separate release approval remain required.
 
 Install the read-model migration before the updated API/UI in a controlled environment; new shared contracts require snapshot/status/consumption fields. Prior API versions ignore additive loader fields, so application rollback can leave the richer loader in place without deleting or rewriting history. There is no historical backfill or financial mutation.
 

@@ -120,10 +120,17 @@ create function pg_temp.settlement(p_from date default (now() at time zone 'Asia
 $$;
 select is((pg_temp.settlement()->'summary'->>'unclassifiedCount')::int,1,'unclassified debt is explicitly reported');
 select is((pg_temp.settlement()->'summary'->>'unclassifiedMinor')::bigint,180000::bigint,'unknown balance is not silently zeroed');
+create function pg_temp.statement(p_date date default (statement_timestamp() at time zone 'Asia/Manila')::date,p_customer uuid default null,p_location uuid default null) returns jsonb language sql as $$
+ select app.load_wholesale_statement('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001',p_date,p_customer,p_location);
+$$;
+select is((pg_temp.statement()->'summary'->>'unclassifiedCount')::int,1,'statement explicitly preserves unknown invoice');
+select is((pg_temp.statement()->'summary'->>'unclassifiedMinor')::bigint,180000::bigint,'statement unknown value preserved');
+select is((pg_temp.statement()->'invoices'->0->>'balanceMinor'),null::text,'unknown balance is not zero debt');
+select is(jsonb_array_length(pg_temp.statement()->'entries'),0,'unclassified invoice invents no charge');
 select is((select count(*) from app.wholesale_payments),0::bigint,'classification failure rolls back payment header');
 insert into app.wholesale_legacy_invoices(tenant_id,invoice_id) select tenant_id,id from app.invoices;
 select app.record_wholesale_opening_receivable('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001',
- jsonb_build_object('invoiceId',(select id from app.invoices),'dueDate','2026-10-10','reason','Synthetic historical opening'),'payment-opening-001','opening-hash','opening-test');
+ jsonb_build_object('invoiceId',(select id from app.invoices),'dueDate',((statement_timestamp() at time zone 'Asia/Manila')::date-31)::text,'reason','Synthetic historical opening'),'payment-opening-001','opening-hash','opening-test');
 select app.fulfill_wholesale_order('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001',
  (select id from app.sales_orders),jsonb_build_array(jsonb_build_object('salesOrderLineId',(select id from app.sales_order_lines),'quantityMilli',6000)),
  'payment-new-invoice-001','new-hash','new-test');
@@ -153,6 +160,10 @@ select throws_ok($$select pg_temp.settlement()$$,'HCSD0','Reporting access is no
 insert into app.role_permissions(tenant_id,role_id,permission_code) values('2f000000-0000-4000-8000-000000000001','6f000000-0000-4000-8000-000000000001','reports.read');
 select is((pg_temp.settlement()->'summary'->>'closingReceivablesMinor')::bigint,440000::bigint,'partial receipt reduces closing debt');
 select is((pg_temp.settlement()->'summary'->>'issuedMinor')::bigint,450000::bigint,'partial receipt leaves issued revenue unchanged');
+select is((pg_temp.statement()->'summary'->>'balanceMinor')::bigint,440000::bigint,'statement partial payment exact balance');
+select is((pg_temp.statement()->'summary'->>'days31To60Minor')::bigint,170000::bigint,'opening debt 31 days overdue in correct band');
+select is((pg_temp.statement()->'summary'->>'currentMinor')::bigint,270000::bigint,'future due invoice remains current');
+select is((select sum((e->>'debitMinor')::bigint-(e->>'creditMinor')::bigint) from jsonb_array_elements(pg_temp.statement()->'entries') e),440000::numeric,'statement entries reconcile to debt');
 select lives_ok($$select pg_temp.payment(10000,'payment-partial-001')$$,'partial payment retry replays');
 select is((select count(*) from app.wholesale_payments),1::bigint,'one receipt on replay');
 select is((select count(*) from app.wholesale_payment_allocations),1::bigint,'one allocation on replay');
@@ -166,6 +177,8 @@ select lives_ok($$select pg_temp.payment(15000,'payment-multi-001',jsonb_build_a
 select is((select sum(amount) from app.wholesale_payments),250::numeric,'receipt total exact');
 select is((select sum(amount) from app.wholesale_payment_allocations),250::numeric,'allocations reconcile to receipts');
 select is(app.wholesale_credit_exposure('2f000000-0000-4000-8000-000000000001',(select id from app.customers)),4250::numeric,'whole customer balance net of both allocations');
+select is((pg_temp.statement()->'summary'->>'balanceMinor')::bigint,425000::bigint,'statement multi-invoice partial receipt counted exactly');
+select is(jsonb_array_length(pg_temp.statement()->'entries'),5,'two charges and three allocations without duplicate receipt totals');
 select lives_ok($$select pg_temp.payment(425000,'payment-full-001',jsonb_build_array(jsonb_build_object('invoiceId',(select id from app.invoices where total=1800),'amountMinor',165000),jsonb_build_object('invoiceId',(select id from app.invoices where total=2700),'amountMinor',260000)))$$,'remaining balances settled exactly');
 select is(app.wholesale_credit_exposure('2f000000-0000-4000-8000-000000000001',(select id from app.customers)),0::numeric,'settled customer debt zero');
 select throws_ok($$select pg_temp.payment(1,'payment-paid-twice-001')$$,'HCAP5','Allocation exceeds open invoice balance','paid invoice cannot be paid twice');
@@ -247,5 +260,19 @@ select is((select count(*) from app.fund_ledger_entries),3::bigint,'zero share c
 update app.tenant_memberships set is_owner=false where tenant_id='2f000000-0000-4000-8000-000000000001';
 delete from app.role_permissions where permission_code='wholesale_orders.read';
 select throws_ok($$select pg_temp.settlement()$$,'HCAR1','Wholesale receivable access denied','reports alone do not authorize wholesale debt');
+select throws_ok($$select pg_temp.statement()$$,'HCAR1','Wholesale receivable access denied','reports alone cannot read statement');
+update app.tenant_memberships set is_owner=true where tenant_id='2f000000-0000-4000-8000-000000000001';
+select is((pg_temp.statement()->'summary'->>'balanceMinor')::bigint,0::bigint,'fully paid statement reconciles to zero');
+select is(jsonb_array_length(pg_temp.statement('2020-01-01')->'invoices'),0,'historical cutoff excludes future invoices');
+select is(jsonb_array_length(pg_temp.statement('2020-01-01')->'entries'),0,'historical cutoff excludes future charges and payments');
+select is((pg_temp.statement('2020-01-01')->'scope'->>'asOf')::timestamptz,'2020-01-01 16:00:00+00'::timestamptz,'statement uses tenant midnight cutoff');
+select throws_ok($$select pg_temp.statement((statement_timestamp() at time zone 'Asia/Manila')::date+1)$$,'HCSD1','Reporting filters are invalid','future statement denied');
+select throws_ok($$select pg_temp.statement(null)$$,'HCSD1','Reporting filters are invalid','null statement date denied');
+select throws_ok($$select pg_temp.statement((statement_timestamp() at time zone 'Asia/Manila')::date,'00000000-0000-4000-8000-000000000001')$$,'HCSD2','Reporting scope was not found','foreign statement customer denied');
+select throws_ok($$select pg_temp.statement((statement_timestamp() at time zone 'Asia/Manila')::date,null,'00000000-0000-4000-8000-000000000001')$$,'HCSD2','Reporting scope was not found','foreign statement location denied');
+select is(jsonb_array_length(pg_temp.statement((statement_timestamp() at time zone 'Asia/Manila')::date,null,'3f000000-0000-4000-8000-000000000002')->'invoices'),0,'empty location excludes unrelated invoices');
+select throws_ok($$select app.load_wholesale_statement('1f000000-0000-4000-8000-000000000002','2f000000-0000-4000-8000-000000000001',current_date)$$,'HCSD0','Reporting access is not allowed','foreign actor denied');
+select ok(not has_function_privilege('authenticated','app.load_wholesale_statement(uuid,uuid,date,uuid,uuid)','execute'),'statement not directly browser executable');
+select ok(has_function_privilege('hcs_hyperdrive','app.load_wholesale_statement(uuid,uuid,date,uuid,uuid)','execute'),'statement narrowly granted to API role');
 select * from finish();
 rollback;

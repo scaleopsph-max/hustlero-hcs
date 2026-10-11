@@ -379,3 +379,9 @@ export {
   type WholesaleCreditOverridesContext,
 } from './wholesale-credit-overrides'
 export * from './wholesale-funds'
+export {
+  wholesaleStatementSchema,
+  wholesaleStatementQuerySchema,
+  type WholesaleStatement,
+  type WholesaleStatementQuery,
+} from './wholesale-statements'

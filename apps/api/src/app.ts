@@ -246,6 +246,8 @@ import {
   type WholesalePaymentRecorder,
 } from './wholesale-receivables-repository'
 import { type Bindings, readEnvironment } from './env'
+import { wholesaleStatementQuerySchema, wholesaleStatementSchema } from '@hcs/contracts'
+import { loadWholesaleStatementFromPostgres, type WholesaleStatementLoader } from './wholesale-statement-repository'
 import {
   addCustomerNoteInPostgres,
   createCustomerInPostgres,
@@ -473,6 +475,7 @@ interface AppDependencies {
   loadDashboard: DashboardLoader
   loadSalesReport: SalesReportLoader
   loadWholesaleSettlement: WholesaleSettlementLoader
+  loadWholesaleStatement: WholesaleStatementLoader
   loadInventoryReport: InventoryReportLoader
   loadShiftReport: ShiftReportLoader
   loadAlertCenter: AlertCenterLoader
@@ -575,6 +578,7 @@ const defaultDependencies: AppDependencies = {
   loadDashboard: loadDashboardFromPostgres,
   loadSalesReport: loadSalesReportFromPostgres,
   loadWholesaleSettlement: loadWholesaleSettlementFromPostgres,
+  loadWholesaleStatement: loadWholesaleStatementFromPostgres,
   loadInventoryReport: loadInventoryReportFromPostgres,
   loadShiftReport: loadShiftReportFromPostgres,
   loadAlertCenter: loadAlertCenterFromPostgres,
@@ -2676,6 +2680,55 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
     }
   })
 
+  app.get('/v1/wholesale/statements', async (context) => {
+    const scope = await resolveWholesaleTenant(context)
+    if (!scope)
+      return context.json(
+        {
+          error: {
+            code: 'STATEMENT_ACCESS_DENIED',
+            message: 'Sign in and select an authorized business.',
+            requestId: context.get('requestId'),
+          },
+        },
+        403,
+      )
+    const parsed = wholesaleStatementQuerySchema.safeParse(context.req.query())
+    if (!parsed.success)
+      return context.json(
+        {
+          error: {
+            code: 'INVALID_STATEMENT_FILTERS',
+            message: 'Choose a valid as-of date, customer, and location.',
+            requestId: context.get('requestId'),
+          },
+        },
+        400,
+      )
+    try {
+      return context.json(
+        wholesaleStatementSchema.parse(
+          await dependencies.loadWholesaleStatement(scope.userId, scope.tenantId, parsed.data, context.env),
+        ),
+      )
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code?.startsWith('HCSD'))
+        return context.json(
+          {
+            error: {
+              code: 'STATEMENT_SCOPE_ERROR',
+              message: 'Statement access or filters are unavailable.',
+              requestId: context.get('requestId'),
+            },
+          },
+          code === 'HCSD0' ? 403 : code === 'HCSD2' ? 404 : 400,
+        )
+      const denied = receivableError(context, error)
+      if (denied) return denied
+      throw error
+    }
+  })
   app.get('/v1/wholesale/receivables', async (context) => {
     const resolved = await resolveWholesaleTenant(context)
     if (!resolved)

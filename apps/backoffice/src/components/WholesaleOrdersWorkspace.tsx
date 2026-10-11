@@ -335,6 +335,10 @@ export function WholesaleOrdersWorkspace() {
         <Check size={18} />
         Approval history
       </Link>
+      <Link href="/wholesale/statements" className="inline-flex items-center gap-2 text-sm">
+        <Printer size={18} />
+        Statements and aging
+      </Link>
       {error ? <div className="border-l-2 border-red-600 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
       {pendingPaid && (
         <div className="flex flex-wrap items-center gap-3 border-l-2 border-amber-500 bg-amber-50 p-3">
