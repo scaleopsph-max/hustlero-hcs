@@ -2,7 +2,7 @@
 
 import { selectActiveTenant } from '@/lib/active-tenant'
 import { createClient } from '@/lib/supabase-browser'
-import { prepareWholesalePayment, paymentMoneyInput } from '@/lib/wholesale-payment'
+import { prepareWholesalePayment, paymentMoneyInput, paymentRejectedBeforePosting } from '@/lib/wholesale-payment'
 import {
   sessionContextResponseSchema,
   wholesalePaymentsContextSchema,
@@ -165,7 +165,7 @@ export function WholesalePaymentsWorkspace() {
         wholesalePaymentsContextSchema.parse(await call('/v1/wholesale/payments', await token(), scope.tenant)),
       )
     } catch (cause) {
-      if (cause instanceof PaymentRequestError && /^WHOLESALE_PAYMENT_HCAP[1-5]$/.test(cause.code)) {
+      if (cause instanceof PaymentRequestError && paymentRejectedBeforePosting(cause.code)) {
         sessionStorage.removeItem(storageKey(scope.tenant, scope.user))
         setPending(null)
       }

@@ -14,6 +14,11 @@ export function paymentMoneyInput(minor: number): string {
   return `${cents / 100n}.${String(cents % 100n).padStart(2, '0')}`
 }
 
+export function paymentRejectedBeforePosting(code: string): boolean {
+  // Authorization failures also apply to completed replay, so they cannot prove a payment did not post.
+  return /^WHOLESALE_PAYMENT_HCAP[245]$/.test(code)
+}
+
 export function prepareWholesalePayment(
   context: WholesalePaymentsContext,
   customerId: string,

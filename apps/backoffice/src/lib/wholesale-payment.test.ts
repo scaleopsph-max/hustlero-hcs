@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { wholesalePaymentsContextSchema, type WholesalePaymentsContext } from '@hcs/contracts'
-import { parsePaymentMoney, prepareWholesalePayment, paymentMoneyInput } from './wholesale-payment'
+import {
+  parsePaymentMoney,
+  prepareWholesalePayment,
+  paymentMoneyInput,
+  paymentRejectedBeforePosting,
+} from './wholesale-payment'
 
 const customerId = '10000000-0000-4000-8000-000000000001'
 const invoiceId = '20000000-0000-4000-8000-000000000001'
@@ -27,6 +32,14 @@ const context: WholesalePaymentsContext = {
   ],
 }
 describe('wholesale payment entry', () => {
+  it.each(['WHOLESALE_PAYMENT_HCAP1', 'WHOLESALE_PAYMENT_HCAP3', 'IDEMPOTENCY_KEY_CONFLICT', 'UNKNOWN'])(
+    'retains retry identity after potentially completed outcome %s',
+    (code) => expect(paymentRejectedBeforePosting(code)).toBe(false),
+  )
+  it.each(['WHOLESALE_PAYMENT_HCAP2', 'WHOLESALE_PAYMENT_HCAP4', 'WHOLESALE_PAYMENT_HCAP5'])(
+    'allows correction only after definitive rejection %s',
+    (code) => expect(paymentRejectedBeforePosting(code)).toBe(true),
+  )
   it('restores exact maximum safe minor units without floating point rounding', () =>
     expect(paymentMoneyInput(Number.MAX_SAFE_INTEGER)).toBe('90071992547409.91'))
   it.each([
