@@ -331,6 +331,10 @@ export function WholesaleOrdersWorkspace() {
 
   return (
     <div className="grid gap-4">
+      <Link href="/wholesale/credit" className="inline-flex items-center gap-2 text-sm">
+        <Save size={18} />
+        Terms and credit
+      </Link>
       <Link href="/wholesale/approvals" className="inline-flex items-center gap-2 text-sm">
         <Check size={18} />
         Approval history
