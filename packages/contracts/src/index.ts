@@ -1,3 +1,4 @@
+export { wholesaleSettlementReportSchema, type WholesaleSettlementReport } from './wholesale-settlement'
 export {
   wholesalePaymentTermSchema,
   wholesalePaymentsContextSchema,

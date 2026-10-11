@@ -263,6 +263,8 @@ import {
 } from './loyalty-repository'
 import {
   loadDashboardFromPostgres,
+  loadWholesaleSettlementFromPostgres,
+  type WholesaleSettlementLoader,
   loadInventoryReportFromPostgres,
   loadSalesReportFromPostgres,
   loadShiftReportFromPostgres,
@@ -461,6 +463,7 @@ interface AppDependencies {
   updateLoyaltyPolicy: LoyaltyPolicyUpdater
   loadDashboard: DashboardLoader
   loadSalesReport: SalesReportLoader
+  loadWholesaleSettlement: WholesaleSettlementLoader
   loadInventoryReport: InventoryReportLoader
   loadShiftReport: ShiftReportLoader
   loadAlertCenter: AlertCenterLoader
@@ -560,6 +563,7 @@ const defaultDependencies: AppDependencies = {
   updateLoyaltyPolicy: updateLoyaltyPolicyInPostgres,
   loadDashboard: loadDashboardFromPostgres,
   loadSalesReport: loadSalesReportFromPostgres,
+  loadWholesaleSettlement: loadWholesaleSettlementFromPostgres,
   loadInventoryReport: loadInventoryReportFromPostgres,
   loadShiftReport: loadShiftReportFromPostgres,
   loadAlertCenter: loadAlertCenterFromPostgres,
@@ -4667,7 +4671,7 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
 
   const loadReport = async (
     context: Context<{ Bindings: Bindings }>,
-    loader: DashboardLoader | SalesReportLoader | InventoryReportLoader | ShiftReportLoader,
+    loader: DashboardLoader | SalesReportLoader | InventoryReportLoader | ShiftReportLoader | WholesaleSettlementLoader,
   ) => {
     const resolved = await resolvePurchasingTenant(context)
     if (!resolved)
@@ -4701,6 +4705,10 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
     try {
       return context.json(await loader(resolved.userId, resolved.tenantId, parsed.data, context.env))
     } catch (error) {
+      if (loader === dependencies.loadWholesaleSettlement) {
+        const response = receivableError(context, error)
+        if (response) return response
+      }
       return reportingError(context, error)
     }
   }
@@ -4709,6 +4717,7 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
   app.get('/v1/reports/sales', (context) => loadReport(context, dependencies.loadSalesReport))
   app.get('/v1/reports/inventory', (context) => loadReport(context, dependencies.loadInventoryReport))
   app.get('/v1/reports/shifts', (context) => loadReport(context, dependencies.loadShiftReport))
+  app.get('/v1/reports/wholesale-settlement', (context) => loadReport(context, dependencies.loadWholesaleSettlement))
 
   const controlError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
     const code = postgresErrorCode(error)

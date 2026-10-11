@@ -93,13 +93,21 @@ Execution verification passed in isolated CI `38063757985` for commit `6cda83c92
 
 ## Next database and service slice
 
+### Manual receipt settlement-report candidate (2026-10-11)
+
+GET `/v1/reports/wholesale-settlement` and Back Office `/wholesale/settlement` report Advanced Wholesale invoices and manually recorded receipt allocations only. Existing POS tender reports stay unchanged. Issued revenue and received money are distinct metrics; opening charges never create another sale. Payment-method sums count allocations once and distinct receipts once. A location filter includes only the payment portions allocated to that location's invoices.
+
+Period receipts use receipt `recorded_at`; issued invoices use `issued_at`. Classified closing receivables span every invoice before the exclusive cutoff, minus allocations recorded before that cutoff, and require a charge recorded before it. Unknown classification is reported separately rather than silently becoming a complete zero balance. The existing tenant-reporting timezone defines local midnight; the cutoff is capped at the generation statement time for unfinished/future periods. This report is not a provider settlement confirmation or bank reconciliation.
+
+The reader requires owner access or both wholesale-order-read and reports-read permissions, with current membership/entitlement and tenant-scoped location validation. CSV labels are escaped against spreadsheet formula execution. Fund allocation remains user-confirmed and limited to actually settled money (PROJECT_SPEC 18.4 and finance rules); no fund entries, bank transfers, or inferred non-cash settlement are created by this report.
+
 ### Receipt history and payment screen candidate (2026-10-11)
 
 Migration `20261011013731` adds a private authorized payment-context reader, exposed through GET `/v1/wholesale/payments`. Receipt amounts, allocations, references, and timestamps come from immutable ledgers; customer/payment-method display names are current labels, not newly introduced legal receipt snapshots. Wholesale readers can view tenant history consistently with the existing receivables reader. Recording permission is separate, and per-invoice branch eligibility comes from the same server check as the write command.
 
 Back Office `/wholesale/payments` supports customer filtering, exact money entry, explicit invoice allocation, read-only access, and expandable receipt history. Unclassified invoices cannot accept allocations. Pending submissions preserve key/payload through reload in tenant-and-account-scoped session storage; known rejected commands unlock editing, while uncertain outcomes retain the same retry command. Client calculations do not replace database authorization or balance checks. This is not settlement/report integration or complete AW3 release.
 
-Synthetic desktop/mobile browser checks passed entry, uncertain response followed by reload/retry with identical request identity, receipt expansion, no page errors, and no document horizontal overflow. No real account or live payment was used. Complete database/application CI remains pending for this candidate.
+Synthetic desktop/mobile browser checks passed entry, uncertain response followed by reload/retry with identical request identity, receipt expansion, definitive rejection unlocking, read-only recording controls, no page errors, and no document horizontal overflow. No real account or live payment was used. CI `38102962836` verified commit `fc82f7f7112b0ad745b93d1b9a2faf8644dcef94`: full application verification with 255 tests, fresh database reset, 1,085 pgTAP assertions across 35 files, nine independent-session scenarios, and cleanup passed. Evidence: `../qa/AW3_PAYMENT_HISTORY_UI_CI_2026-10-11.md`. Authorization/scope failures retain the pending retry because they do not prove a receipt was never posted. Settlement, complete Staging UAT, and live deployment remain separate work.
 
 1. Add tenant-scoped customer credit configuration and immutable confirmation/fulfillment term snapshots. Resolve configuration on the server; do not apply later settings changes retroactively to confirmed commercial snapshots.
 2. Add append-only invoice charges, payments, and allocations. Preserve original invoices. Use composite tenant foreign keys, RLS, explicit revokes, narrow authorized command functions, idempotency, audit, and outbox records.

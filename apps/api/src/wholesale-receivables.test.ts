@@ -41,6 +41,31 @@ function setup(code?: string) {
     return creditResponse
   })
   const loadCredit = vi.fn(async () => ({ canManage: true, customers: [] }))
+  const loadSettlement = vi.fn(async () => {
+    if (code) throw Object.assign(new Error('Private settlement database details'), { code })
+    return {
+      scope: {
+        from: '2026-10-11',
+        to: '2026-10-11',
+        locationId: null,
+        timezone: 'Asia/Manila',
+        asOf: '2026-10-11T02:00:00Z',
+        generatedAt: '2026-10-11T02:00:00Z',
+      },
+      locations: [],
+      summary: {
+        issuedMinor: 0,
+        invoiceCount: 0,
+        recordedReceiptsMinor: 0,
+        receiptCount: 0,
+        openingChargesMinor: 0,
+        closingReceivablesMinor: 0,
+        unclassifiedCount: 0,
+        unclassifiedMinor: 0,
+      },
+      byPaymentMethod: [],
+    }
+  })
   const loadPayments = vi.fn(async () => {
     if (code) throw Object.assign(new Error('Private history database details'), { code })
     return { canRecord: false, invoices: [], paymentMethods: [], payments: [] }
@@ -85,6 +110,7 @@ function setup(code?: string) {
     commandWholesaleCreditOverride: overrideCommand,
     recordWholesalePayment: recordPayment,
     loadWholesalePayments: loadPayments,
+    loadWholesaleSettlement: loadSettlement,
     confirmWholesaleOrder: async () => {
       throw Object.assign(new Error('Private database details'), { code })
     },
@@ -92,7 +118,7 @@ function setup(code?: string) {
       throw Object.assign(new Error('Private database details'), { code })
     },
   })
-  return { app, record, load, saveCredit, loadCredit, overrideCommand, recordPayment, loadPayments }
+  return { app, record, load, saveCredit, loadCredit, overrideCommand, recordPayment, loadPayments, loadSettlement }
 }
 
 function headers(tenant = tenantId) {
@@ -103,6 +129,45 @@ function headers(tenant = tenantId) {
     'content-type': 'application/json',
   }
 }
+
+describe('wholesale settlement API', () => {
+  const path = '/v1/reports/wholesale-settlement?from=2026-10-11&to=2026-10-11&channel=wholesale'
+  it('forwards authorized scope and report filters', async () => {
+    const { app, loadSettlement } = setup()
+    const result = await app.request(path, { headers: headers() }, bindings)
+    expect(result.status).toBe(200)
+    expect(loadSettlement).toHaveBeenCalledWith(
+      userId,
+      tenantId,
+      { from: '2026-10-11', to: '2026-10-11', channel: 'wholesale', locationId: null },
+      bindings,
+    )
+  })
+  it('rejects foreign tenant before report read', async () => {
+    const { app, loadSettlement } = setup()
+    expect((await app.request(path, { headers: headers(invoiceId) }, bindings)).status).toBe(403)
+    expect(loadSettlement).not.toHaveBeenCalled()
+  })
+  it('rejects malformed report dates', async () => {
+    const { app, loadSettlement } = setup()
+    expect(
+      (await app.request(path.replace('from=2026-10-11', 'from=bad'), { headers: headers() }, bindings)).status,
+    ).toBe(400)
+    expect(loadSettlement).not.toHaveBeenCalled()
+  })
+  it.each([
+    ['HCSD0', 403],
+    ['HCSD1', 400],
+    ['HCSD2', 404],
+    ['HCSQ0', 403],
+    ['HCAR1', 403],
+  ])('sanitizes report rejection %s', async (code, status) => {
+    const { app } = setup(code as string)
+    const result = await app.request(path, { headers: headers() }, bindings)
+    expect(result.status).toBe(status)
+    expect(await result.text()).not.toContain('Private settlement')
+  })
+})
 
 describe('wholesale payments API', () => {
   it('loads history through authenticated server context', async () => {

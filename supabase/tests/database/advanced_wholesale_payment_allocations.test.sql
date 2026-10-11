@@ -115,6 +115,11 @@ select ok((select relrowsecurity from pg_class where oid='app.wholesale_payment_
 select ok(not has_table_privilege('hcs_hyperdrive','app.wholesale_payments','insert'),'direct payment insert denied');
 select ok(not has_function_privilege('authenticated','app.record_wholesale_payment(uuid,uuid,jsonb,text,text,text)','execute'),'browser payment execution denied');
 select throws_ok($$select pg_temp.payment(10000,'payment-unclassified-001')$$,'HCAP4','Invoice classification is required','unknown balance cannot be paid');
+create function pg_temp.settlement(p_from date default (now() at time zone 'Asia/Manila')::date,p_to date default (now() at time zone 'Asia/Manila')::date,p_location uuid default null) returns jsonb language sql as $$
+ select app.load_wholesale_settlement_report('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001',p_from,p_to,p_location);
+$$;
+select is((pg_temp.settlement()->'summary'->>'unclassifiedCount')::int,1,'unclassified debt is explicitly reported');
+select is((pg_temp.settlement()->'summary'->>'unclassifiedMinor')::bigint,180000::bigint,'unknown balance is not silently zeroed');
 select is((select count(*) from app.wholesale_payments),0::bigint,'classification failure rolls back payment header');
 insert into app.wholesale_legacy_invoices(tenant_id,invoice_id) select tenant_id,id from app.invoices;
 select app.record_wholesale_opening_receivable('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001',
@@ -144,6 +149,10 @@ select throws_ok($$select pg_temp.payment(10000,'payment-branch-denied-001')$$,'
 insert into app.employees(id,tenant_id,user_id,employee_code,display_name) values('7f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001','1f000000-0000-4000-8000-000000000001','PAY-001','Payment Actor');
 insert into app.employee_locations(tenant_id,employee_id,location_id) values('2f000000-0000-4000-8000-000000000001','7f000000-0000-4000-8000-000000000001','3f000000-0000-4000-8000-000000000001');
 select lives_ok($$select pg_temp.payment(10000,'payment-partial-001')$$,'partial payment recorded');
+select throws_ok($$select pg_temp.settlement()$$,'HCSD0','Reporting access is not allowed','wholesale read does not imply reports permission');
+insert into app.role_permissions(tenant_id,role_id,permission_code) values('2f000000-0000-4000-8000-000000000001','6f000000-0000-4000-8000-000000000001','reports.read');
+select is((pg_temp.settlement()->'summary'->>'closingReceivablesMinor')::bigint,440000::bigint,'partial receipt reduces closing debt');
+select is((pg_temp.settlement()->'summary'->>'issuedMinor')::bigint,450000::bigint,'partial receipt leaves issued revenue unchanged');
 select lives_ok($$select pg_temp.payment(10000,'payment-partial-001')$$,'partial payment retry replays');
 select is((select count(*) from app.wholesale_payments),1::bigint,'one receipt on replay');
 select is((select count(*) from app.wholesale_payment_allocations),1::bigint,'one allocation on replay');
@@ -183,5 +192,24 @@ delete from app.role_permissions where permission_code='wholesale_payments.recor
 select is((app.load_wholesale_payments('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->>'canRecord')::boolean,false,'reader history does not imply payment authority');
 select is(jsonb_array_length(app.load_wholesale_payments('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->'payments'),3,'authorized reader retains history');
 select throws_ok($$select app.load_wholesale_payments('1f000000-0000-4000-8000-000000000002','2f000000-0000-4000-8000-000000000001')$$,'HCAR1','Wholesale receivable access denied','foreign actor history denied');
+select ok(has_function_privilege('hcs_hyperdrive','app.load_wholesale_settlement_report(uuid,uuid,date,date,uuid)','execute'),'report narrow API grant');
+select ok(not has_function_privilege('authenticated','app.load_wholesale_settlement_report(uuid,uuid,date,date,uuid)','execute'),'no browser report execution');
+select is((pg_temp.settlement()->'summary'->>'recordedReceiptsMinor')::bigint,450000::bigint,'receipts aggregate allocations once');
+select is((pg_temp.settlement()->'summary'->>'receiptCount')::int,3,'multi-invoice receipt counted once');
+select is((pg_temp.settlement()->'summary'->>'issuedMinor')::bigint,450000::bigint,'no cash revenue duplication');
+select is((pg_temp.settlement()->'summary'->>'openingChargesMinor')::bigint,180000::bigint,'opening classification tracked separately');
+select is((pg_temp.settlement()->'summary'->>'closingReceivablesMinor')::bigint,0::bigint,'fully paid closing receivable is zero');
+select is((pg_temp.settlement()->'byPaymentMethod'->0->>'amountMinor')::bigint,450000::bigint,'cash method reconciles');
+select is((pg_temp.settlement('2020-01-01','2020-01-01')->'scope'->>'asOf')::timestamptz,'2020-01-01 16:00:00+00'::timestamptz,'tenant local midnight defines exclusive cutoff');
+select is((pg_temp.settlement('2020-01-01','2020-01-01')->'summary'->>'recordedReceiptsMinor')::bigint,0::bigint,'historical period excludes later receipts');
+select is((pg_temp.settlement('2020-01-01','2020-01-01')->'summary'->>'closingReceivablesMinor')::bigint,0::bigint,'historical closing excludes later invoices');
+select throws_ok($$select pg_temp.settlement('2026-10-12','2026-10-11')$$,'HCSD1','Reporting filters are invalid','reversed range denied');
+select throws_ok($$select pg_temp.settlement('2020-01-01','2026-01-01')$$,'HCSD1','Reporting filters are invalid','unbounded date range denied');
+select throws_ok($$select pg_temp.settlement('2026-10-11','2026-10-11','3f000000-0000-4000-8000-000000000002')$$,'HCSD2','Reporting location was not found','foreign location denied');
+insert into app.locations(id,tenant_id,code,name) values('3f000000-0000-4000-8000-000000000002','2f000000-0000-4000-8000-000000000001','EMPTY','Empty branch');
+select is((pg_temp.settlement((now() at time zone 'Asia/Manila')::date,(now() at time zone 'Asia/Manila')::date,'3f000000-0000-4000-8000-000000000002')->'summary'->>'recordedReceiptsMinor')::bigint,0::bigint,'location filter does not count unrelated receipt headers');
+select is((app.load_wholesale_settlement_report('1f000000-0000-4000-8000-000000000002','2f000000-0000-4000-8000-000000000002',(now() at time zone 'Asia/Manila')::date,(now() at time zone 'Asia/Manila')::date,null)->'summary'->>'issuedMinor')::bigint,0::bigint,'other tenant reports no foreign invoice');
+delete from app.role_permissions where permission_code='wholesale_orders.read';
+select throws_ok($$select pg_temp.settlement()$$,'HCAR1','Wholesale receivable access denied','reports alone do not authorize wholesale debt');
 select * from finish();
 rollback;
