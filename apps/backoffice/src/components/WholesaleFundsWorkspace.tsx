@@ -14,6 +14,7 @@ import { createClient } from '@/lib/supabase-browser'
 import { selectActiveTenant } from '@/lib/active-tenant'
 import { sessionContextResponseSchema } from '@hcs/contracts'
 import { parsePaymentMoney } from '@/lib/wholesale-payment'
+import { fundAllocationDefinitivelyRejected } from '@/lib/wholesale-funds'
 
 const api = process.env.NEXT_PUBLIC_API_URL
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -140,7 +141,7 @@ export function WholesaleFundsWorkspace() {
       )
     } catch (cause) {
       const code = (cause as { code?: string }).code
-      if (code === 'WHOLESALE_FUNDS_HCFD2' || code === 'WHOLESALE_FUNDS_HCFD3' || code === 'WHOLESALE_FUNDS_HCFD5') {
+      if (fundAllocationDefinitivelyRejected(code)) {
         sessionStorage.removeItem(scope.storage)
         setPending(null)
       }

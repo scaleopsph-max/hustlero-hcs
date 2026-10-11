@@ -2688,6 +2688,17 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
 
   const fundError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
     const code = postgresErrorCode(error)
+    if (code === 'HCAR1')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'WHOLESALE_FUNDS_ACCESS_DENIED',
+            message: 'Wholesale access is required.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        403,
+      )
     if (!code?.startsWith('HCFD')) return receivableError(context, error)
     const status = code === 'HCFD1' ? 403 : code === 'HCFD3' ? 404 : code === 'HCFD4' || code === 'HCFD5' ? 409 : 400
     const message =

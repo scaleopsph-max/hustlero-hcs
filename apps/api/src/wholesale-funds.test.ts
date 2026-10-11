@@ -79,6 +79,7 @@ describe('wholesale fund allocation', () => {
     ['HCFD3', 404],
     ['HCFD4', 409],
     ['HCFD5', 409],
+    ['HCAR1', 403],
   ])('sanitizes %s', async (code, status) => {
     const { app } = setup(String(code))
     const response = await app.request(
