@@ -1,4 +1,7 @@
 import {
+  wholesaleFundAllocationRequestSchema,
+  wholesaleFundAllocationResponseSchema,
+  wholesaleFundsContextSchema,
   approvalCenterSchema,
   approvalDecisionRequestSchema,
   approvalDecisionResponseSchema,
@@ -226,6 +229,10 @@ import {
   type WholesalePaymentsLoader,
   recordWholesaleOpeningReceivableInPostgres,
   recordWholesalePaymentInPostgres,
+  allocateWholesaleFundsInPostgres,
+  loadWholesaleFundsFromPostgres,
+  type WholesaleFundsAllocator,
+  type WholesaleFundsLoader,
   loadWholesaleCreditSettingsFromPostgres,
   loadWholesaleCreditOverridesFromPostgres,
   commandWholesaleCreditOverrideInPostgres,
@@ -408,6 +415,8 @@ interface AppDependencies {
   saveWholesaleCreditSettings: WholesaleCreditSettingsSaver
   recordWholesaleOpeningReceivable: WholesaleOpeningReceivableRecorder
   recordWholesalePayment: WholesalePaymentRecorder
+  allocateWholesaleFunds: WholesaleFundsAllocator
+  loadWholesaleFunds: WholesaleFundsLoader
   saveWholesaleOrderDraft: WholesaleOrderDraftSaver
   confirmWholesaleOrder: WholesaleOrderConfirmer
   cancelWholesaleOrder: WholesaleOrderCanceller
@@ -508,6 +517,8 @@ const defaultDependencies: AppDependencies = {
   saveWholesaleCreditSettings: saveWholesaleCreditSettingsInPostgres,
   recordWholesaleOpeningReceivable: recordWholesaleOpeningReceivableInPostgres,
   recordWholesalePayment: recordWholesalePaymentInPostgres,
+  allocateWholesaleFunds: allocateWholesaleFundsInPostgres,
+  loadWholesaleFunds: loadWholesaleFundsFromPostgres,
   saveWholesaleOrderDraft: saveWholesaleOrderDraftInPostgres,
   confirmWholesaleOrder: confirmWholesaleOrderInPostgres,
   cancelWholesaleOrder: cancelWholesaleOrderInPostgres,
@@ -2670,6 +2681,88 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
       )
     } catch (error) {
       const response = receivableError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
+  const fundError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
+    const code = postgresErrorCode(error)
+    if (!code?.startsWith('HCFD')) return receivableError(context, error)
+    const status = code === 'HCFD1' ? 403 : code === 'HCFD3' ? 404 : code === 'HCFD4' || code === 'HCFD5' ? 409 : 400
+    const message =
+      code === 'HCFD1'
+        ? 'Fund access is required.'
+        : code === 'HCFD3'
+          ? 'Receipt was not found.'
+          : code === 'HCFD4'
+            ? 'This receipt is already allocated.'
+            : code === 'HCFD5'
+              ? 'Complete basic fund setup first.'
+              : 'Confirm settled money and an exact receipt split.'
+    return context.json(
+      apiErrorResponseSchema.parse({
+        error: { code: `WHOLESALE_FUNDS_${code}`, message, requestId: context.get('requestId') },
+      }),
+      status,
+    )
+  }
+  app.get('/v1/wholesale/funds', async (context) => {
+    const scope = await resolveWholesaleTenant(context)
+    if (!scope)
+      return context.json(
+        {
+          error: {
+            code: 'FUND_ACCESS_DENIED',
+            message: 'Sign in and select an authorized business.',
+            requestId: context.get('requestId'),
+          },
+        },
+        403,
+      )
+    try {
+      return context.json(
+        wholesaleFundsContextSchema.parse(
+          await dependencies.loadWholesaleFunds(scope.userId, scope.tenantId, context.env),
+        ),
+      )
+    } catch (error) {
+      const response = fundError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+  app.post('/v1/wholesale/funds', async (context) => {
+    const command = await readWholesaleCommand(context)
+    const parsed = wholesaleFundAllocationRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!command || !parsed.success)
+      return context.json(
+        {
+          error: {
+            code: 'INVALID_FUND_ALLOCATION',
+            message: 'Provide an exact split, settlement confirmation, reference, reason, and Idempotency-Key.',
+            requestId: context.get('requestId'),
+          },
+        },
+        400,
+      )
+    try {
+      return context.json(
+        wholesaleFundAllocationResponseSchema.parse(
+          await dependencies.allocateWholesaleFunds(
+            command.userId,
+            command.tenantId,
+            parsed.data,
+            command.idempotencyKey,
+            await requestHash({ userId: command.userId, ...parsed.data }),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+        201,
+      )
+    } catch (error) {
+      const response = fundError(context, error)
       if (response) return response
       throw error
     }

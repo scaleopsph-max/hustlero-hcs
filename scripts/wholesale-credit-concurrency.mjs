@@ -452,6 +452,75 @@ try {
   console.log(
     'AW3 payment concurrency passed: identical multi-invoice receipt retry posts once; competing payments cannot over-allocate the remaining balance; paid debt releases credit without changing inventory.',
   )
+  await observer.query('select app.create_basic_fund_setup($1,$2,$3,$3,$3)', [actor, tenant, 'race-fund-setup-001'])
+  const fund = (client, receiptId, fundKey) =>
+    client.query('select app.allocate_wholesale_payment_funds($1,$2,$3::jsonb,$4,$4,$4) response', [
+      actor,
+      tenant,
+      JSON.stringify({
+        paymentId: receiptId,
+        capitalMinor: 400000,
+        operatingMinor: 200000,
+        settledConfirmed: true,
+        settlementReference: 'Physically settled test cash',
+        reason: 'Synthetic fund race allocation',
+      }),
+      fundKey,
+    ])
+  const paymentId = receipt.rows[0].response.paymentId
+  await first.query('begin')
+  const fundResult = await fund(first, paymentId, 'race-fund-replay-001')
+  const fundReplay = fund(second, paymentId, 'race-fund-replay-001')
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await fundReplay).rows[0].response, fundResult.rows[0].response)
+  assert.equal(
+    (
+      await observer.query('select count(*)::int count from app.wholesale_fund_allocations where tenant_id=$1', [
+        tenant,
+      ])
+    ).rows[0].count,
+    1,
+  )
+  assert.equal(
+    (await observer.query('select sum(amount)::text total from app.fund_ledger_entries where tenant_id=$1', [tenant]))
+      .rows[0].total,
+    '6000.00',
+  )
+  const secondReceipt = (
+    await observer.query('select id from app.wholesale_payments where tenant_id=$1 and amount=3000', [tenant])
+  ).rows[0].id
+  const allocateSecond = (client, fundKey) =>
+    client.query('select app.allocate_wholesale_payment_funds($1,$2,$3::jsonb,$4,$4,$4) response', [
+      actor,
+      tenant,
+      JSON.stringify({
+        paymentId: secondReceipt,
+        capitalMinor: 300000,
+        operatingMinor: 0,
+        settledConfirmed: true,
+        settlementReference: 'Physically settled test cash',
+        reason: 'Synthetic competing fund allocation',
+      }),
+      fundKey,
+    ])
+  await first.query('begin')
+  await allocateSecond(first, 'race-fund-winner-001')
+  const duplicateFund = allocateSecond(second, 'race-fund-loser-001').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await duplicateFund, 'HCFD4')
+  assert.equal(
+    (await observer.query('select sum(amount)::text total from app.fund_ledger_entries where tenant_id=$1', [tenant]))
+      .rows[0].total,
+    '9000.00',
+  )
+  console.log(
+    'AW3 fund concurrency passed: identical allocation retry posts once; competing receipt allocations cannot double-post funds.',
+  )
 } finally {
   await Promise.all(clients.map((client) => client.end()))
 }

@@ -209,6 +209,42 @@ select throws_ok($$select pg_temp.settlement('2026-10-11','2026-10-11','3f000000
 insert into app.locations(id,tenant_id,code,name) values('3f000000-0000-4000-8000-000000000002','2f000000-0000-4000-8000-000000000001','EMPTY','Empty branch');
 select is((pg_temp.settlement((now() at time zone 'Asia/Manila')::date,(now() at time zone 'Asia/Manila')::date,'3f000000-0000-4000-8000-000000000002')->'summary'->>'recordedReceiptsMinor')::bigint,0::bigint,'location filter does not count unrelated receipt headers');
 select is((app.load_wholesale_settlement_report('1f000000-0000-4000-8000-000000000002','2f000000-0000-4000-8000-000000000002',(now() at time zone 'Asia/Manila')::date,(now() at time zone 'Asia/Manila')::date,null)->'summary'->>'issuedMinor')::bigint,0::bigint,'other tenant reports no foreign invoice');
+create function pg_temp.funds(p_capital bigint default 6000,p_operating bigint default 4000,p_key text default 'fund-allocation-001',p_confirm boolean default true) returns jsonb language sql as $$
+ select app.allocate_wholesale_payment_funds('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001',
+ jsonb_build_object('paymentId',(select id from app.wholesale_payments where amount=100),'capitalMinor',p_capital,'operatingMinor',p_operating,
+ 'settledConfirmed',p_confirm,'settlementReference','Cash physically confirmed','reason','Confirmed test allocation'),p_key,p_capital::text||':'||p_operating::text,p_key);
+$$;
+select throws_ok($$select pg_temp.funds()$$,'HCFD1','Fund permission required','wholesale permission does not grant funds');
+update app.tenant_memberships set is_owner=true where tenant_id='2f000000-0000-4000-8000-000000000001';
+select throws_ok($$select pg_temp.funds()$$,'HCFD5','Basic funds required','missing funds rolls back');
+select lives_ok($$select app.create_basic_fund_setup('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001','fund-setup-test-001','fund-setup-test-001','fund-setup-test-001')$$,'basic funds prepared');
+select throws_ok($$select pg_temp.funds(6000,3999)$$,'HCFD2','Invalid fund allocation','split must equal receipt');
+select throws_ok($$select pg_temp.funds(6000,4000,'unsettled-fund-001',false)$$,'HCFD2','Invalid fund allocation','unsettled money denied');
+select throws_ok($$select pg_temp.funds(-1,10001)$$,'HCFD2','Invalid fund allocation','negative share denied');
+select is((select count(*) from app.wholesale_fund_allocations),0::bigint,'denials do not post');
+select lives_ok($$select pg_temp.funds()$$,'confirmed exact split posts');
+select lives_ok($$select pg_temp.funds()$$,'identical retry succeeds');
+select is((select count(*) from app.wholesale_fund_allocations),1::bigint,'receipt allocated once');
+select is((select count(*) from app.fund_ledger_entries),2::bigint,'two nonzero shares');
+select is((select sum(amount) from app.fund_ledger_entries),100::numeric,'fund total equals received cash');
+select throws_ok($$select pg_temp.funds(5000,5000)$$,'HCS08','Idempotency key conflict','changed retry denied');
+select throws_ok($$select pg_temp.funds(6000,4000,'fund-new-key-001')$$,'HCFD4','Receipt already allocated','different key cannot double allocate');
+select is((app.load_wholesale_funds('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->>'canManage')::boolean,true,'owner fund authority exposed');
+select is((select sum((f->>'balanceMinor')::bigint) from jsonb_array_elements(app.load_wholesale_funds('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->'funds') f),10000::numeric,'derived fund balances reconcile');
+select throws_ok($$update app.wholesale_fund_allocations set reason='rewrite test'$$,'HCS90','Fund ledger entries are append-only','confirmation immutable');
+select throws_ok($$delete from app.fund_ledger_entries$$,'HCS90','Fund ledger entries are append-only','fund ledger immutable');
+select is((select sum(amount) from app.wholesale_payments),4500::numeric,'fund split does not change receipts');
+select is((select sum(total) from app.invoices),4500::numeric,'no revenue created by fund split');
+select is((select count(*) from app.cash_movements),0::bigint,'no bank or register transfer');
+select is((select count(*) from audit.audit_events where action='wholesale_funds.allocated'),1::bigint,'allocation audited once');
+select is((select count(*) from integration.event_outbox where topic='wholesale_funds.allocated'),1::bigint,'allocation outbox once');
+select ok(not has_table_privilege('authenticated','app.wholesale_fund_allocations','insert'),'browser cannot insert confirmation');
+select ok(not has_function_privilege('authenticated','app.allocate_wholesale_payment_funds(uuid,uuid,jsonb,text,text,text)','execute'),'browser cannot bypass API');
+select throws_ok($$select app.load_wholesale_funds('1f000000-0000-4000-8000-000000000002','2f000000-0000-4000-8000-000000000001')$$,'HCAR1','Wholesale receivable access denied','foreign actor fund history denied');
+select is(jsonb_array_length(app.load_wholesale_funds('1f000000-0000-4000-8000-000000000002','2f000000-0000-4000-8000-000000000002')->'payments'),0,'other tenant fund context cannot see receipts');
+select lives_ok($$select app.allocate_wholesale_payment_funds('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001',jsonb_build_object('paymentId',(select id from app.wholesale_payments where amount=150),'capitalMinor',15000,'operatingMinor',0,'settledConfirmed',true,'settlementReference','Cash confirmed','reason','Capital-only allocation'),'zero-share-test-001','zero-share-test-001','zero-share-test-001')$$,'zero operating share accepted');
+select is((select count(*) from app.fund_ledger_entries),3::bigint,'zero share creates no ledger entry');
+update app.tenant_memberships set is_owner=false where tenant_id='2f000000-0000-4000-8000-000000000001';
 delete from app.role_permissions where permission_code='wholesale_orders.read';
 select throws_ok($$select pg_temp.settlement()$$,'HCAR1','Wholesale receivable access denied','reports alone do not authorize wholesale debt');
 select * from finish();

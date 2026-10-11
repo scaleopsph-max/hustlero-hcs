@@ -378,3 +378,4 @@ export {
   type WholesaleCreditOverrideCommandResponse,
   type WholesaleCreditOverridesContext,
 } from './wholesale-credit-overrides'
+export * from './wholesale-funds'

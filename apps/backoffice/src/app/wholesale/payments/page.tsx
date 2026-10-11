@@ -14,6 +14,13 @@ export default function WholesalePaymentsPage() {
         <ReceiptText size={18} />
         Settlement report
       </Link>
+      <Link
+        href="/wholesale/funds"
+        className="mx-6 mb-6 inline-flex items-center gap-2 border-b border-ink-900/20 py-3 font-semibold"
+      >
+        <ReceiptText size={18} />
+        Fund allocation
+      </Link>
       <WholesalePaymentsWorkspace />
     </>
   )

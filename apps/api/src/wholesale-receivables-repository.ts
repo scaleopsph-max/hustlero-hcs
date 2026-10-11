@@ -1,4 +1,9 @@
 import {
+  wholesaleFundsContextSchema,
+  wholesaleFundAllocationResponseSchema,
+  type WholesaleFundAllocationRequest,
+  type WholesaleFundAllocationResponse,
+  type WholesaleFundsContext,
   wholesalePaymentsContextSchema,
   type WholesalePaymentsContext,
   wholesalePaymentAllocationResponseSchema,
@@ -23,6 +28,40 @@ import {
 import { Client } from 'pg'
 
 import type { Bindings } from './env'
+
+export type WholesaleFundsLoader = (
+  userId: string,
+  tenantId: string,
+  bindings: Bindings,
+) => Promise<WholesaleFundsContext>
+export type WholesaleFundsAllocator = (
+  userId: string,
+  tenantId: string,
+  request: WholesaleFundAllocationRequest,
+  key: string,
+  hash: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<WholesaleFundAllocationResponse>
+export const loadWholesaleFundsFromPostgres: WholesaleFundsLoader = (userId, tenantId, bindings) =>
+  query(bindings, 'select app.load_wholesale_funds($1::uuid,$2::uuid) response', [userId, tenantId], (value) =>
+    wholesaleFundsContextSchema.parse(value),
+  )
+export const allocateWholesaleFundsInPostgres: WholesaleFundsAllocator = (
+  userId,
+  tenantId,
+  request,
+  key,
+  hash,
+  requestId,
+  bindings,
+) =>
+  query(
+    bindings,
+    'select app.allocate_wholesale_payment_funds($1::uuid,$2::uuid,$3::jsonb,$4::text,$5::text,$6::text) response',
+    [userId, tenantId, JSON.stringify(request), key, hash, requestId],
+    (value) => wholesaleFundAllocationResponseSchema.parse(value),
+  )
 
 export type WholesalePaymentsLoader = (
   userId: string,

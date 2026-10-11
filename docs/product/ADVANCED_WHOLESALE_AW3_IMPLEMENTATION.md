@@ -2,7 +2,7 @@
 
 Date: 2026-10-10
 
-Status: Domain foundation, opening/settings APIs, credit enforcement, dedicated override approval persistence, and atomic consumption verified in isolated CI. Payment allocation, settlement integration, and UI remain incomplete. Staging/Production release has not occurred.
+Status: Domain foundation, opening/settings APIs, credit enforcement, scoped overrides, manual payment allocation/history, and settlement reporting verified in isolated CI. User-confirmed fund allocation is the current candidate. Complete AW3 Staging/Production release has not occurred.
 
 Source: `ADVANCED_WHOLESALE_BLUEPRINT.md`, ADR-038, ADR-039, ADR-041, and owner confirmations on 2026-10-10.
 
@@ -101,6 +101,8 @@ Period receipts use receipt `recorded_at`; issued invoices use `issued_at`. Clas
 
 The reader requires owner access or both wholesale-order-read and reports-read permissions, with current membership/entitlement and tenant-scoped location validation. CSV labels are escaped against spreadsheet formula execution. Fund allocation remains user-confirmed and limited to actually settled money (PROJECT_SPEC 18.4 and finance rules); no fund entries, bank transfers, or inferred non-cash settlement are created by this report.
 
+CI `38105206293` verified commit `839c183c94ff607f103544936778a03f2c3bb111`: both jobs passed full application verification with 274 unit tests, fresh migration reset, 1,107 pgTAP assertions across 35 files, nine independent-session scenarios, and cleanup. Synthetic browser checks passed separate invoice/receipt/closing values, classification warnings, exact CSV export, date/location filters, stale-report removal after failed refresh, desktop/mobile overflow, and page errors. Evidence: `../qa/AW3_SETTLEMENT_REPORT_CI_2026-10-11.md`. No live migration, deployment, financial command, or fund entry occurred.
+
 ### Receipt history and payment screen candidate (2026-10-11)
 
 Migration `20261011013731` adds a private authorized payment-context reader, exposed through GET `/v1/wholesale/payments`. Receipt amounts, allocations, references, and timestamps come from immutable ledgers; customer/payment-method display names are current labels, not newly introduced legal receipt snapshots. Wholesale readers can view tenant history consistently with the existing receivables reader. Recording permission is separate, and per-invoice branch eligibility comes from the same server check as the write command.
@@ -141,5 +143,15 @@ Before release, compare the pre-migration invoice count against the registered l
 Roll back API traffic to the previous immutable Worker version if necessary while leaving the additive schema and immutable charges intact. Never delete recorded debt to undo an application release. Database restore or a reviewed corrective migration follows the existing recovery runbook. This slice has no automatic down migration that destroys receivable truth.
 
 ## Release boundaries
+
+### User-confirmed wholesale funds candidate (2026-10-11)
+
+Migration `20261011031029` adds immutable `wholesale_fund_allocations` and authorized GET/POST `/v1/wholesale/funds`. Back Office `/wholesale/funds` is linked from Payments. The authorized user explicitly confirms the receipt is fully settled, provides a settlement reference/reason, and chooses exact Capital/COGS and Operating amounts. No percentage, COGS-derived recommendation, or automatic provider settlement is inferred. This first slice allocates a whole receipt once; a zero share creates no zero-value movement. Partial settlement/allocation and correction/reversal UI remain later work.
+
+The command derives receipt amount, accounts, tenant, actor, and time on the server. Wholesale access plus active ownership or `funds.manage` is required; reads require ownership or `funds.read`. Receipt locking, unique receipt classification, account locks, actor-bound request hashes, and idempotency prevent double-posting. Ledger entries, settlement attestation, audit, outbox, and replay record commit atomically. Current access is rechecked after lock waits. Fund balances are ledger-derived. No invoice revenue, inventory, customer debt, POS cash movement, payment receipt, or real bank transfer changes.
+
+The settlement confirmation is an operator attestation, not bank/provider proof. Non-cash money must be actually settled before the operator confirms it; selecting a payment method does not establish settlement. Existing receipts are not automatically allocated or backfilled. Pending browser commands preserve payload/key in user-and-tenant-scoped session storage through unknown outcomes and reload. Definitive validation/missing-receipt/missing-funds rejection releases editing; scope/authorization/unknown results retain retry identity.
+
+Local unit verification passed 289 cases. Synthetic browser checks passed exact split rejection, uncertain response/reload/retry identity, fund balances/history, read-only controls, and desktop/mobile overflow/page errors. Full database/CI verification is pending. Complete Staging UAT remains required before a separate Production release.
 
 The migration was applied only to a disposable CI database. No Staging/Production migration, Production balance change, real payment posting, Worker deployment, or real opening-entry execution has occurred. AW4 return/credit-note/refund behavior remains unavailable. The two PHP 2,250.00 invoices remain unpaid and unchanged until the explicit opening command is released and executed after complete validation.
