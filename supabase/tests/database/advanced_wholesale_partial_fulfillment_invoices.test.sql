@@ -291,5 +291,48 @@ select throws_ok($$select app.fulfill_wholesale_order('1f000000-0000-4000-8000-0
   'aw3-cod-fulfill-001','cod-fulfill','aw3-test')$$,'HCCR3','Full payment is required at fulfillment','COD cannot manufacture a payment');
 select is((select count(*) from app.invoices where tenant_id='2f000000-0000-4000-8000-000000000001'),2::bigint,'blocked COD leaves invoices unchanged');
 select is((select count(*) from app.sale_payments where tenant_id='2f000000-0000-4000-8000-000000000001'),0::bigint,'no fake cash payment');
+create function pg_temp.paid_cod(qty bigint, amount_minor bigint, command_key text, command_hash text default 'paid-test-hash') returns jsonb language sql as $$
+ select app.fulfill_wholesale_order_paid('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001',
+ (select id from app.sales_orders where order_number='SO-AW3-COD'),
+ jsonb_build_object('lines',jsonb_build_array(jsonb_build_object('salesOrderLineId',(select id from app.sales_order_lines where sales_order_id=(select id from app.sales_orders where order_number='SO-AW3-COD')),'quantityMilli',qty)),
+ 'payment',jsonb_build_object('paymentMethodId',(select id from app.payment_methods where tenant_id='2f000000-0000-4000-8000-000000000001' and method_type='cash'),'amountMinor',amount_minor,'reference','Synthetic received cash')),
+ command_key,command_hash,'paid-test-request');
+$$;
+select throws_ok($$select pg_temp.paid_cod(4000,179999,'paid-underpayment-001')$$,'HCSP3','Full exact invoice payment is required','underpayment rolls back');
+select throws_ok($$select pg_temp.paid_cod(4000,180001,'paid-overpayment-001')$$,'HCSP3','Full exact invoice payment is required','overpayment rolls back');
+select is((select count(*) from app.invoices),2::bigint,'payment mismatch leaves no new invoice');
+select is((select on_hand from app.inventory_balances),15::numeric,'payment mismatch leaves stock unchanged');
+select is((select reserved from app.inventory_balances),10::numeric,'payment mismatch preserves reservation');
+select lives_ok($$select pg_temp.paid_cod(4000,180000,'paid-partial-cod-001')$$,'COD partial delivery records exact full payment');
+select is((select count(*) from app.wholesale_payments),1::bigint,'one payment receipt recorded');
+select is((select sum(amount) from app.wholesale_payment_allocations),1800::numeric,'full allocation recorded');
+select is((select on_hand from app.inventory_balances),11::numeric,'paid delivery deducts stock once');
+select is((select reserved from app.inventory_balances),6::numeric,'remaining quantity stays reserved');
+select lives_ok($$select pg_temp.paid_cod(4000,180000,'paid-partial-cod-001')$$,'identical paid retry succeeds');
+select throws_ok($$select pg_temp.paid_cod(4000,180000,'paid-partial-cod-001','changed-hash')$$,'HCS08','Idempotency key conflict','changed paid retry rejected');
+select is((select count(*) from app.wholesale_payments),1::bigint,'retry never duplicates receipt');
+select is((select app.wholesale_invoice_open_balance(tenant_id,invoice_id) from app.wholesale_paid_fulfillments),0::numeric,'paid invoice has no remaining receivable');
+select is((select count(*) from app.wholesale_paid_fulfillments),1::bigint,'retry never duplicates mapping');
+update app.payment_methods set is_active=false where tenant_id='2f000000-0000-4000-8000-000000000001' and method_type='cash';
+select throws_ok($$select pg_temp.paid_cod(6000,270000,'paid-inactive-method-001')$$,'HCAP3','Payment scope is unavailable','inactive method rolls back the entire delivery');
+select is((select count(*) from app.invoices),3::bigint,'invalid method leaves invoices unchanged');
+select is((select on_hand from app.inventory_balances),11::numeric,'invalid method leaves stock unchanged');
+update app.payment_methods set is_active=true where tenant_id='2f000000-0000-4000-8000-000000000001' and method_type='cash';
+select pg_temp.aw3_settings('prepaid',1000000,'paid-new-prepaid-settings-001');
+select lives_ok($$select pg_temp.paid_cod(6000,270000,'paid-remaining-cod-001')$$,'remaining COD delivery settles despite later prepaid settings');
+select lives_ok($$select pg_temp.paid_cod(6000,270000,'paid-remaining-cod-001')$$,'paid retry works after order is fulfilled');
+select is((select sum(amount) from app.wholesale_payments),4500::numeric,'two partial receipts total full order');
+select is((select on_hand from app.inventory_balances),5::numeric,'full paid order deducts ten units');
+select is((select reserved from app.inventory_balances),0::numeric,'full paid order clears reservation');
+select is((select count(*) from audit.audit_events where action='wholesale_paid_fulfillment.completed'),2::bigint,'paid completions audited once each');
+select is((select count(*) from integration.event_outbox where topic='wholesale_paid_fulfillment.completed'),2::bigint,'paid completion events emitted once each');
+select ok((select bool_and(payment_term='cod') from app.wholesale_invoice_charges where sales_order_id=(select id from app.sales_orders where order_number='SO-AW3-COD')),'confirmed COD snapshot retained');
+select is((select count(*) from app.sale_payments),0::bigint,'paid fulfillment does not fabricate POS tender');
+select is((select count(*) from app.fund_ledger_entries),0::bigint,'paid fulfillment does not auto allocate funds');
+select throws_ok($$delete from app.wholesale_paid_fulfillments$$,'P0001','issued invoices are immutable','paid mappings append only');
+select ok((select relrowsecurity from pg_class where oid='app.wholesale_paid_fulfillments'::regclass),'paid mappings protected by RLS');
+select ok(not has_table_privilege('hcs_hyperdrive','app.wholesale_paid_fulfillments','select'),'API cannot read mappings directly');
+select ok(not has_function_privilege('authenticated','app.fulfill_wholesale_order_paid(uuid,uuid,uuid,jsonb,text,text,text)','execute'),'browser cannot call paid command directly');
+select throws_ok($$select app.fulfill_wholesale_order_paid('1f000000-0000-4000-8000-000000000002','2f000000-0000-4000-8000-000000000001',null,'{}','paid-foreign-actor-001','hash','request')$$,'HCSQ1','Wholesale order management is not allowed','foreign actor cannot fulfill');
 select * from finish();
 rollback;

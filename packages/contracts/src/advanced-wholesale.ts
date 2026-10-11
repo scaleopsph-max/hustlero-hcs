@@ -154,6 +154,13 @@ export const wholesaleOrderCancelResponseSchema = z.object({
 export const wholesaleOrderFulfillRequestSchema = z
   .object({
     creditOverrideId: id.optional(),
+    payment: z
+      .strictObject({
+        paymentMethodId: z.uuid(),
+        amountMinor: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+        reference: z.string().trim().min(1).max(100),
+      })
+      .optional(),
     lines: z
       .array(z.object({ salesOrderLineId: id, quantityMilli: z.number().int().positive() }))
       .min(1)
@@ -163,6 +170,9 @@ export const wholesaleOrderFulfillRequestSchema = z
   .refine((request) => new Set(request.lines.map((line) => line.salesOrderLineId)).size === request.lines.length, {
     message: 'Duplicate order lines are not allowed.',
     path: ['lines'],
+  })
+  .refine((request) => !request.payment || !request.creditOverrideId, {
+    message: 'Paid fulfillment cannot use a credit override.',
   })
 
 export const wholesaleOrderFulfillResponseSchema = z.object({

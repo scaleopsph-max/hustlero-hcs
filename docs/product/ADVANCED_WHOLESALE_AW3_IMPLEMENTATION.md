@@ -2,7 +2,7 @@
 
 Date: 2026-10-10
 
-Status: Domain foundation, opening/settings APIs, credit enforcement, scoped overrides, manual payment allocation/history, and settlement reporting verified in isolated CI. User-confirmed fund allocation is the current candidate. Complete AW3 Staging/Production release has not occurred.
+Status: Domain foundation, opening/settings APIs, credit enforcement, scoped overrides, manual payment allocation/history, settlement reporting, and user-confirmed fund allocation verified in isolated CI. Complete AW3 Staging/Production release has not occurred.
 
 Source: `ADVANCED_WHOLESALE_BLUEPRINT.md`, ADR-038, ADR-039, ADR-041, and owner confirmations on 2026-10-10.
 
@@ -144,6 +144,16 @@ Roll back API traffic to the previous immutable Worker version if necessary whil
 
 ## Release boundaries
 
+### Atomic prepaid/COD fulfillment candidate (2026-10-11)
+
+Migration `20261011035621` introduces `fulfill_wholesale_order_paid` behind the existing fulfillment endpoint. Explicit payment method, exact received amount, and reference are required. Each partial delivery must be paid in full for that delivery's invoice. The immutable confirmation payment-term snapshot determines prepaid/COD eligibility; later customer settings do not rewrite it. Confirmation still checks all confirmed exposure against available credit, as approved. Net-term and override paths are unchanged.
+
+The order/customer locks, invoice, inventory/reservation ledgers, charge, receipt, full invoice allocation, paid replay mapping, audit, outbox, and idempotency commit together. Wrong amount or inactive method rolls everything back. The new private mapping has tenant-composite foreign keys, RLS, no direct API/browser grants, and immutable rows. Current management, receivables, payment-recording, branch, and tenant access are required. Actor-bound hashes prevent sharing a replay between users. No automatic fund allocation, POS tender, register cash movement, or bank transfer is inferred.
+
+Back Office preserves paid command identity and payload in user-and-tenant-scoped session storage before sending. Uncertain/authentication failures retain that identity, including reload after the order has already been fulfilled; exact historical response is replayed. Explicit paid validation/term/amount rejection releases editing. Browser checks used entirely synthetic auth/API fixtures and verified lost-response replay, amount-mismatch unlock, read-only controls, desktop/mobile overflow, and no page errors. Database CI and complete Staging release/UAT remain separate gates.
+
+Roll back application traffic to a verified previous Worker version without deleting paid invoice/receipt truth. Do not restore the narrower invoice-charge term constraint after prepaid/COD charges exist. Use a reviewed compensating migration or recovery runbook; AW4 payment reversal/credit-note behavior remains separate.
+
 ### User-confirmed wholesale funds candidate (2026-10-11)
 
 Migration `20261011031029` adds immutable `wholesale_fund_allocations` and authorized GET/POST `/v1/wholesale/funds`. Back Office `/wholesale/funds` is linked from Payments. The authorized user explicitly confirms the receipt is fully settled, provides a settlement reference/reason, and chooses exact Capital/COGS and Operating amounts. No percentage, COGS-derived recommendation, or automatic provider settlement is inferred. This first slice allocates a whole receipt once; a zero share creates no zero-value movement. Partial settlement/allocation and correction/reversal UI remain later work.
@@ -153,5 +163,7 @@ The command derives receipt amount, accounts, tenant, actor, and time on the ser
 The settlement confirmation is an operator attestation, not bank/provider proof. Non-cash money must be actually settled before the operator confirms it; selecting a payment method does not establish settlement. Existing receipts are not automatically allocated or backfilled. Pending browser commands preserve payload/key in user-and-tenant-scoped session storage through unknown outcomes and reload. Definitive validation/missing-receipt/missing-funds rejection releases editing; scope/authorization/unknown results retain retry identity.
 
 Local unit verification passed 289 cases. Synthetic browser checks passed exact split rejection, uncertain response/reload/retry identity, fund balances/history, read-only controls, and desktop/mobile overflow/page errors. Full database/CI verification is pending. Complete Staging UAT remains required before a separate Production release.
+
+Final candidate `317244d30502075298064642bc2a489d9039194b` passed isolated CI `38108366556`: 297 unit tests, complete application/security/build checks, fresh Supabase reset, 1,136 pgTAP assertions across 35 files, eleven independent-session scenarios (including two fund races), and cleanup. Follow-up regressions release definitively rejected duplicate allocations while preserving uncertain/authorization retries; wholesale-access errors no longer claim only owners may use funds. Synthetic browser checks additionally verified duplicate rejection unlocks the form. Evidence: `../qa/AW3_FUND_ALLOCATION_CI_2026-10-11.md`. No live environment changed. Compensating fund correction/reversal remains separate; never delete or rewrite posted allocations to roll back a release.
 
 The migration was applied only to a disposable CI database. No Staging/Production migration, Production balance change, real payment posting, Worker deployment, or real opening-entry execution has occurred. AW4 return/credit-note/refund behavior remains unavailable. The two PHP 2,250.00 invoices remain unpaid and unchanged until the explicit opening command is released and executed after complete validation.

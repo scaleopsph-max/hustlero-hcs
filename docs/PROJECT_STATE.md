@@ -1,6 +1,10 @@
 # Project State
 
-Last updated: 2026-10-10
+Last updated: 2026-10-11
+
+## Current increment: atomic prepaid/COD fulfillment
+
+Local feature-branch candidate `20261011035621` adds exact full receipt per prepaid/COD delivery, atomic invoice/stock/payment allocation, immutable replay mapping, and Back Office pending-command recovery. Locked confirmation credit exposure remains unchanged; no separate inventory pool or automatic fund movement. Synthetic browser checks passed committed-lost-response reload/retry with the same key/body, definite mismatch unlock, read-only controls, and desktop/mobile overflow/page-error checks. Full local checks and disposable migration/pgTAP/concurrency CI are being verified; not yet a Staging/Production release. Prior fund candidate `317244d` passed CI `38108366556` (297 unit tests, 1,136 pgTAP assertions, eleven independent-session scenarios). No real invoice, payment, Production secret, or live deployment changes in this increment.
 
 ## Phase
 
@@ -315,7 +319,11 @@ Settlement-report verification subsequently passed in isolated CI `38105206293` 
 
 The user-confirmed fund-allocation candidate adds migration `20261011031029`, GET/POST `/v1/wholesale/funds`, and `/wholesale/funds`. Operators attest actual full settlement with reference/reason and manually select an exact split into Capital/COGS and Operating; no preset percentages or bank/provider confirmation is inferred. One receipt can be allocated once, with immutable confirmation and nonzero fund movements, atomic audit/outbox/idempotency, receipt locking, and current fund/wholesale permissions. No live receipts are backfilled and no revenue, stock, customer debt, POS cash, or bank transfer changes. The full unit run passed 289 tests; synthetic desktop/mobile browser checks passed split rejection, uncertain reload/retry identity, balances/history, read-only authority, and layout/page-error checks. Complete local/database/CI verification is pending. Partial allocation and fund correction/reversal UI are outside this first candidate.
 
-Next after fund verification: prepaid/COD atomic paid fulfillment, approval status/history, and Back Office statements/aging UI. Validate complete AW3 in Staging before a separate Production release. Payment versus confirmation/opening and cancellation races remain required as affected commands are completed. AW4 returns/credits and Online Store remain later slices. No live environment has received any AW3 migration or command.
+Fund-allocation verification subsequently passed in isolated CI `38108366556` for commit `317244d30502075298064642bc2a489d9039194b`: both jobs passed full application/security/build verification with 297 unit tests, fresh reset, 1,136 pgTAP assertions across 35 files, eleven independent-session scenarios, and cleanup. The two new fund races verify identical retries post once and competing commands cannot allocate a receipt twice. Definitive duplicate rejection releases browser editing; unknown/authorization results retain retry identity. Synthetic browser checks passed this follow-up as well. Evidence: `docs/qa/AW3_FUND_ALLOCATION_CI_2026-10-11.md`. No live migration, receipt, fund entry, or deployment occurred.
+
+Prepaid/COD candidate local `npm run check` passed with 322 unit tests across sixteen files, secret scan, format/lint/typechecks, standard builds, and Cloudflare dry-run/builds. Browser checks passed with entirely synthetic fixtures. Isolated fresh migration/pgTAP/concurrency CI is pending; no live environment changed.
+
+Next: complete prepaid/COD database verification, approval status/history, and Back Office statements/aging UI. Validate complete AW3 in Staging before a separate Production release. Payment versus confirmation/opening and cancellation races remain required as affected commands are completed. AW4 returns/credits and Online Store remain later slices. No live environment has received any AW3 migration or command.
 
 ## Production state
 

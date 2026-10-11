@@ -2329,6 +2329,22 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
 
   const wholesaleError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
     const code = postgresErrorCode(error)
+    if (code?.startsWith('HCSP'))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: `WHOLESALE_PAID_${code}`,
+            message:
+              code === 'HCSP2'
+                ? 'Paid fulfillment requires confirmed prepaid or COD terms.'
+                : code === 'HCSP3'
+                  ? 'Record the exact full invoice amount.'
+                  : 'Check paid fulfillment quantities, method, amount, and reference.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        code === 'HCSP1' ? 400 : 409,
+      )
     if (code?.startsWith('HCAP')) {
       const messages: Record<string, string> = {
         HCAP1: 'Wholesale payment-recording permission is required.',
@@ -3010,7 +3026,11 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
             salesOrderId,
             parsed.data,
             command.idempotencyKey,
-            await requestHash({ salesOrderId, ...parsed.data }),
+            await requestHash({
+              salesOrderId,
+              ...parsed.data,
+              ...(parsed.data.payment ? { userId: command.userId } : {}),
+            }),
             context.get('requestId'),
             context.env,
           ),

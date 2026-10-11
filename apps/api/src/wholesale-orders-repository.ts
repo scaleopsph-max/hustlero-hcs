@@ -174,14 +174,16 @@ export const fulfillWholesaleOrderInPostgres: WholesaleOrderFulfiller = (
 ) =>
   queryFunction(
     bindings,
-    request.creditOverrideId
-      ? 'select app.fulfill_wholesale_order_with_credit_override($1::uuid, $2::uuid, $3::uuid, $4::jsonb, $5::text, $6::text, $7::text, $8::uuid) response'
-      : 'select app.fulfill_wholesale_order($1::uuid, $2::uuid, $3::uuid, $4::jsonb, $5::text, $6::text, $7::text) response',
+    request.payment
+      ? 'select app.fulfill_wholesale_order_paid($1::uuid,$2::uuid,$3::uuid,$4::jsonb,$5::text,$6::text,$7::text) response'
+      : request.creditOverrideId
+        ? 'select app.fulfill_wholesale_order_with_credit_override($1::uuid, $2::uuid, $3::uuid, $4::jsonb, $5::text, $6::text, $7::text, $8::uuid) response'
+        : 'select app.fulfill_wholesale_order($1::uuid, $2::uuid, $3::uuid, $4::jsonb, $5::text, $6::text, $7::text) response',
     [
       userId,
       tenantId,
       salesOrderId,
-      JSON.stringify(request.lines),
+      JSON.stringify(request.payment ? request : request.lines),
       idempotencyKey,
       requestHash,
       requestId,

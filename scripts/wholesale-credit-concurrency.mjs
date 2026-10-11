@@ -521,6 +521,99 @@ try {
   console.log(
     'AW3 fund concurrency passed: identical allocation retry posts once; competing receipt allocations cannot double-post funds.',
   )
+  await observer.query('select app.save_wholesale_customer_credit_settings($1,$2,$3::jsonb,$4,$4,$4)', [
+    actor,
+    tenant,
+    JSON.stringify({
+      customerId: customer,
+      paymentTerm: 'prepaid',
+      creditLimitMinor: 900000,
+      reason: 'Disposable prepaid agreement',
+    }),
+    'race-paid-settings-001',
+  ])
+  async function paidOrder(number) {
+    const draft = await observer.query('select app.save_wholesale_order_draft($1,$2,$3::jsonb,$4,$4,$4) response', [
+      actor,
+      tenant,
+      JSON.stringify({
+        orderNumber: `PAID-${number}`,
+        customerId: customer,
+        locationId: location,
+        priceListId: price,
+        pricingType: 'wholesale',
+        notes: null,
+        lines: [{ variantId: variant, quantityMilli: 10000 }],
+      }),
+      `race-paid-draft-${number}`,
+    ])
+    const orderId = draft.rows[0].response.salesOrderId
+    await confirm(observer, orderId, `race-paid-confirm-${number}`)
+    const lineId = (
+      await observer.query('select id from app.sales_order_lines where tenant_id=$1 and sales_order_id=$2', [
+        tenant,
+        orderId,
+      ])
+    ).rows[0].id
+    return { orderId, lineId }
+  }
+  const paid = (client, order, key) =>
+    client.query('select app.fulfill_wholesale_order_paid($1,$2,$3,$4::jsonb,$5,$5,$5) response', [
+      actor,
+      tenant,
+      order.orderId,
+      JSON.stringify({
+        lines: [{ salesOrderLineId: order.lineId, quantityMilli: 10000 }],
+        payment: { paymentMethodId: method, amountMinor: 450000, reference: 'Synthetic prepaid receipt' },
+      }),
+      key,
+    ])
+  const prepaid = await paidOrder(1)
+  await first.query('begin')
+  const paidResult = await paid(first, prepaid, 'race-paid-replay-001')
+  const paidReplay = paid(second, prepaid, 'race-paid-replay-001')
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await paidReplay).rows[0].response, paidResult.rows[0].response)
+  const competingOrder = await paidOrder(2)
+  await first.query('begin')
+  await paid(first, competingOrder, 'race-paid-winner-001')
+  const paidLoser = paid(second, competingOrder, 'race-paid-loser-001').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await paidLoser, 'HCSQ6')
+  assert.equal(
+    (
+      await observer.query('select count(*)::int count from app.wholesale_paid_fulfillments where tenant_id=$1', [
+        tenant,
+      ])
+    ).rows[0].count,
+    2,
+  )
+  assert.equal(
+    (await observer.query('select count(*)::int count from app.wholesale_payments where tenant_id=$1', [tenant]))
+      .rows[0].count,
+    4,
+  )
+  assert.equal(
+    (
+      await observer.query('select on_hand::text,reserved::text from app.inventory_balances where tenant_id=$1', [
+        tenant,
+      ])
+    ).rows[0].on_hand,
+    '60.000',
+  )
+  assert.equal(
+    (await observer.query('select app.wholesale_credit_exposure($1,$2)::text exposure', [tenant, customer])).rows[0]
+      .exposure,
+    '0.00',
+  )
+  console.log(
+    'AW3 paid fulfillment concurrency passed: prepaid retry posts one invoice/receipt; competing deliveries cannot double deduct stock or create unpaid debt.',
+  )
 } finally {
   await Promise.all(clients.map((client) => client.end()))
 }

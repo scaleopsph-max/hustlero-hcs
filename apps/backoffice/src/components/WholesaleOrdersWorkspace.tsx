@@ -10,12 +10,16 @@ import {
   wholesaleOrderContextSchema,
   wholesaleOrderDraftResponseSchema,
   wholesaleOrderFulfillResponseSchema,
+  wholesaleOrderFulfillRequestSchema,
+  wholesalePaymentsContextSchema,
+  type WholesaleOrderFulfillRequest,
   type WholesaleOrderContext,
 } from '@hcs/contracts'
 import { Button, Chip, Glass, formatPeso } from '@hcs/ui'
 import { Ban, Check, FilePlus2, PackageCheck, Printer, Save, ShoppingCart } from 'lucide-react'
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef, type FormEvent } from 'react'
+import { preparePaidFulfillment, paidFulfillmentDefinitivelyRejected } from '@/lib/wholesale-paid-fulfillment'
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -28,7 +32,10 @@ async function call(path: string, token: string, tenantId: string, options: Requ
     headers: { Authorization: `Bearer ${token}`, 'X-Tenant-Id': tenantId, ...options.headers },
   })
   const data: unknown = await response.json()
-  if (!response.ok) throw new Error((data as { error?: { message?: string } }).error?.message ?? 'Request failed.')
+  if (!response.ok)
+    throw Object.assign(new Error((data as { error?: { message?: string } }).error?.message ?? 'Request failed.'), {
+      code: (data as { error?: { code?: string } }).error?.code,
+    })
   return data
 }
 
@@ -49,6 +56,18 @@ export function WholesaleOrdersWorkspace() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
   const [cancelReason, setCancelReason] = useState('')
   const [fulfillmentQuantities, setFulfillmentQuantities] = useState<Record<string, string>>({})
+  const [paidMode, setPaidMode] = useState(false),
+    [paymentMethod, setPaymentMethod] = useState(''),
+    [paymentAmount, setPaymentAmount] = useState(''),
+    [paymentReference, setPaymentReference] = useState('')
+  const [paymentMethods, setPaymentMethods] = useState<{ id: string; name: string }[]>([])
+  const [paidScope, setPaidScope] = useState<{ user: string; storage: string } | null>(null)
+  const [pendingPaid, setPendingPaid] = useState<{
+    orderId: string
+    key: string
+    payload: WholesaleOrderFulfillRequest
+  } | null>(null)
+  const fulfillmentLocked = useRef(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -79,8 +98,21 @@ export function WholesaleOrdersWorkspace() {
         if (!tenant) throw new Error('Create or select a business first.')
         setToken(nextToken)
         setTenantId(tenant.tenantId)
+        const storage = `hcs-paid-fulfillment:${sessionData.session.user.id}:${tenant.tenantId}`
+        setPaidScope({ user: sessionData.session.user.id, storage })
         const context = await load(nextToken, tenant.tenantId)
         setOrderNumber(nextWholesaleOrderNumber(context.orders.map((order) => order.orderNumber)))
+        const stored = sessionStorage.getItem(storage)
+        if (stored) {
+          const pending = JSON.parse(stored) as { orderId: string; key: string; payload: WholesaleOrderFulfillRequest }
+          if (!/^[A-Za-z0-9_-]{16,128}$/.test(pending.key) || !/^[0-9a-f-]{36}$/i.test(pending.orderId))
+            throw new Error('Invalid pending fulfillment identity.')
+          const payload = wholesaleOrderFulfillRequestSchema.parse(pending.payload)
+          if (!payload.payment) throw new Error('Invalid pending paid fulfillment.')
+          setPendingPaid({ ...pending, payload })
+          setSelectedOrderId(pending.orderId)
+          setPaidMode(true)
+        }
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : 'Could not load wholesale orders.')
       } finally {
@@ -211,7 +243,8 @@ export function WholesaleOrdersWorkspace() {
   }
 
   async function fulfillOrder() {
-    if (!token || !tenantId || !selectedOrder) return
+    if (!token || !tenantId || !selectedOrder || fulfillmentLocked.current) return
+    fulfillmentLocked.current = true
     const lines = selectedOrder.lines
       .map((line) => ({
         salesOrderLineId: line.id,
@@ -219,29 +252,71 @@ export function WholesaleOrdersWorkspace() {
       }))
       .filter((line) => Number.isInteger(line.quantityMilli) && line.quantityMilli > 0)
     if (!lines.length) {
-      setError('Enter at least one fulfillment quantity.')
-      return
+      if (!pendingPaid) {
+        setError('Enter at least one fulfillment quantity.')
+        fulfillmentLocked.current = false
+        return
+      }
     }
     setBusy(true)
     setError(null)
     setMessage(null)
     try {
+      let nextToken = token
+      let orderId = selectedOrder.id
+      let payload: WholesaleOrderFulfillRequest = { lines }
+      let commandKey = `wholesale-fulfill-${crypto.randomUUID()}`
+      if (paidMode || pendingPaid) {
+        if (!auth || !paidScope) throw new Error('Sign in to the original account.')
+        const { data: session, error: sessionError } = await auth.auth.getSession()
+        if (sessionError) throw sessionError
+        if (!session.session || session.session.user.id !== paidScope.user)
+          throw new Error('Sign in to the original account.')
+        nextToken = session.session.access_token
+        const pending = pendingPaid ?? {
+          orderId,
+          key: commandKey,
+          payload: preparePaidFulfillment(
+            selectedOrder,
+            fulfillmentQuantities,
+            paymentMethod,
+            paymentAmount,
+            paymentReference,
+          ),
+        }
+        sessionStorage.setItem(paidScope.storage, JSON.stringify(pending))
+        setPendingPaid(pending)
+        orderId = pending.orderId
+        commandKey = pending.key
+        payload = pending.payload
+      }
       const response = wholesaleOrderFulfillResponseSchema.parse(
-        await call(`/v1/wholesale/orders/${selectedOrder.id}/fulfill`, token, tenantId, {
+        await call(`/v1/wholesale/orders/${orderId}/fulfill`, nextToken, tenantId, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Idempotency-Key': `wholesale-fulfill-${crypto.randomUUID()}`,
+            'Idempotency-Key': commandKey,
           },
-          body: JSON.stringify({ lines }),
+          body: JSON.stringify(payload),
         }),
       )
+      if (payload.payment && paidScope) {
+        sessionStorage.removeItem(paidScope.storage)
+        setPendingPaid(null)
+        setPaymentAmount('')
+        setPaymentReference('')
+      }
       setFulfillmentQuantities({})
-      await load(token, tenantId)
+      await load(nextToken, tenantId)
       setMessage(`Invoice ${response.invoiceNumber} issued for ${formatPeso(response.totalMinor)}.`)
     } catch (cause) {
+      if (paidScope && paidFulfillmentDefinitivelyRejected((cause as { code?: string }).code)) {
+        sessionStorage.removeItem(paidScope.storage)
+        setPendingPaid(null)
+      }
       setError(cause instanceof Error ? cause.message : 'Could not fulfill the order.')
     } finally {
+      fulfillmentLocked.current = false
       setBusy(false)
     }
   }
@@ -257,6 +332,15 @@ export function WholesaleOrdersWorkspace() {
   return (
     <div className="grid gap-4">
       {error ? <div className="border-l-2 border-red-600 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
+      {pendingPaid && (
+        <div className="flex flex-wrap items-center gap-3 border-l-2 border-amber-500 bg-amber-50 p-3">
+          <span>Pending paid fulfillment. Original receipt and quantities are preserved.</span>
+          <Button disabled={busy || !data.canManage} onClick={fulfillOrder}>
+            <PackageCheck size={18} />
+            Retry paid fulfillment
+          </Button>
+        </div>
+      )}
       {message ? (
         <div className="border-l-2 border-emerald-600 bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div>
       ) : null}
@@ -361,6 +445,7 @@ export function WholesaleOrdersWorkspace() {
                             <span className="text-xs text-ink-500">{quantityText(remaining)} remaining</span>
                           </span>
                           <input
+                            disabled={busy || !!pendingPaid}
                             inputMode="decimal"
                             aria-label={`${line.productName} fulfillment quantity`}
                             value={fulfillmentQuantities[line.id] ?? ''}
@@ -376,6 +461,64 @@ export function WholesaleOrdersWorkspace() {
                         </label>
                       )
                     })}
+                    <fieldset disabled={busy || !!pendingPaid || !data.canManage} className="space-y-3 p-3">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={paidMode}
+                          onChange={(event) => {
+                            setPaidMode(event.target.checked)
+                            if (event.target.checked && token && tenantId)
+                              void call('/v1/wholesale/payments', token, tenantId)
+                                .then((value) =>
+                                  setPaymentMethods(wholesalePaymentsContextSchema.parse(value).paymentMethods),
+                                )
+                                .catch((cause) =>
+                                  setError(cause instanceof Error ? cause.message : 'Could not load payment methods.'),
+                                )
+                          }}
+                        />
+                        Record prepaid / COD payment
+                      </label>
+                      {paidMode && (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <label className="space-y-1">
+                            <span>Payment method</span>
+                            <select
+                              aria-label="Payment method"
+                              value={paymentMethod}
+                              onChange={(event) => setPaymentMethod(event.target.value)}
+                              className="w-full border border-ink-900/15 bg-white p-2"
+                            >
+                              <option value="">Select method</option>
+                              {paymentMethods.map((method) => (
+                                <option key={method.id} value={method.id}>
+                                  {method.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="space-y-1">
+                            <span>Received amount</span>
+                            <input
+                              value={paymentAmount}
+                              onChange={(event) => setPaymentAmount(event.target.value)}
+                              inputMode="decimal"
+                              className="w-full border border-ink-900/15 bg-white p-2"
+                            />
+                          </label>
+                          <label className="space-y-1 sm:col-span-2">
+                            <span>Payment reference</span>
+                            <input
+                              value={paymentReference}
+                              onChange={(event) => setPaymentReference(event.target.value)}
+                              maxLength={100}
+                              className="w-full border border-ink-900/15 bg-white p-2"
+                            />
+                          </label>
+                        </div>
+                      )}
+                    </fieldset>
                     <div className="flex justify-end p-3">
                       <Button disabled={!data.canManage || busy} onClick={fulfillOrder}>
                         <PackageCheck size={18} /> Issue invoice
