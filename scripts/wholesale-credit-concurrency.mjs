@@ -619,8 +619,8 @@ try {
   async function crossFixture(name, limit = 450000, legacy = false, quantityMilli = 10000) {
     const customerId = randomUUID()
     await observer.query(
-      "insert into app.customers(id,tenant_id,customer_number,full_name,email,customer_type,origin,created_by_user_id) values($1,$2,$3,$3,'cross@example.invalid','reseller','backoffice',$4)",
-      [customerId, tenant, name, actor],
+      "insert into app.customers(id,tenant_id,customer_number,full_name,email,customer_type,origin,created_by_user_id) values($1,$2,$3,$5,'cross@example.invalid','reseller','backoffice',$4)",
+      [customerId, tenant, name, actor, name],
     )
     await observer.query('select app.save_wholesale_customer_credit_settings($1,$2,$3::jsonb,$4,$4,$4)', [
       actor,
