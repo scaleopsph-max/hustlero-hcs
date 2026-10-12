@@ -201,6 +201,8 @@ select is(jsonb_array_length(app.load_wholesale_payments('1f000000-0000-4000-800
 select is((select sum((payment->>'amountMinor')::bigint) from jsonb_array_elements(app.load_wholesale_payments('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->'payments') payment),450000::numeric,'history receipt total reconciles');
 update app.employees set status='suspended';
 select ok(not exists(select 1 from jsonb_array_elements(app.load_wholesale_payments('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->'invoices') invoice where (invoice->>'canAllocate')::boolean),'no allocation offered without branch assignment');
+select is(jsonb_array_length(app.load_wholesale_payments('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->'payments'),0,'suspended branch reader cannot see receipts');
+update app.employees set status='active';
 delete from app.role_permissions where permission_code='wholesale_payments.record';
 select is((app.load_wholesale_payments('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->>'canRecord')::boolean,false,'reader history does not imply payment authority');
 select is(jsonb_array_length(app.load_wholesale_payments('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->'payments'),3,'authorized reader retains history');
@@ -220,7 +222,7 @@ select throws_ok($$select pg_temp.settlement('2026-10-12','2026-10-11')$$,'HCSD1
 select throws_ok($$select pg_temp.settlement('2020-01-01','2026-01-01')$$,'HCSD1','Reporting filters are invalid','unbounded date range denied');
 select throws_ok($$select pg_temp.settlement('2026-10-11','2026-10-11','3f000000-0000-4000-8000-000000000002')$$,'HCSD2','Reporting location was not found','foreign location denied');
 insert into app.locations(id,tenant_id,code,name) values('3f000000-0000-4000-8000-000000000002','2f000000-0000-4000-8000-000000000001','EMPTY','Empty branch');
-select is((pg_temp.settlement((now() at time zone 'Asia/Manila')::date,(now() at time zone 'Asia/Manila')::date,'3f000000-0000-4000-8000-000000000002')->'summary'->>'recordedReceiptsMinor')::bigint,0::bigint,'location filter does not count unrelated receipt headers');
+select throws_ok($$select pg_temp.settlement((now() at time zone 'Asia/Manila')::date,(now() at time zone 'Asia/Manila')::date,'3f000000-0000-4000-8000-000000000002')$$,'HCSD2','Reporting location was not found','non-owner cannot select an unassigned empty branch');
 select is((app.load_wholesale_settlement_report('1f000000-0000-4000-8000-000000000002','2f000000-0000-4000-8000-000000000002',(now() at time zone 'Asia/Manila')::date,(now() at time zone 'Asia/Manila')::date,null)->'summary'->>'issuedMinor')::bigint,0::bigint,'other tenant reports no foreign invoice');
 create function pg_temp.funds(p_capital bigint default 6000,p_operating bigint default 4000,p_key text default 'fund-allocation-001',p_confirm boolean default true) returns jsonb language sql as $$
  select app.allocate_wholesale_payment_funds('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001',
@@ -274,5 +276,34 @@ select is(jsonb_array_length(pg_temp.statement((statement_timestamp() at time zo
 select throws_ok($$select app.load_wholesale_statement('1f000000-0000-4000-8000-000000000002','2f000000-0000-4000-8000-000000000001',current_date)$$,'HCSD0','Reporting access is not allowed','foreign actor denied');
 select ok(not has_function_privilege('authenticated','app.load_wholesale_statement(uuid,uuid,date,uuid,uuid)','execute'),'statement not directly browser executable');
 select ok(has_function_privilege('hcs_hyperdrive','app.load_wholesale_statement(uuid,uuid,date,uuid,uuid)','execute'),'statement narrowly granted to API role');
+-- Move a read-only actor between branches without changing immutable invoices.
+insert into app.role_permissions(tenant_id,role_id,permission_code) values
+ ('2f000000-0000-4000-8000-000000000001','6f000000-0000-4000-8000-000000000001','wholesale_orders.read');
+update app.tenant_memberships set is_owner=false where tenant_id='2f000000-0000-4000-8000-000000000001';
+update app.employee_locations set location_id='3f000000-0000-4000-8000-000000000002'
+ where tenant_id='2f000000-0000-4000-8000-000000000001';
+select is(jsonb_array_length(app.list_wholesale_invoices('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')),0,'empty assigned branch cannot see main invoices');
+select is(jsonb_array_length(app.load_wholesale_receivables('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->'invoices'),0,'receivable context excludes unassigned branch');
+select is(jsonb_array_length(app.load_wholesale_order_context('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->'orders'),0,'order context excludes main orders');
+select is(jsonb_array_length(app.load_wholesale_order_context('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->'inventory'),0,'order context excludes main stock');
+select is(jsonb_array_length(app.load_wholesale_order_context('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->'locations'),1,'location choices limited to assigned branch');
+select is(jsonb_array_length(app.load_wholesale_payments('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')->'payments'),0,'main receipts hidden from empty branch');
+select is(jsonb_array_length(pg_temp.statement()->'invoices'),0,'statement invoices scoped even without filter');
+select is(jsonb_array_length(pg_temp.statement()->'entries'),0,'statement ledger entries scoped');
+select is((pg_temp.statement()->'summary'->>'unclassifiedMinor')::bigint,0::bigint,'statement unknown totals cannot leak other branch');
+select is((pg_temp.settlement()->'summary'->>'issuedMinor')::bigint,0::bigint,'settlement invoice totals scoped');
+select is((pg_temp.settlement()->'summary'->>'recordedReceiptsMinor')::bigint,0::bigint,'settlement receipts scoped');
+select is(jsonb_array_length(pg_temp.settlement()->'byPaymentMethod'),0,'payment-method report totals scoped');
+select throws_ok($$select pg_temp.statement((statement_timestamp() at time zone 'Asia/Manila')::date,null,'3f000000-0000-4000-8000-000000000001')$$,'HCSD2','Reporting scope was not found','explicit unassigned statement location denied');
+select throws_ok($$select pg_temp.settlement((statement_timestamp() at time zone 'Asia/Manila')::date,(statement_timestamp() at time zone 'Asia/Manila')::date,'3f000000-0000-4000-8000-000000000001')$$,'HCSD2','Reporting location was not found','explicit unassigned settlement location denied');
+update app.employee_locations set location_id='3f000000-0000-4000-8000-000000000001'
+ where tenant_id='2f000000-0000-4000-8000-000000000001';
+select is(jsonb_array_length(app.list_wholesale_invoices('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')),2,'assigned branch invoices visible');
+select is(jsonb_array_length(pg_temp.statement()->'entries'),7,'assigned branch retains two charges and five allocations');
+select is((pg_temp.settlement()->'summary'->>'recordedReceiptsMinor')::bigint,450000::bigint,'assigned branch report reconciles exactly');
+update app.locations set is_active=false where id='3f000000-0000-4000-8000-000000000001';
+select is(jsonb_array_length(app.list_wholesale_invoices('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')),0,'inactive branch fails closed for non-owner');
+update app.tenant_memberships set is_owner=true where tenant_id='2f000000-0000-4000-8000-000000000001';
+select is(jsonb_array_length(app.list_wholesale_invoices('1f000000-0000-4000-8000-000000000001','2f000000-0000-4000-8000-000000000001')),2,'owner retains historical inactive branch invoices');
 select * from finish();
 rollback;
