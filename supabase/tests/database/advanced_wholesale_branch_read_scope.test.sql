@@ -62,8 +62,8 @@ insert into app.role_permissions(tenant_id,role_id,permission_code)
 insert into app.membership_roles(tenant_id,user_id,role_id)
  select '2b000000-0000-4000-8000-000000000001',id,'5b000000-0000-4000-8000-000000000001'
  from auth.users where id in ('1b000000-0000-4000-8000-000000000002','1b000000-0000-4000-8000-000000000003');
-insert into app.customers(id,tenant_id,customer_number,full_name,customer_type,origin,created_by_user_id) values
- ('6b000000-0000-4000-8000-000000000001','2b000000-0000-4000-8000-000000000001','CUST-001','Shared Customer','reseller','backoffice','1b000000-0000-4000-8000-000000000001');
+insert into app.customers(id,tenant_id,customer_number,full_name,email,customer_type,origin,created_by_user_id) values
+ ('6b000000-0000-4000-8000-000000000001','2b000000-0000-4000-8000-000000000001','CUST-001','Shared Customer','branch-customer@example.invalid','reseller','backoffice','1b000000-0000-4000-8000-000000000001');
 insert into app.price_lists(id,tenant_id,code,name,pricing_type,created_by) values
  ('7b000000-0000-4000-8000-000000000001','2b000000-0000-4000-8000-000000000001','WHOLESALE','Wholesale','wholesale','1b000000-0000-4000-8000-000000000001');
 do $$
