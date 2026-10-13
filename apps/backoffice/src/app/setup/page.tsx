@@ -10,10 +10,12 @@ import {
   sessionContextResponseSchema,
   tenantBootstrapResponseSchema,
   type OnboardingResponse,
+  type TenantAccess,
 } from '@hcs/contracts'
 import { saveActiveTenant, selectActiveTenant } from '@/lib/active-tenant'
 import { businessSlugFromName } from '@/lib/business-slug'
 import { resolveRecoveryMfa } from '@/lib/recovery-mfa'
+import { resolveSetupLanding } from '@/lib/setup-landing'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
@@ -78,6 +80,8 @@ export default function SetupPage() {
   const [recoveryMfaRequired, setRecoveryMfaRequired] = useState<boolean | null>(null)
   const [recoveryMfaVerified, setRecoveryMfaVerified] = useState(false)
   const [businesses, setBusinesses] = useState<Business[]>([])
+  const [activeMembership, setActiveMembership] = useState<TenantAccess | null>(null)
+  const [businessesLoaded, setBusinessesLoaded] = useState(false)
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null)
   const [onboarding, setOnboarding] = useState<OnboardingResponse | null>(null)
   const [name, setName] = useState('')
@@ -99,15 +103,24 @@ export default function SetupPage() {
   const [error, setError] = useState<string | null>(null)
 
   const loadBusinesses = useCallback(async (accessToken: string) => {
+    setBusinessesLoaded(false)
     const data = sessionContextResponseSchema.parse(await apiRequest('/v1/me', accessToken))
     const owned = data.tenants.filter((item) => item.isOwner)
+    setActiveMembership(selectActiveTenant(data.tenants) ?? null)
     setBusinesses(owned)
     setSelectedTenantId((current) =>
       current && owned.some((item) => item.tenantId === current)
         ? current
         : (selectActiveTenant(owned)?.tenantId ?? null),
     )
+    setBusinessesLoaded(true)
   }, [])
+
+  const memberDestination = resolveSetupLanding(activeMembership, mode === 'update-password')
+
+  useEffect(() => {
+    if (user && businessesLoaded && memberDestination) window.location.replace(memberDestination)
+  }, [user, businessesLoaded, memberDestination])
 
   const loadOnboardingStatus = useCallback(async (accessToken: string, tenantId: string) => {
     const data = onboardingResponseSchema.parse(
@@ -155,6 +168,8 @@ export default function SetupPage() {
       setToken(session?.access_token ?? null)
       if (!session) {
         setBusinesses([])
+        setActiveMembership(null)
+        setBusinessesLoaded(false)
         setSelectedTenantId(null)
         setOnboarding(null)
       }
@@ -432,6 +447,13 @@ export default function SetupPage() {
             </p>
           ) : null}
 
+          {!loading && user && mode !== 'update-password' && (!businessesLoaded || memberDestination) ? (
+            <p role="status" className="flex items-center gap-2 text-sm">
+              <Loader2 size={18} className="animate-spin" />
+              {memberDestination ? 'Opening business' : 'Loading businesses'}
+            </p>
+          ) : null}
+
           {!loading && auth && (!user || mode === 'update-password') ? (
             <>
               <h1 className="font-display text-3xl font-bold">
@@ -570,7 +592,7 @@ export default function SetupPage() {
             </>
           ) : null}
 
-          {user && mode !== 'update-password' && !selectedTenantId ? (
+          {user && businessesLoaded && !memberDestination && mode !== 'update-password' && !selectedTenantId ? (
             <>
               <h1 className="font-display text-3xl font-bold">Create your business</h1>
               <p className="mt-2 text-sm text-ink-500">
@@ -640,7 +662,7 @@ export default function SetupPage() {
             </>
           ) : null}
 
-          {user && mode !== 'update-password' && selectedTenantId ? (
+          {user && businessesLoaded && !memberDestination && mode !== 'update-password' && selectedTenantId ? (
             <>
               <h1 className="font-display text-3xl font-bold">
                 {businesses.find((item) => item.tenantId === selectedTenantId)?.tenantName ?? 'Business setup'}

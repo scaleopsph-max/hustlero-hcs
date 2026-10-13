@@ -1,4 +1,4 @@
-import { Calendar, ChevronDown, Layers, MapPin, type LucideIcon } from 'lucide-react'
+import { Calendar, ChevronDown, Layers, MapPin, UserRound, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Glass } from '@hcs/ui'
 import { NotificationBell } from './NotificationBell'
@@ -49,15 +49,14 @@ export function Topbar({
           : null}
         {actions}
         <NotificationBell />
-        <div className="ml-0.5 flex items-center gap-2.5 sm:ml-1.5">
-          <span className="flex size-10 items-center justify-center rounded-full bg-ink-900 text-sm font-bold text-gold-300">
-            AR
-          </span>
-          <div className="hidden flex-col xl:flex">
-            <span className="text-sm font-semibold">Ana Reyes</span>
-            <span className="text-xs text-ink-500">Owner</span>
-          </div>
-        </div>
+        <span
+          role="img"
+          aria-label="Account"
+          title="Account"
+          className="ml-0.5 flex size-10 flex-none items-center justify-center rounded-full bg-ink-900 text-gold-300 sm:ml-1.5"
+        >
+          <UserRound size={20} aria-hidden="true" />
+        </span>
       </div>
     </Glass>
   )
