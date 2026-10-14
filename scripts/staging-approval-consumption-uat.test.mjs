@@ -172,14 +172,14 @@ test('transport rejects Production, arbitrary orders and enlarged credit excepti
       path: '/v1/wholesale/orders',
       method: 'POST',
       body: { ...rollbackDraft, orderNumber: 'other' },
-      idempotencyKey: 'uat-approval-scope-20261013-draft-a',
+      idempotencyKey: 'uat-approval-scope-r2-20261013-draft-a',
     }),
   )
   await request({
     path: '/v1/wholesale/orders',
     method: 'POST',
     body: { ...rollbackDraft, orderNumber: approvalPlan.names[0], notes: approvalPlan.reason },
-    idempotencyKey: 'uat-approval-scope-20261013-draft-a',
+    idempotencyKey: 'uat-approval-scope-r2-20261013-draft-a',
   })
   await assert.rejects(
     request({
@@ -192,7 +192,7 @@ test('transport rejects Production, arbitrary orders and enlarged credit excepti
         expiresAt: new Date(Date.now() + 30000).toISOString(),
         reason: approvalReason('a-main'),
       },
-      idempotencyKey: 'uat-approval-scope-20261013-a-main',
+      idempotencyKey: 'uat-approval-scope-r2-20261013-a-main',
     }),
   )
 })

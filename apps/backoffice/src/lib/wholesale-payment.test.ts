@@ -5,6 +5,9 @@ import {
   prepareWholesalePayment,
   paymentMoneyInput,
   paymentRejectedBeforePosting,
+  restoreWholesalePayment,
+  validateWholesalePaymentResponse,
+  validateWholesalePaymentReceipt,
 } from './wholesale-payment'
 
 const customerId = '10000000-0000-4000-8000-000000000001'
@@ -105,4 +108,94 @@ describe('wholesale payment entry', () => {
         ],
       }),
     ).toThrow())
+})
+
+describe('payment response and saved-command recovery', () => {
+  const secondInvoice = '20000000-0000-4000-8000-000000000002'
+  const command = {
+    key: 'wholesale-payment-10000000-0000-4000-8000-000000000001',
+    request: {
+      customerId,
+      paymentMethodId: methodId,
+      amountMinor: 10000,
+      reference: 'Synthetic receipt',
+      allocations: [
+        { invoiceId, amountMinor: 6000 },
+        { invoiceId: secondInvoice, amountMinor: 4000 },
+      ],
+    },
+  }
+  const response = {
+    paymentId: methodId,
+    customerId,
+    amountMinor: 10000,
+    allocationCount: 2,
+    recordedAt: '2026-10-14T04:00:00Z',
+  }
+  const receipt = {
+    paymentId: methodId,
+    customerId,
+    customerName: 'Synthetic reseller',
+    paymentMethodName: 'Cash',
+    amountMinor: 10000,
+    reference: 'Synthetic receipt',
+    recordedAt: response.recordedAt,
+    allocations: command.request.allocations.map((row) => ({ ...row, invoiceNumber: row.invoiceId })),
+  }
+  const posted = { ...context, payments: [receipt] }
+
+  it('preserves existing command identity/body through storage and accepts reordered receipt allocations', () => {
+    expect(restoreWholesalePayment(null)).toBeNull()
+    expect(restoreWholesalePayment(JSON.stringify(command))).toEqual(command)
+    expect(validateWholesalePaymentResponse(command, response)).toEqual(response)
+    expect(
+      validateWholesalePaymentReceipt(command, methodId, {
+        ...posted,
+        payments: [{ ...receipt, allocations: [...receipt.allocations].reverse() }],
+      }).paymentId,
+    ).toBe(methodId)
+  })
+  it.each([
+    '',
+    '{',
+    'null',
+    '[]',
+    '{}',
+    JSON.stringify({ ...command, key: 'bad' }),
+    JSON.stringify({ ...command, unknown: true }),
+    JSON.stringify({ ...command, request: { ...command.request, amountMinor: 10001 } }),
+  ])('blocks corrupt payment recovery without creating a new key: %s', (stored) => {
+    expect(() => restoreWholesalePayment(stored)).toThrow()
+  })
+  it.each([{ customerId: methodId }, { amountMinor: 10001 }, { allocationCount: 1 }])(
+    'rejects a schema-valid mismatched receipt response %j',
+    (change) => {
+      expect(() => validateWholesalePaymentResponse(command, { ...response, ...change })).toThrow('does not match')
+    },
+  )
+  it('does not clear pending recovery if receipt is absent from refreshed history', () => {
+    expect(() => validateWholesalePaymentReceipt(command, methodId, context)).toThrow('does not match')
+  })
+  it.each([
+    { paymentId: invoiceId },
+    { customerId: methodId },
+    { amountMinor: 10001 },
+    { reference: 'Other receipt' },
+    { allocations: [{ ...receipt.allocations[0]!, invoiceId: methodId }, receipt.allocations[1]!] },
+    {
+      allocations: [
+        { ...receipt.allocations[0]!, amountMinor: 5000 },
+        { ...receipt.allocations[1]!, amountMinor: 5000 },
+      ],
+    },
+    { allocations: [receipt.allocations[0]!, receipt.allocations[0]!] },
+    { allocations: [receipt.allocations[0]!] },
+  ])('rejects schema-valid wrong receipt/reference/allocations before recovery is cleared %j', (change) => {
+    expect(() =>
+      validateWholesalePaymentReceipt(command, methodId, {
+        ...posted,
+        payments: [{ ...receipt, ...change }],
+      }),
+    ).toThrow('does not match')
+  })
 })

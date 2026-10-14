@@ -60,7 +60,7 @@ export function createApiRequest(token, transport = fetch) {
   }
 }
 
-export async function runIsolationSuite(request, day) {
+export async function runIsolationSuite(request, day, onCase = () => {}) {
   assert.match(day, /^\d{4}-\d{2}-\d{2}$/)
   const evidence = []
   const check = async (name, input, expectedStatus, expectedCode, verify) => {
@@ -77,6 +77,7 @@ export async function runIsolationSuite(request, day) {
       status: result.status,
       ...(expectedCode ? { code: expectedCode, requestId: result.data.error.requestId } : {}),
     })
+    onCase(evidence.at(-1))
   }
   await check('Exact restricted identity', { path: '/v1/me' }, 200, null, validateTester)
   await check('Assigned-only wholesale context', { path: '/v1/wholesale/orders' }, 200, null, (data) => {

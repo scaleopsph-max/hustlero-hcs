@@ -6,11 +6,12 @@ import { fundPlan } from './staging-fund-recovery-uat.mjs'
 import { rollbackDraft, rollbackPlan } from './staging-paid-rollback-uat.mjs'
 
 export const approvalPlan = Object.freeze({
-  names: ['SO-AW3-SCOPE-A-20261013', 'SO-AW3-SCOPE-B-20261013'],
-  reason: 'Synthetic Staging approval consumption UAT; cancel orders and revoke approvals after tests',
+  names: ['SO-AW3-SCOPE-R2-A-20261013', 'SO-AW3-SCOPE-R2-B-20261013'],
+  reason:
+    'Synthetic Staging approval consumption retest R2; cancel confirmed A, retain inert draft B and revoke approvals after tests',
   excessMinor: 140000,
 })
-const key = (step) => `uat-approval-scope-20261013-${step}`
+const key = (step) => `uat-approval-scope-r2-20261013-${step}`
 const uuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
 const roles = ['a-main', 'a-action', 'b-expiring']
 export const approvalReason = (role) => `${approvalPlan.reason}: ${role}`

@@ -1,4 +1,50 @@
-import { wholesalePaymentAllocationRequestSchema, type WholesalePaymentsContext } from '@hcs/contracts'
+import { z } from 'zod'
+import {
+  wholesalePaymentAllocationRequestSchema,
+  wholesalePaymentAllocationResponseSchema,
+  type WholesalePaymentsContext,
+} from '@hcs/contracts'
+
+export const pendingWholesalePaymentSchema = z.strictObject({
+  key: z.string().regex(/^wholesale-payment-[a-f0-9-]{36}$/),
+  request: wholesalePaymentAllocationRequestSchema,
+})
+export type PendingWholesalePayment = z.infer<typeof pendingWholesalePaymentSchema>
+
+export function restoreWholesalePayment(stored: string | null): PendingWholesalePayment | null {
+  return stored === null ? null : pendingWholesalePaymentSchema.parse(JSON.parse(stored))
+}
+
+export function validateWholesalePaymentResponse(command: PendingWholesalePayment, value: unknown) {
+  const response = wholesalePaymentAllocationResponseSchema.parse(value)
+  if (
+    response.customerId !== command.request.customerId ||
+    response.amountMinor !== command.request.amountMinor ||
+    response.allocationCount !== command.request.allocations.length
+  )
+    throw new Error('Payment response does not match the pending request. Retry the original request.')
+  return response
+}
+
+export function validateWholesalePaymentReceipt(
+  command: PendingWholesalePayment,
+  paymentId: string,
+  context: WholesalePaymentsContext,
+) {
+  const receipt = context.payments.find((row) => row.paymentId === paymentId)
+  const expected = new Map(command.request.allocations.map((row) => [row.invoiceId, row.amountMinor]))
+  if (
+    !receipt ||
+    receipt.customerId !== command.request.customerId ||
+    receipt.amountMinor !== command.request.amountMinor ||
+    receipt.reference !== command.request.reference ||
+    receipt.allocations.length !== expected.size ||
+    new Set(receipt.allocations.map((row) => row.invoiceId)).size !== expected.size ||
+    receipt.allocations.some((row) => expected.get(row.invoiceId) !== row.amountMinor)
+  )
+    throw new Error('Recorded receipt does not match the pending request. Retry the original request.')
+  return receipt
+}
 
 export function parsePaymentMoney(value: string): number {
   const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(value.trim())

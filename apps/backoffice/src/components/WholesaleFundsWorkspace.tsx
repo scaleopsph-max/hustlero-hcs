@@ -5,8 +5,6 @@ import { ArrowLeft, Check } from 'lucide-react'
 import {
   wholesaleFundAllocationRequestSchema,
   wholesaleFundsContextSchema,
-  wholesaleFundAllocationResponseSchema,
-  type WholesaleFundAllocationRequest,
   type WholesaleFundsContext,
 } from '@hcs/contracts'
 import { formatPeso } from '@hcs/ui'
@@ -14,13 +12,18 @@ import { createClient } from '@/lib/supabase-browser'
 import { selectActiveTenant } from '@/lib/active-tenant'
 import { sessionContextResponseSchema } from '@hcs/contracts'
 import { parsePaymentMoney } from '@/lib/wholesale-payment'
-import { fundAllocationDefinitivelyRejected } from '@/lib/wholesale-funds'
+import {
+  fundAllocationDefinitivelyRejected,
+  restoreFundAllocation,
+  validateFundAllocationResponse,
+  type PendingFundAllocation,
+} from '@/lib/wholesale-funds'
 
 const api = process.env.NEXT_PUBLIC_API_URL
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL
 const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 const field = 'w-full min-w-0 rounded border border-ink-900/20 bg-white px-3 py-2'
-type Pending = { key: string; payload: WholesaleFundAllocationRequest }
+type Pending = PendingFundAllocation
 export function WholesaleFundsWorkspace() {
   const [auth] = useState(() => (url && key ? createClient(url, key) : null))
   const [scope, setScope] = useState<{ user: string; tenant: string; storage: string } | null>(null)
@@ -67,23 +70,22 @@ export function WholesaleFundsWorkspace() {
         const tenant = selectActiveTenant(access.tenants)
         if (!tenant) throw new Error('Select a business first.')
         const storage = `hcs-wholesale-funds:${session.session.user.id}:${tenant.tenantId}`
-        const stored = sessionStorage.getItem(storage)
+        const restored = restoreFundAllocation(sessionStorage.getItem(storage))
+        if (active) {
+          setScope({ user: session.session.user.id, tenant: tenant.tenantId, storage })
+          setPending(restored)
+        }
         const next = wholesaleFundsContextSchema.parse(
           await call('/v1/wholesale/funds', session.session.access_token, tenant.tenantId),
         )
         if (active) {
-          setScope({ user: session.session.user.id, tenant: tenant.tenantId, storage })
           setData(next)
-          if (stored) {
-            const parsed: unknown = JSON.parse(stored)
-            const value = parsed as Pending
-            if (typeof value.key !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(value.key))
-              throw new Error('Invalid pending allocation identity.')
-            setPending({ key: value.key, payload: wholesaleFundAllocationRequestSchema.parse(value.payload) })
-          }
         }
       } catch (cause) {
-        if (active) setError(cause instanceof Error ? cause.message : 'Could not load funds.')
+        if (active) {
+          setData(null)
+          setError(cause instanceof Error ? cause.message : 'Could not load funds.')
+        }
       } finally {
         if (active) setBusy(false)
       }
@@ -126,7 +128,8 @@ export function WholesaleFundsWorkspace() {
         sessionStorage.setItem(scope.storage, JSON.stringify(command))
         setPending(command)
       }
-      wholesaleFundAllocationResponseSchema.parse(
+      validateFundAllocationResponse(
+        command,
         await call('/v1/wholesale/funds', session.session.access_token, scope.tenant, command),
       )
       sessionStorage.removeItem(scope.storage)

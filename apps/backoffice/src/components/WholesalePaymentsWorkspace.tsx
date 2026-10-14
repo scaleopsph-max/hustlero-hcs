@@ -2,14 +2,19 @@
 
 import { selectActiveTenant } from '@/lib/active-tenant'
 import { createClient } from '@/lib/supabase-browser'
-import { prepareWholesalePayment, paymentMoneyInput, paymentRejectedBeforePosting } from '@/lib/wholesale-payment'
+import {
+  prepareWholesalePayment,
+  paymentMoneyInput,
+  paymentRejectedBeforePosting,
+  restoreWholesalePayment,
+  validateWholesalePaymentResponse,
+  validateWholesalePaymentReceipt,
+  type PendingWholesalePayment,
+} from '@/lib/wholesale-payment'
 import {
   sessionContextResponseSchema,
   wholesalePaymentsContextSchema,
-  wholesalePaymentAllocationRequestSchema,
-  wholesalePaymentAllocationResponseSchema,
   type WholesalePaymentsContext,
-  type WholesalePaymentAllocationRequest,
 } from '@hcs/contracts'
 import { formatPeso } from '@hcs/ui'
 import { ArrowLeft, RefreshCw, Save } from 'lucide-react'
@@ -20,7 +25,7 @@ const apiUrl = process.env.NEXT_PUBLIC_API_URL
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 const inputClass = 'w-full min-w-0 rounded border border-ink-900/20 bg-white px-3 py-2 disabled:opacity-60'
-type Pending = { key: string; request: WholesalePaymentAllocationRequest }
+type Pending = PendingWholesalePayment
 class PaymentRequestError extends Error {
   constructor(
     message: string,
@@ -81,31 +86,36 @@ export function WholesalePaymentsWorkspace() {
         const session = sessionContextResponseSchema.parse(await call('/v1/me', data.session.access_token, ''))
         const tenant = selectActiveTenant(session.tenants)
         if (!tenant) throw new Error('Select a business first.')
+        const restored = restoreWholesalePayment(
+          sessionStorage.getItem(storageKey(tenant.tenantId, data.session.user.id)),
+        )
+        if (active) {
+          setScope({ tenant: tenant.tenantId, user: data.session.user.id })
+          setPending(restored)
+          if (restored) {
+            const request = restored.request
+            setCustomer(request.customerId)
+            setMethod(request.paymentMethodId)
+            setAmount(paymentMoneyInput(request.amountMinor))
+            setReference(request.reference)
+            setAllocations(
+              Object.fromEntries(
+                request.allocations.map((item) => [item.invoiceId, paymentMoneyInput(item.amountMinor)]),
+              ),
+            )
+          }
+        }
         const next = wholesalePaymentsContextSchema.parse(
           await call('/v1/wholesale/payments', data.session.access_token, tenant.tenantId),
         )
         if (!active) return
-        setScope({ tenant: tenant.tenantId, user: data.session.user.id })
         setContext(next)
-        setMethod(next.paymentMethods[0]?.id ?? '')
-        const saved = sessionStorage.getItem(storageKey(tenant.tenantId, data.session.user.id))
-        if (saved) {
-          const value = JSON.parse(saved) as Pending
-          const request = wholesalePaymentAllocationRequestSchema.parse(value.request)
-          if (!/^wholesale-payment-[a-f0-9-]{36}$/.test(value.key)) throw new Error('Invalid pending receipt key.')
-          setPending({ key: value.key, request })
-          setCustomer(request.customerId)
-          setMethod(request.paymentMethodId)
-          setAmount(paymentMoneyInput(request.amountMinor))
-          setReference(request.reference)
-          setAllocations(
-            Object.fromEntries(
-              request.allocations.map((item) => [item.invoiceId, paymentMoneyInput(item.amountMinor)]),
-            ),
-          )
-        }
+        if (!restored) setMethod(next.paymentMethods[0]?.id ?? '')
       } catch (cause) {
-        if (active) setError(cause instanceof Error ? cause.message : 'Could not load payments.')
+        if (active) {
+          setContext(null)
+          setError(cause instanceof Error ? cause.message : 'Could not load payments.')
+        }
       } finally {
         if (active) setLoading(false)
       }
@@ -121,6 +131,7 @@ export function WholesalePaymentsWorkspace() {
     lock.current = true
     setBusy(true)
     setError(null)
+    setContext(null)
     try {
       setContext(
         wholesalePaymentsContextSchema.parse(await call('/v1/wholesale/payments', await token(), scope.tenant)),
@@ -135,7 +146,7 @@ export function WholesalePaymentsWorkspace() {
 
   async function record(event: FormEvent) {
     event.preventDefault()
-    if (!scope || !context || lock.current) return
+    if (!scope || !context?.canRecord || lock.current) return
     lock.current = true
     setBusy(true)
     setError(null)
@@ -148,22 +159,25 @@ export function WholesalePaymentsWorkspace() {
       // Keep the same command after a network failure or reload, never create a second receipt on retry.
       sessionStorage.setItem(storageKey(scope.tenant, scope.user), JSON.stringify(command))
       setPending(command)
-      const result = wholesalePaymentAllocationResponseSchema.parse(
+      const result = validateWholesalePaymentResponse(
+        command,
         await call('/v1/wholesale/payments', await token(), scope.tenant, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Idempotency-Key': command.key },
           body: JSON.stringify(command.request),
         }),
       )
+      const next = wholesalePaymentsContextSchema.parse(
+        await call('/v1/wholesale/payments', await token(), scope.tenant),
+      )
+      validateWholesalePaymentReceipt(command, result.paymentId, next)
       sessionStorage.removeItem(storageKey(scope.tenant, scope.user))
       setPending(null)
       setAmount('')
       setReference('')
       setAllocations({})
       setMessage(`Payment recorded: ${formatPeso(result.amountMinor)}. Receipt ${result.paymentId}.`)
-      setContext(
-        wholesalePaymentsContextSchema.parse(await call('/v1/wholesale/payments', await token(), scope.tenant)),
-      )
+      setContext(next)
     } catch (cause) {
       if (cause instanceof PaymentRequestError && paymentRejectedBeforePosting(cause.code)) {
         sessionStorage.removeItem(storageKey(scope.tenant, scope.user))
