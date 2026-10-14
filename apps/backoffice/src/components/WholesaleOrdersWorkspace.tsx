@@ -28,6 +28,7 @@ import {
   prepareCreditFulfillment,
   orderActionDefinitivelyRejected,
   validateOrderActionResponse,
+  validatePaidFulfillmentInvoice,
   type PendingOrderAction,
 } from '@/lib/wholesale-order-actions'
 
@@ -327,6 +328,8 @@ export function WholesaleOrdersWorkspace() {
             }),
         ),
       )
+      if (command.kind === 'fulfill' && command.payload.payment)
+        validatePaidFulfillmentInvoice(command, response, await call('/v1/wholesale/orders', nextToken, tenantId))
       sessionStorage.removeItem(actionScope.storage)
       sessionStorage.removeItem(actionScope.legacyStorage)
       setPendingAction(null)

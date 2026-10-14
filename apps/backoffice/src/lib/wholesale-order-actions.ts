@@ -4,6 +4,7 @@ import {
   wholesaleOrderConfirmResponseSchema,
   wholesaleOrderFulfillRequestSchema,
   wholesaleOrderFulfillResponseSchema,
+  wholesaleOrderContextSchema,
   type WholesaleCreditOverridesContext,
   type WholesaleOrderContext,
 } from '@hcs/contracts'
@@ -83,5 +84,44 @@ export function validateOrderActionResponse(command: PendingOrderAction, data: u
       command.payload.lines.reduce((sum, line) => sum + BigInt(line.quantityMilli), 0n)
   )
     throw new Error('Fulfillment response quantity does not match the original command.')
+  if (
+    command.kind === 'fulfill' &&
+    command.payload.payment &&
+    'totalMinor' in result &&
+    result.totalMinor !== command.payload.payment.amountMinor
+  )
+    throw new Error('Paid invoice total does not match the original payment.')
+  return result
+}
+
+export function validatePaidFulfillmentInvoice(command: PendingOrderAction, response: unknown, history: unknown) {
+  const result = validateOrderActionResponse(command, response)
+  if (command.kind !== 'fulfill' || !command.payload.payment || !('invoiceId' in result))
+    throw new Error('Paid fulfillment command required for invoice reconciliation.')
+  const context = wholesaleOrderContextSchema.parse(history)
+  const matches = context.invoices.filter((invoice) => invoice.id === result.invoiceId)
+  const invoice = matches[0]
+  const order = context.orders.find((row) => row.id === command.orderId)
+  if (
+    matches.length !== 1 ||
+    !invoice ||
+    !order ||
+    invoice.salesOrderId !== command.orderId ||
+    invoice.customerId !== order.customerId ||
+    invoice.locationId !== order.locationId ||
+    invoice.saleId !== result.saleId ||
+    invoice.invoiceNumber !== result.invoiceNumber ||
+    invoice.totalMinor !== result.totalMinor ||
+    Date.parse(invoice.issuedAt) !== Date.parse(result.issuedAt) ||
+    invoice.lines.length !== command.payload.lines.length ||
+    new Set(invoice.lines.map((line) => line.salesOrderLineId)).size !== invoice.lines.length ||
+    !command.payload.lines.every((requested) =>
+      invoice.lines.some(
+        (line) =>
+          line.salesOrderLineId === requested.salesOrderLineId && line.quantityMilli === requested.quantityMilli,
+      ),
+    )
+  )
+    throw new Error('Authorized invoice history does not match the original paid fulfillment.')
   return result
 }

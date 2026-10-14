@@ -8,6 +8,7 @@ import {
   restoreOrderAction,
   orderActionDefinitivelyRejected,
   validateOrderActionResponse,
+  validatePaidFulfillmentInvoice,
 } from './wholesale-order-actions'
 const id = '30000000-0000-4000-8000-000000000001',
   other = '30000000-0000-4000-8000-000000000002'
@@ -183,4 +184,91 @@ describe('wholesale order action selection and recovery', () => {
     expect(() => validateOrderActionResponse(fulfill, { ...invoice, fulfilledQuantityMilli: 1000 })).toThrow())
   it('rejects another fulfilled order', () =>
     expect(() => validateOrderActionResponse(fulfill, { ...invoice, salesOrderId: other })).toThrow())
+  const paid = {
+    ...fulfill,
+    payload: {
+      lines: fulfill.payload.lines,
+      payment: { paymentMethodId: id, amountMinor: 50625, reference: 'Synthetic received cash' },
+    },
+  }
+  const savedInvoice: WholesaleOrderContext['invoices'][number] = {
+    id,
+    invoiceNumber: invoice.invoiceNumber,
+    salesOrderId: id,
+    orderNumber: order.orderNumber,
+    saleId: id,
+    customerId: id,
+    customerName: order.customerName,
+    locationId: id,
+    locationName: order.locationName,
+    totalMinor: invoice.totalMinor,
+    issuedAt: time,
+    lines: [
+      {
+        id,
+        salesOrderLineId: id,
+        saleLineId: id,
+        variantId: id,
+        productName: 'Shirt',
+        variantName: 'Medium',
+        sku: 'SYN',
+        quantityMilli: 1125,
+        unitPriceMinor: 45000,
+        lineTotalMinor: 50625,
+      },
+    ],
+  }
+  const history = {
+    canManage: true,
+    customers: [],
+    locations: [],
+    variants: [],
+    inventory: [],
+    priceLists: [],
+    orders: [order],
+    invoices: [savedInvoice],
+  }
+  it('accepts matching paid amount and authorized immutable invoice', () =>
+    expect(validatePaidFulfillmentInvoice(paid, invoice, history)).toEqual(invoice))
+  it.each([0, 50624, 50626])('rejects schema-valid wrong paid invoice amount %s', (totalMinor) =>
+    expect(() => validateOrderActionResponse(paid, { ...invoice, totalMinor })).toThrow(/original payment/),
+  )
+  it.each([
+    { salesOrderId: other },
+    { saleId: other },
+    { customerId: other },
+    { locationId: other },
+    { invoiceNumber: 'Other invoice' },
+    { totalMinor: 50624 },
+    { issuedAt: '2026-10-11T04:00:01Z' },
+    { lines: [{ ...savedInvoice.lines[0], salesOrderLineId: other }] },
+    { lines: [{ ...savedInvoice.lines[0], quantityMilli: 1124 }] },
+    { lines: [] },
+    { lines: [savedInvoice.lines[0], savedInvoice.lines[0]] },
+  ])('rejects mismatched authorized invoice %j', (change) =>
+    expect(() =>
+      validatePaidFulfillmentInvoice(paid, invoice, { ...history, invoices: [{ ...savedInvoice, ...change }] }),
+    ).toThrow(),
+  )
+  it.each([{ invoices: [] }, { invoices: [savedInvoice, savedInvoice] }, { orders: [] }, { invoices: null }])(
+    'retains ambiguous recovery on missing/duplicate/invalid history %j',
+    (change) => {
+      const stored = JSON.stringify(paid)
+      expect(() => validatePaidFulfillmentInvoice(paid, invoice, { ...history, ...change })).toThrow()
+      expect(restoreOrderAction(stored, null)).toEqual(paid)
+      expect(orderActionDefinitivelyRejected(paid, undefined)).toBe(false)
+    },
+  )
+  it('accepts equivalent timestamp offsets and later cancelled order state for exact replay', () =>
+    expect(
+      validatePaidFulfillmentInvoice(paid, invoice, {
+        ...history,
+        orders: [{ ...order, status: 'cancelled' }],
+        invoices: [{ ...savedInvoice, issuedAt: '2026-10-11T12:00:00+08:00' }],
+      }),
+    ).toEqual(invoice))
+  it('does not impose paid reconciliation on ordinary credit commands', () => {
+    expect(validateOrderActionResponse(fulfill, invoice)).toEqual(invoice)
+    expect(() => validatePaidFulfillmentInvoice(fulfill, invoice, history)).toThrow(/Paid fulfillment/)
+  })
 })
