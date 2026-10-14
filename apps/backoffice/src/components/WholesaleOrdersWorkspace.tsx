@@ -19,6 +19,7 @@ import { Ban, Check, FilePlus2, PackageCheck, Printer, Save, ShoppingCart } from
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState, useRef, type FormEvent } from 'react'
 import { preparePaidFulfillment } from '@/lib/wholesale-paid-fulfillment'
+import { StagingRecoveryControls, assertRecoveryPending, recoveryRequest } from '@/lib/staging-recovery-entry'
 import {
   pendingOrderActionSchema,
   restoreOrderAction,
@@ -267,6 +268,7 @@ export function WholesaleOrdersWorkspace() {
         throw new Error('Sign in to the original account.')
       const nextToken = session.session.access_token
       let command = pendingAction
+      assertRecoveryPending(command)
       if (!command) {
         if (!selectedOrder || !overrides) throw new Error('Reload the current order and approval context.')
         if (
@@ -307,14 +309,23 @@ export function WholesaleOrdersWorkspace() {
       executing = command
       const response = validateOrderActionResponse(
         command,
-        await call(`/v1/wholesale/orders/${command.orderId}/${command.kind}`, nextToken, tenantId, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Idempotency-Key': command.key,
+        await recoveryRequest(
+          {
+            scope: { user: actionScope.user, tenant: tenantId },
+            path: `/v1/wholesale/orders/${command.orderId}/${command.kind}`,
+            key: command.key,
+            body: command.payload,
           },
-          body: JSON.stringify(command.payload),
-        }),
+          () =>
+            call(`/v1/wholesale/orders/${command!.orderId}/${command!.kind}`, nextToken, tenantId, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Idempotency-Key': command!.key,
+              },
+              body: JSON.stringify(command!.payload),
+            }),
+        ),
       )
       sessionStorage.removeItem(actionScope.storage)
       sessionStorage.removeItem(actionScope.legacyStorage)
@@ -379,6 +390,9 @@ export function WholesaleOrdersWorkspace() {
 
   return (
     <div className="grid gap-4">
+      {actionScope && tenantId && (
+        <StagingRecoveryControls family="orders" scope={{ user: actionScope.user, tenant: tenantId }} context={data} />
+      )}
       <Link href="/wholesale/credit" className="inline-flex items-center gap-2 text-sm">
         <Save size={18} />
         Terms and credit

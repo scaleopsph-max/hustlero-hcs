@@ -20,6 +20,7 @@ import { formatPeso } from '@hcs/ui'
 import { ArrowLeft, RefreshCw, Save } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { StagingRecoveryControls, assertRecoveryPending, recoveryRequest } from '@/lib/staging-recovery-entry'
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -152,6 +153,7 @@ export function WholesalePaymentsWorkspace() {
     setError(null)
     setMessage(null)
     try {
+      assertRecoveryPending(pending)
       const command = pending ?? {
         key: `wholesale-payment-${crypto.randomUUID()}`,
         request: prepareWholesalePayment(context, customer, method, amount, reference, allocations),
@@ -161,11 +163,15 @@ export function WholesalePaymentsWorkspace() {
       setPending(command)
       const result = validateWholesalePaymentResponse(
         command,
-        await call('/v1/wholesale/payments', await token(), scope.tenant, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Idempotency-Key': command.key },
-          body: JSON.stringify(command.request),
-        }),
+        await recoveryRequest(
+          { scope, path: '/v1/wholesale/payments', key: command.key, body: command.request },
+          async () =>
+            call('/v1/wholesale/payments', await token(), scope.tenant, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Idempotency-Key': command.key },
+              body: JSON.stringify(command.request),
+            }),
+        ),
       )
       const next = wholesalePaymentsContextSchema.parse(
         await call('/v1/wholesale/payments', await token(), scope.tenant),
@@ -198,6 +204,7 @@ export function WholesalePaymentsWorkspace() {
   const disabled = busy || !!pending || !context?.canRecord
   return (
     <div className="min-w-0 space-y-6 p-4 md:p-6">
+      {scope && context && <StagingRecoveryControls family="payment" scope={scope} context={context} />}
       <div className="flex items-center justify-between gap-4">
         <Link href="/wholesale" className="inline-flex items-center gap-2">
           <ArrowLeft size={18} />

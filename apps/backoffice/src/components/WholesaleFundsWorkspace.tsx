@@ -12,6 +12,7 @@ import { createClient } from '@/lib/supabase-browser'
 import { selectActiveTenant } from '@/lib/active-tenant'
 import { sessionContextResponseSchema } from '@hcs/contracts'
 import { parsePaymentMoney } from '@/lib/wholesale-payment'
+import { StagingRecoveryControls, assertRecoveryPending, recoveryRequest } from '@/lib/staging-recovery-entry'
 import {
   fundAllocationDefinitivelyRejected,
   restoreFundAllocation,
@@ -108,6 +109,7 @@ export function WholesaleFundsWorkspace() {
       if (!session.session || session.session.user.id !== scope.user)
         throw new Error('Sign in to the original account.')
       let command = pending
+      assertRecoveryPending(command)
       if (!command) {
         const payload = wholesaleFundAllocationRequestSchema.parse({
           paymentId: payment,
@@ -130,7 +132,9 @@ export function WholesaleFundsWorkspace() {
       }
       validateFundAllocationResponse(
         command,
-        await call('/v1/wholesale/funds', session.session.access_token, scope.tenant, command),
+        await recoveryRequest({ scope, path: '/v1/wholesale/funds', key: command.key, body: command.payload }, () =>
+          call('/v1/wholesale/funds', session.session!.access_token, scope.tenant, command!),
+        ),
       )
       sessionStorage.removeItem(scope.storage)
       setPending(null)
@@ -156,6 +160,7 @@ export function WholesaleFundsWorkspace() {
   }
   return (
     <div className="min-w-0 space-y-5 p-4 md:p-6">
+      {scope && data && <StagingRecoveryControls family="funds" scope={scope} context={data} />}
       <Link href="/wholesale/payments" className="inline-flex items-center gap-2">
         <ArrowLeft size={18} />
         Payments
