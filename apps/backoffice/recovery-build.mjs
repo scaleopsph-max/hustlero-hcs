@@ -3,7 +3,8 @@ import process from 'node:process'
 export function recoveryBuildEnv(env = process.env, now = Date.now()) {
   const enabled =
     env.NEXT_PUBLIC_HCS_RECOVERY_UAT === 'historical-v1' ||
-    env.NEXT_PUBLIC_HCS_RECOVERY_UAT === 'fresh-payment-funds-v1'
+    env.NEXT_PUBLIC_HCS_RECOVERY_UAT === 'fresh-payment-funds-v1' ||
+    env.NEXT_PUBLIC_HCS_RECOVERY_UAT === 'fresh-paid-v1'
   if (env.NEXT_PUBLIC_HCS_RECOVERY_UAT && !enabled && env.NEXT_PUBLIC_HCS_RECOVERY_UAT !== 'off')
     throw new Error('Unknown recovery diagnostic build mode.')
   if (enabled) {

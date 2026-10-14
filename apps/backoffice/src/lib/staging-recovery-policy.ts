@@ -21,7 +21,7 @@ export const environment = (): DiagnosticEnvironment => ({
 export function assertRecoveryScope(
   scope: RecoveryScope,
   env: DiagnosticEnvironment,
-  mode: 'historical-v1' | 'fresh-payment-funds-v1',
+  mode: 'historical-v1' | 'fresh-payment-funds-v1' | 'fresh-paid-v1',
 ) {
   const until = Date.parse(env.until ?? '')
   if (

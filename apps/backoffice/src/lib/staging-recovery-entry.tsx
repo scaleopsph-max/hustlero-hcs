@@ -8,11 +8,14 @@ export type RecoveryRequest = { scope: RecoveryScope; path: string; key: string;
 
 const enabled = process.env.NEXT_PUBLIC_HCS_RECOVERY_UAT === 'historical-v1'
 const fresh = process.env.NEXT_PUBLIC_HCS_RECOVERY_UAT === 'fresh-payment-funds-v1'
+const paid = process.env.NEXT_PUBLIC_HCS_RECOVERY_UAT === 'fresh-paid-v1'
 const Controls = enabled
   ? lazy(() => import('./staging-recovery-controls'))
   : fresh
     ? lazy(() => import('./staging-fresh-recovery-controls'))
-    : null
+    : paid
+      ? lazy(() => import('./staging-fresh-paid-controls'))
+      : null
 
 export function StagingRecoveryControls(props: RecoveryControlProps) {
   return Controls ? (
@@ -27,6 +30,10 @@ export function assertRecoveryPending(pending: unknown) {
 }
 
 export async function recoveryRequest(request: RecoveryRequest, send: () => Promise<unknown>) {
+  if (paid) {
+    const { freshPaidRequest } = await import('./staging-fresh-paid')
+    return freshPaidRequest(request, send)
+  }
   if (fresh) {
     const { freshRequestWithFault } = await import('./staging-fresh-recovery')
     return freshRequestWithFault(request, send)
