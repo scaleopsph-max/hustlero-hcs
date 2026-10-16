@@ -272,6 +272,8 @@ import {
 } from './loyalty-repository'
 import {
   loadDashboardFromPostgres,
+  loadPosPaymentReferenceReportFromPostgres,
+  type PosPaymentReferenceReportLoader,
   loadWholesaleSettlementFromPostgres,
   type WholesaleSettlementLoader,
   loadInventoryReportFromPostgres,
@@ -474,6 +476,7 @@ interface AppDependencies {
   updateLoyaltyPolicy: LoyaltyPolicyUpdater
   loadDashboard: DashboardLoader
   loadSalesReport: SalesReportLoader
+  loadPosPaymentReferenceReport: PosPaymentReferenceReportLoader
   loadWholesaleSettlement: WholesaleSettlementLoader
   loadWholesaleStatement: WholesaleStatementLoader
   loadInventoryReport: InventoryReportLoader
@@ -577,6 +580,7 @@ const defaultDependencies: AppDependencies = {
   updateLoyaltyPolicy: updateLoyaltyPolicyInPostgres,
   loadDashboard: loadDashboardFromPostgres,
   loadSalesReport: loadSalesReportFromPostgres,
+  loadPosPaymentReferenceReport: loadPosPaymentReferenceReportFromPostgres,
   loadWholesaleSettlement: loadWholesaleSettlementFromPostgres,
   loadWholesaleStatement: loadWholesaleStatementFromPostgres,
   loadInventoryReport: loadInventoryReportFromPostgres,
@@ -4848,7 +4852,13 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
 
   const loadReport = async (
     context: Context<{ Bindings: Bindings }>,
-    loader: DashboardLoader | SalesReportLoader | InventoryReportLoader | ShiftReportLoader | WholesaleSettlementLoader,
+    loader:
+      | DashboardLoader
+      | SalesReportLoader
+      | InventoryReportLoader
+      | ShiftReportLoader
+      | WholesaleSettlementLoader
+      | PosPaymentReferenceReportLoader,
   ) => {
     const resolved = await resolvePurchasingTenant(context)
     if (!resolved)
@@ -4892,6 +4902,9 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
 
   app.get('/v1/dashboard', (context) => loadReport(context, dependencies.loadDashboard))
   app.get('/v1/reports/sales', (context) => loadReport(context, dependencies.loadSalesReport))
+  app.get('/v1/reports/pos-payment-references', (context) =>
+    loadReport(context, dependencies.loadPosPaymentReferenceReport),
+  )
   app.get('/v1/reports/inventory', (context) => loadReport(context, dependencies.loadInventoryReport))
   app.get('/v1/reports/shifts', (context) => loadReport(context, dependencies.loadShiftReport))
   app.get('/v1/reports/wholesale-settlement', (context) => loadReport(context, dependencies.loadWholesaleSettlement))

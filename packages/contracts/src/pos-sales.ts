@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { paymentReferenceLastFourSchema } from './payment-references'
 
 const id = z.uuid()
 const timestamp = z.iso.datetime({ offset: true })
@@ -69,6 +70,7 @@ export const posSalePaymentRequestSchema = z.object({
   paymentMethodId: id,
   amountCentavos: z.number().int().positive(),
   tenderedCentavos: z.number().int().positive(),
+  referenceLastFour: paymentReferenceLastFourSchema.optional(),
 })
 
 export const posSaleCompleteRequestSchema = z.object({
