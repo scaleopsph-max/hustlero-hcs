@@ -10,7 +10,7 @@ import {
 import { formatPeso } from '@hcs/ui'
 import { createClient } from '@/lib/supabase-browser'
 import { selectActiveTenant } from '@/lib/active-tenant'
-import { paymentReferenceCsv } from '@/lib/payment-reference-report'
+import { paymentReferenceCsv, paymentReferenceDecimal, paymentReferenceTotals } from '@/lib/payment-reference-report'
 
 const field = 'min-h-10 min-w-0 w-full rounded border border-ink-900/20 bg-white px-3 py-2'
 const today = () =>
@@ -93,14 +93,7 @@ export function PaymentReferenceReport() {
   }, [])
   const rows = report?.rows.filter((row) => !method || row.paymentMethodId === method) ?? []
   const methods = Array.from(new Map((report?.rows ?? []).map((row) => [row.paymentMethodId, row.methodName])))
-  const totals = new Map<string, { name: string; amount: number; reversed: number; count: number }>()
-  for (const row of rows) {
-    const item = totals.get(row.paymentMethodId) ?? { name: row.methodName, amount: 0, reversed: 0, count: 0 }
-    item.amount += row.amountMinor
-    item.reversed += row.reversedMinor
-    item.count++
-    totals.set(row.paymentMethodId, item)
-  }
+  const totals = paymentReferenceTotals(rows)
   function download() {
     if (!report) return
     const href = URL.createObjectURL(
@@ -199,9 +192,9 @@ export function PaymentReferenceReport() {
                   <tr key={id}>
                     <td className="p-3">{item.name}</td>
                     <td className="p-3">{item.count}</td>
-                    <td className="p-3">{formatPeso(item.amount)}</td>
-                    <td className="p-3">{formatPeso(item.reversed)}</td>
-                    <td className="p-3">{formatPeso(item.amount - item.reversed)}</td>
+                    <td className="p-3">PHP {paymentReferenceDecimal(item.amount)}</td>
+                    <td className="p-3">PHP {paymentReferenceDecimal(item.reversed)}</td>
+                    <td className="p-3">PHP {paymentReferenceDecimal(item.amount - item.reversed)}</td>
                   </tr>
                 ))}
               </tbody>

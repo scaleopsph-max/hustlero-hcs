@@ -14,7 +14,6 @@ export default function ReportsPage() {
         <ReceiptText size={18} />
         Wholesale settlement
       </Link>
-      <ReportingWorkspace mode="reports" />
       <Link
         href="/reports/payments"
         className="mx-6 inline-flex items-center gap-2 border-b border-ink-900/20 py-3 font-semibold"
@@ -22,6 +21,7 @@ export default function ReportsPage() {
         <ReceiptText size={18} />
         Online payment records
       </Link>
+      <ReportingWorkspace mode="reports" />
     </>
   )
 }

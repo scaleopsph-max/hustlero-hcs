@@ -1,5 +1,11 @@
 import { expect, it } from 'vitest'
-import { paymentReferenceCsv } from './payment-reference-report'
+import { paymentReferenceCsv, paymentReferenceDecimal } from './payment-reference-report'
+
+it('formats aggregate minor units exactly beyond JavaScript safe integer range', () => {
+  expect(paymentReferenceDecimal(18014398509481982n)).toBe('180143985094819.82')
+  expect(paymentReferenceDecimal(-101n)).toBe('-1.01')
+  expect(paymentReferenceDecimal(1n)).toBe('0.01')
+})
 
 it('keeps zero-prefixed references as text, escapes CSV and never claims settlement', () => {
   const csv = paymentReferenceCsv({
