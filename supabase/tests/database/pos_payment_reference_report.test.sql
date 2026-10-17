@@ -15,6 +15,8 @@ insert into app.locations(id,tenant_id,code,name) values
  ('ae200000-0000-4000-8000-000000000001','ae100000-0000-4000-8000-000000000001','MAIN','Main');
 insert into app.employees(id,tenant_id,employee_code,display_name) values
  ('ae300000-0000-4000-8000-000000000001','ae100000-0000-4000-8000-000000000001','REF-1','Ref Cashier');
+insert into app.employee_locations(tenant_id,employee_id,location_id) values
+ ('ae100000-0000-4000-8000-000000000001','ae300000-0000-4000-8000-000000000001','ae200000-0000-4000-8000-000000000001');
 insert into app.employee_roles(tenant_id,employee_id,role_id)
  select 'ae100000-0000-4000-8000-000000000001','ae300000-0000-4000-8000-000000000001',id
  from app.roles where tenant_id='ae100000-0000-4000-8000-000000000001' and code='cashier';
