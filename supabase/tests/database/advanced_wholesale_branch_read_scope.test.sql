@@ -129,5 +129,19 @@ select is(jsonb_array_length(app.load_wholesale_payments('1b000000-0000-4000-800
 select is(jsonb_array_length(app.load_wholesale_credit_overrides('1b000000-0000-4000-8000-000000000002','2b000000-0000-4000-8000-000000000001')->'overrides'),1,'override history scoped by order branch');
 select is(jsonb_array_length(pg_temp.statement('1b000000-0000-4000-8000-000000000003')->'invoices'),0,'unassigned reporting role cannot see invoice data');
 select is((pg_temp.settlement('1b000000-0000-4000-8000-000000000003')->'summary'->>'issuedMinor')::bigint,0::bigint,'unassigned reporting role has zero accessible totals');
+insert into app.role_permissions(tenant_id,role_id,permission_code) values
+ ('2b000000-0000-4000-8000-000000000001','5b000000-0000-4000-8000-000000000001','sales.read');
+select is(jsonb_array_length(app.list_sales_archive('1b000000-0000-4000-8000-000000000002','2b000000-0000-4000-8000-000000000001',2)->'sales'),2,
+ 'archive scopes before limit instead of discarding another branch after pagination');
+select is(app.list_sales_archive('1b000000-0000-4000-8000-000000000002','2b000000-0000-4000-8000-000000000001',2)->'sales'->1->>'id',
+ '9b000000-0000-4000-8000-000000000003','second visible row skips disallowed branch');
+select is(jsonb_array_length(app.list_sales_archive('1b000000-0000-4000-8000-000000000001','2b000000-0000-4000-8000-000000000001')->'sales'),4,
+ 'owner archive retains both own branches');
+select throws_ok($$select app.load_sale_archive_record('1b000000-0000-4000-8000-000000000002','2b000000-0000-4000-8000-000000000001','9b000000-0000-4000-8000-000000000002')$$,
+ 'HCSA1','Sale was not found','wholesale detail denies other branch');
+select lives_ok($$select app.load_sale_archive_record('1b000000-0000-4000-8000-000000000002','2b000000-0000-4000-8000-000000000001','9b000000-0000-4000-8000-000000000001')$$,
+ 'wholesale detail allows assigned branch');
+select throws_ok($$select app.load_sale_archive_record('1b000000-0000-4000-8000-000000000002','2b000000-0000-4000-8000-000000000002','9b000000-0000-4000-8000-000000000002')$$,
+ 'HCSA0','Sales access is not allowed','foreign tenant cannot be selected by a same-tenant reader');
 select * from finish();
 rollback;
