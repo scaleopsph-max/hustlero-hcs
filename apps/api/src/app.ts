@@ -3636,7 +3636,7 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
           }),
           403,
         )
-      if (code === 'HCS52' || code === 'HCS53')
+      if (code === 'HCS52' || code === 'HCS53' || code === 'HCS55')
         return context.json(
           apiErrorResponseSchema.parse({
             error: {
@@ -3704,6 +3704,20 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
       )
     } catch (error) {
       const code = postgresErrorCode(error)
+      if (code === 'HCS50' || code === 'HCS08')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS50' ? 'TRANSFER_ACCESS_DENIED' : 'IDEMPOTENCY_KEY_CONFLICT',
+              message:
+                code === 'HCS50'
+                  ? 'You do not have transfer permission.'
+                  : 'This request key was used for another transfer.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          code === 'HCS50' ? 403 : 409,
+        )
       if (code === 'HCS57')
         return context.json(
           apiErrorResponseSchema.parse({
@@ -3786,6 +3800,20 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
       )
     } catch (error) {
       const code = postgresErrorCode(error)
+      if (code === 'HCS50' || code === 'HCS08')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS50' ? 'TRANSFER_ACCESS_DENIED' : 'IDEMPOTENCY_KEY_CONFLICT',
+              message:
+                code === 'HCS50'
+                  ? 'You do not have transfer permission.'
+                  : 'This request key was used for another transfer.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          code === 'HCS50' ? 403 : 409,
+        )
       if (code === 'HCS59')
         return context.json(
           apiErrorResponseSchema.parse({

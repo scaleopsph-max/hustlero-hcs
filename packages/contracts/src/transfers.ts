@@ -40,6 +40,7 @@ export const transferReceiveResponseSchema = z.object({
   itemCount: z.number().int().positive(),
 })
 export const transferContextSchema = z.object({
+  actionLocationIds: z.array(id).optional(),
   locations: z.array(z.object({ id, code: z.string(), name: z.string() })),
   variants: z.array(
     z.object({
