@@ -43,6 +43,27 @@ export const loadPosPaymentReferenceReportFromPostgres: PosPaymentReferenceRepor
     await client.end()
   }
 }
+export const loadWholesalePaymentReferenceReportFromPostgres: PosPaymentReferenceReportLoader = async (
+  userId,
+  tenantId,
+  filter,
+  bindings,
+) => {
+  if (filter.channel === 'pos') throw Object.assign(new Error('Choose wholesale payments.'), { code: 'HCSD1' })
+  if (!bindings.HYPERDRIVE?.connectionString) throw new Error('HYPERDRIVE binding is not configured.')
+  const client = new Client({ connectionString: bindings.HYPERDRIVE.connectionString })
+  try {
+    await client.connect()
+    const result = await client.query(
+      'select app.load_wholesale_payment_reference_report($1::uuid,$2::uuid,$3::date,$4::date,$5::uuid) context',
+      [userId, tenantId, filter.from, filter.to, filter.locationId],
+    )
+    return posPaymentReferenceReportSchema.parse(result.rows[0]?.context)
+  } finally {
+    await client.end()
+  }
+}
+
 export type WholesaleSettlementLoader = (
   userId: string,
   tenantId: string,

@@ -15,6 +15,7 @@ import {
   sessionContextResponseSchema,
   wholesalePaymentsContextSchema,
   type WholesalePaymentsContext,
+  requiresPaymentReference,
 } from '@hcs/contracts'
 import { formatPeso } from '@hcs/ui'
 import { ArrowLeft, RefreshCw, Save } from 'lucide-react'
@@ -202,6 +203,9 @@ export function WholesalePaymentsWorkspace() {
   const invoices = context?.invoices.filter((item) => item.customerId === customer) ?? []
   const payments = context?.payments.filter((item) => !customer || item.customerId === customer) ?? []
   const disabled = busy || !!pending || !context?.canRecord
+  const onlineReference = requiresPaymentReference(
+    context?.paymentMethods.find((item) => item.id === method)?.methodType ?? '',
+  )
   return (
     <div className="min-w-0 space-y-6 p-4 md:p-6">
       {scope && context && <StagingRecoveryControls family="payment" scope={scope} context={context} />}
@@ -267,7 +271,10 @@ export function WholesalePaymentsWorkspace() {
                       className={inputClass}
                       value={method}
                       disabled={disabled}
-                      onChange={(event) => setMethod(event.target.value)}
+                      onChange={(event) => {
+                        setMethod(event.target.value)
+                        setReference('')
+                      }}
                       required
                     >
                       <option value="">Select method</option>
@@ -290,10 +297,12 @@ export function WholesalePaymentsWorkspace() {
                     />
                   </label>
                   <label className="space-y-1">
-                    <span>Payment reference</span>
+                    <span>{onlineReference ? 'Last four reference digits' : 'Payment reference'}</span>
                     <input
                       className={inputClass}
-                      maxLength={100}
+                      maxLength={onlineReference ? 4 : 100}
+                      inputMode={onlineReference ? 'numeric' : 'text'}
+                      pattern={onlineReference ? '[0-9]{4}' : undefined}
                       value={reference}
                       disabled={disabled}
                       onChange={(event) => setReference(event.target.value)}

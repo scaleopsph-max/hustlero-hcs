@@ -24,6 +24,7 @@ function setup(code?: string) {
       },
     ],
     loadPosPaymentReferenceReport: loader,
+    loadWholesalePaymentReferenceReport: loader,
   })
   return { app, loader }
 }
@@ -32,6 +33,17 @@ it('requires authentication and does not call the report loader anonymously', as
   const response = await app.request('/v1/reports/pos-payment-references' + filter, {}, { ENVIRONMENT: 'test' })
   expect(response.status).toBe(403)
   expect(loader).not.toHaveBeenCalled()
+})
+it.each(['HCSD0', 'HCAR1'])('keeps wholesale reports independently gated by %s', async (code) => {
+  const { app, loader } = setup(code)
+  const response = await app.request(
+    '/v1/reports/wholesale-payment-references?from=2026-10-17&to=2026-10-17&channel=wholesale',
+    { headers: { Authorization: 'Bearer valid', 'X-Tenant-Id': tenantId } },
+    { ENVIRONMENT: 'test' },
+  )
+  expect(response.status).toBe(403)
+  expect(await response.text()).not.toContain('Private database detail')
+  expect(loader).toHaveBeenCalledOnce()
 })
 it('passes authenticated server scope and parsed filters, ignoring a query tenant override', async () => {
   const { app, loader } = setup()

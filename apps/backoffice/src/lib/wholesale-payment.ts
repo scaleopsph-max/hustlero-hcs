@@ -3,6 +3,8 @@ import {
   wholesalePaymentAllocationRequestSchema,
   wholesalePaymentAllocationResponseSchema,
   type WholesalePaymentsContext,
+  requiresPaymentReference,
+  paymentReferenceLastFourSchema,
 } from '@hcs/contracts'
 
 export const pendingWholesalePaymentSchema = z.strictObject({
@@ -62,7 +64,7 @@ export function paymentMoneyInput(minor: number): string {
 
 export function paymentRejectedBeforePosting(code: string): boolean {
   // Authorization failures also apply to completed replay, so they cannot prove a payment did not post.
-  return /^WHOLESALE_PAYMENT_HCAP[245]$/.test(code)
+  return /^WHOLESALE_PAYMENT_HCAP[2456]$/.test(code)
 }
 
 export function prepareWholesalePayment(
@@ -76,6 +78,9 @@ export function prepareWholesalePayment(
   if (!context.canRecord) throw new Error('Payment recording is not authorized.')
   if (!context.paymentMethods.some((method) => method.id === paymentMethodId))
     throw new Error('Select an active payment method.')
+  const method = context.paymentMethods.find((item) => item.id === paymentMethodId)
+  if (method?.methodType && requiresPaymentReference(method.methodType))
+    paymentReferenceLastFourSchema.parse(reference.trim())
   const allocations = Object.entries(values)
     .filter(([, value]) => value.trim() !== '')
     .map(([invoiceId, value]) => {

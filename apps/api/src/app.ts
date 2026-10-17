@@ -273,6 +273,7 @@ import {
 import {
   loadDashboardFromPostgres,
   loadPosPaymentReferenceReportFromPostgres,
+  loadWholesalePaymentReferenceReportFromPostgres,
   type PosPaymentReferenceReportLoader,
   loadWholesaleSettlementFromPostgres,
   type WholesaleSettlementLoader,
@@ -477,6 +478,7 @@ interface AppDependencies {
   loadDashboard: DashboardLoader
   loadSalesReport: SalesReportLoader
   loadPosPaymentReferenceReport: PosPaymentReferenceReportLoader
+  loadWholesalePaymentReferenceReport: PosPaymentReferenceReportLoader
   loadWholesaleSettlement: WholesaleSettlementLoader
   loadWholesaleStatement: WholesaleStatementLoader
   loadInventoryReport: InventoryReportLoader
@@ -581,6 +583,7 @@ const defaultDependencies: AppDependencies = {
   loadDashboard: loadDashboardFromPostgres,
   loadSalesReport: loadSalesReportFromPostgres,
   loadPosPaymentReferenceReport: loadPosPaymentReferenceReportFromPostgres,
+  loadWholesalePaymentReferenceReport: loadWholesalePaymentReferenceReportFromPostgres,
   loadWholesaleSettlement: loadWholesaleSettlementFromPostgres,
   loadWholesaleStatement: loadWholesaleStatementFromPostgres,
   loadInventoryReport: loadInventoryReportFromPostgres,
@@ -2360,6 +2363,7 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
         HCAP3: 'The authorized customer, payment method, invoice, or location is unavailable.',
         HCAP4: 'Classify the invoice before allocating a payment.',
         HCAP5: 'The allocation exceeds the current open invoice balance.',
+        HCAP6: 'Enter exactly four transaction reference digits for online payments.',
       }
       return context.json(
         apiErrorResponseSchema.parse({
@@ -2505,7 +2509,7 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
     const status = code === 'HCAR1' ? 403 : code === 'HCAR3' ? 404 : code === 'HCAR4' ? 409 : 400
     const message =
       code === 'HCAR1'
-        ? 'Only an active business owner may record opening receivables.'
+        ? 'Wholesale receivable access is not allowed.'
         : code === 'HCAR3'
           ? 'The eligible legacy invoice was not found.'
           : code === 'HCAR4'
@@ -4892,7 +4896,10 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
     try {
       return context.json(await loader(resolved.userId, resolved.tenantId, parsed.data, context.env))
     } catch (error) {
-      if (loader === dependencies.loadWholesaleSettlement) {
+      if (
+        loader === dependencies.loadWholesaleSettlement ||
+        loader === dependencies.loadWholesalePaymentReferenceReport
+      ) {
         const response = receivableError(context, error)
         if (response) return response
       }
@@ -4904,6 +4911,9 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
   app.get('/v1/reports/sales', (context) => loadReport(context, dependencies.loadSalesReport))
   app.get('/v1/reports/pos-payment-references', (context) =>
     loadReport(context, dependencies.loadPosPaymentReferenceReport),
+  )
+  app.get('/v1/reports/wholesale-payment-references', (context) =>
+    loadReport(context, dependencies.loadWholesalePaymentReferenceReport),
   )
   app.get('/v1/reports/inventory', (context) => loadReport(context, dependencies.loadInventoryReport))
   app.get('/v1/reports/shifts', (context) => loadReport(context, dependencies.loadShiftReport))

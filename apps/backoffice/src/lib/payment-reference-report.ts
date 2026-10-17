@@ -1,4 +1,5 @@
 import type { PosPaymentReferenceReport } from '@hcs/contracts'
+import { reportCsv } from './report-csv'
 
 export type PaymentReferenceScope = { from: string; to: string; locationId: string }
 
@@ -16,11 +17,12 @@ export function paymentReferenceDecimal(value: bigint): string {
 export function paymentReferenceTotals(rows: PosPaymentReferenceReport['rows']) {
   const totals = new Map<string, { name: string; amount: bigint; reversed: bigint; count: number }>()
   for (const row of rows) {
-    const item = totals.get(row.paymentMethodId) ?? { name: row.methodName, amount: 0n, reversed: 0n, count: 0 }
+    const key = JSON.stringify([row.paymentMethodId, row.methodType, row.methodName])
+    const item = totals.get(key) ?? { name: row.methodName, amount: 0n, reversed: 0n, count: 0 }
     item.amount += BigInt(row.amountMinor)
     item.reversed += BigInt(row.reversedMinor)
     item.count++
-    totals.set(row.paymentMethodId, item)
+    totals.set(key, item)
   }
   return totals
 }
@@ -46,6 +48,7 @@ export function paymentReferenceCsv(
       'Reversed PHP',
       'Last four',
       'Settlement verification',
+      'Channel',
     ],
     ...report.rows.map((row) => [
       row.receiptNumber,
@@ -58,17 +61,8 @@ export function paymentReferenceCsv(
       paymentReferenceDecimal(BigInt(row.reversedMinor)),
       row.referenceLastFour ? `Ref ${row.referenceLastFour}` : 'Not recorded',
       'Unverified',
+      row.channel ?? 'pos',
     ]),
   ]
-  return rows
-    .map((row) =>
-      row
-        .map((value) => {
-          const text = String(value)
-          const safe = /^[=+\-@]/.test(text.trimStart()) || /^[\t\r\n]/.test(text) ? `'${text}` : text
-          return `"${safe.replaceAll('"', '""')}"`
-        })
-        .join(','),
-    )
-    .join('\r\n')
+  return reportCsv(rows)
 }

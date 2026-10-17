@@ -11,10 +11,11 @@ export const posPaymentReferenceReportSchema = z.object({
   rows: z.array(
     z.object({
       paymentId: z.uuid(),
-      saleId: z.uuid(),
+      saleId: z.uuid().nullable(),
+      channel: z.enum(['pos', 'wholesale']).optional(),
       receiptNumber: z.string(),
       completedAt: z.iso.datetime({ offset: true }),
-      locationId: z.uuid(),
+      locationId: z.uuid().nullable(),
       locationName: z.string(),
       cashierName: z.string(),
       customerName: z.string().nullable(),

@@ -13,6 +13,8 @@ import {
   wholesalePaymentsContextSchema,
   type WholesaleCreditOverridesContext,
   type WholesaleOrderContext,
+  type WholesalePaymentsContext,
+  requiresPaymentReference,
 } from '@hcs/contracts'
 import { Button, Chip, Glass, formatPeso } from '@hcs/ui'
 import { Ban, Check, FilePlus2, PackageCheck, Printer, Save, ShoppingCart } from 'lucide-react'
@@ -71,7 +73,10 @@ export function WholesaleOrdersWorkspace() {
     [paymentMethod, setPaymentMethod] = useState(''),
     [paymentAmount, setPaymentAmount] = useState(''),
     [paymentReference, setPaymentReference] = useState('')
-  const [paymentMethods, setPaymentMethods] = useState<{ id: string; name: string }[]>([])
+  const [paymentMethods, setPaymentMethods] = useState<WholesalePaymentsContext['paymentMethods']>([])
+  const onlineReference = requiresPaymentReference(
+    paymentMethods.find((item) => item.id === paymentMethod)?.methodType ?? '',
+  )
   const [actionScope, setActionScope] = useState<{ user: string; storage: string; legacyStorage: string } | null>(null)
   const [pendingAction, setPendingAction] = useState<PendingOrderAction | null>(null)
   const [overrides, setOverrides] = useState<WholesaleCreditOverridesContext | null>(null)
@@ -298,6 +303,7 @@ export function WholesaleOrdersWorkspace() {
                       paymentMethod,
                       paymentAmount,
                       paymentReference,
+                      paymentMethods.find((item) => item.id === paymentMethod)?.methodType,
                     )
                   : prepareCreditFulfillment(selectedOrder, fulfillmentQuantities, override),
               }
@@ -574,7 +580,10 @@ export function WholesaleOrdersWorkspace() {
                             <select
                               aria-label="Payment method"
                               value={paymentMethod}
-                              onChange={(event) => setPaymentMethod(event.target.value)}
+                              onChange={(event) => {
+                                setPaymentMethod(event.target.value)
+                                setPaymentReference('')
+                              }}
                               className="w-full border border-ink-900/15 bg-white p-2"
                             >
                               <option value="">Select method</option>
@@ -595,11 +604,13 @@ export function WholesaleOrdersWorkspace() {
                             />
                           </label>
                           <label className="space-y-1 sm:col-span-2">
-                            <span>Payment reference</span>
+                            <span>{onlineReference ? 'Last four reference digits' : 'Payment reference'}</span>
                             <input
                               value={paymentReference}
                               onChange={(event) => setPaymentReference(event.target.value)}
-                              maxLength={100}
+                              maxLength={onlineReference ? 4 : 100}
+                              inputMode={onlineReference ? 'numeric' : 'text'}
+                              pattern={onlineReference ? '[0-9]{4}' : undefined}
                               className="w-full border border-ink-900/15 bg-white p-2"
                             />
                           </label>

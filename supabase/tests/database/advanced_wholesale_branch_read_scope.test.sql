@@ -143,5 +143,18 @@ select lives_ok($$select app.load_sale_archive_record('1b000000-0000-4000-8000-0
  'wholesale detail allows assigned branch');
 select throws_ok($$select app.load_sale_archive_record('1b000000-0000-4000-8000-000000000002','2b000000-0000-4000-8000-000000000002','9b000000-0000-4000-8000-000000000002')$$,
  'HCSA0','Sales access is not allowed','foreign tenant cannot be selected by a same-tenant reader');
+-- Legacy method metadata has no reference snapshot; do not invent one.
+update app.payment_methods set method_type='bank_transfer' where id='bb000000-0000-4000-8000-000000000001';
+create function pg_temp.bank_report(p_actor uuid default '1b000000-0000-4000-8000-000000000002',p_location uuid default null)
+returns jsonb language sql as $$
+ select app.load_wholesale_payment_reference_report(p_actor,'2b000000-0000-4000-8000-000000000001',
+ (statement_timestamp() at time zone 'Asia/Manila')::date,(statement_timestamp() at time zone 'Asia/Manila')::date,p_location);
+$$;
+select is(jsonb_array_length(pg_temp.bank_report()->'rows'),1,'restricted bank report hides mixed and unallocated receipt headers');
+select is((pg_temp.bank_report()->'rows'->0->>'amountMinor')::bigint,20000::bigint,'restricted bank amount is the complete permitted receipt');
+select is((pg_temp.bank_report()->'rows'->0->>'referenceLastFour'),null::text,'legacy bank reference remains explicitly unrecorded');
+select is(jsonb_array_length(pg_temp.bank_report('1b000000-0000-4000-8000-000000000001')->'rows'),3,'owner bank report counts one row per receipt, not per invoice');
+select is((select sum((item->>'amountMinor')::bigint) from jsonb_array_elements(pg_temp.bank_report('1b000000-0000-4000-8000-000000000001')->'rows') item),45000::numeric,'owner bank header amounts reconcile without duplicate mixed receipt');
+select is(jsonb_array_length(pg_temp.bank_report('1b000000-0000-4000-8000-000000000001','3b000000-0000-4000-8000-000000000001')->'rows'),1,'single-branch bank filter excludes mixed/unallocated receipts rather than mislabeling whole amounts');
 select * from finish();
 rollback;

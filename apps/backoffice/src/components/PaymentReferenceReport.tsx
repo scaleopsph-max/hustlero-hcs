@@ -37,7 +37,7 @@ async function call(path: string, token: string, tenant: string) {
     throw new Error((data as { error?: { message?: string } }).error?.message ?? 'Could not load payments.')
   return data
 }
-export function PaymentReferenceReport() {
+export function PaymentReferenceReport({ wholesale = false }: { wholesale?: boolean }) {
   const [auth] = useState(() => {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL
     const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
@@ -75,10 +75,14 @@ export function PaymentReferenceReport() {
       if (scope.current && (scope.current.user !== data.session.user.id || scope.current.tenant !== tenant.tenantId))
         throw new Error('Business or account changed. Reload this page.')
       scope.current = { user: data.session.user.id, tenant: tenant.tenantId }
-      const query = new URLSearchParams({ from, to, channel: 'pos' })
+      const query = new URLSearchParams({ from, to, channel: wholesale ? 'wholesale' : 'pos' })
       if (location) query.set('locationId', location)
       const next = posPaymentReferenceReportSchema.parse(
-        await call(`/v1/reports/pos-payment-references?${query}`, data.session.access_token, tenant.tenantId),
+        await call(
+          `/v1/reports/${wholesale ? 'wholesale' : 'pos'}-payment-references?${query}`,
+          data.session.access_token,
+          tenant.tenantId,
+        ),
       )
       if (alive.current) {
         setReport(next)
@@ -127,7 +131,7 @@ export function PaymentReferenceReport() {
     )
     const link = document.createElement('a')
     link.href = href
-    link.download = 'pos-payment-references.csv'
+    link.download = wholesale ? 'wholesale-payment-references.csv' : 'pos-payment-references.csv'
     link.click()
     URL.revokeObjectURL(href)
   }
@@ -244,10 +248,10 @@ export function PaymentReferenceReport() {
               <thead>
                 <tr>
                   {[
-                    'Receipt',
+                    wholesale ? 'Receipt ID' : 'Receipt',
                     'Recorded at',
                     'Branch',
-                    'Cashier',
+                    wholesale ? 'Recorded by' : 'Cashier',
                     'Customer',
                     'Method',
                     'Amount',
