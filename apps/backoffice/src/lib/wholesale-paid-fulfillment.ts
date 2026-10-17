@@ -1,4 +1,9 @@
-import { wholesaleOrderFulfillRequestSchema, type WholesaleOrderContext } from '@hcs/contracts'
+import {
+  wholesaleOrderFulfillRequestSchema,
+  type WholesaleOrderContext,
+  requiresPaymentReference,
+  paymentReferenceLastFourSchema,
+} from '@hcs/contracts'
 import { parsePaymentMoney } from './wholesale-payment'
 export function prepareFulfillmentLines(
   order: WholesaleOrderContext['orders'][number],
@@ -25,12 +30,14 @@ export function preparePaidFulfillment(
   paymentMethodId: string,
   amount: string,
   reference: string,
+  methodType?: string,
 ) {
+  if (methodType && requiresPaymentReference(methodType)) paymentReferenceLastFourSchema.parse(reference.trim())
   return wholesaleOrderFulfillRequestSchema.parse({
     lines: prepareFulfillmentLines(order, quantities),
     payment: { paymentMethodId, amountMinor: parsePaymentMoney(amount), reference },
   })
 }
 export function paidFulfillmentDefinitivelyRejected(code?: string): boolean {
-  return /^WHOLESALE_PAID_HCSP[123]$/.test(code ?? '')
+  return /^WHOLESALE_PAID_HCSP[123]$/.test(code ?? '') || code === 'WHOLESALE_PAYMENT_HCAP6'
 }

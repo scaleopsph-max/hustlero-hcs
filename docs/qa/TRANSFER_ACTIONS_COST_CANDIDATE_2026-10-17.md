@@ -1,0 +1,13 @@
+# Transfer Actions And Cost Candidate
+
+Owner resolved branch action policy on October 17: source branch dispatches; destination branch receives. Creating a stock-transfer draft uses source assignment; a restock request is a different workflow. Involved source/destination staff may see that transfer, not unrelated transfers. Active location labels remain tenant routing configuration so a source can choose a destination; this grants no destination stock or action access. Owner access remains tenant-wide.
+
+Source review found missing branch assignment checks in the original transfer commands/context, plus cached dispatch/receipt returns before current capability checks. Original receipt code also retained the destination's existing average cost instead of recalculating the moving average required by PROJECT_SPEC section 15.2. This is a source finding, not a live exploit or stock mutation.
+
+Migration `20261017104657_transfer_branch_actions_and_cost` adds private scoped wrappers, revalidates action capability/branch before cached responses, and binds returned transfer IDs to the requested path. Existing receipt implementation remains private, with destination cost recalculated using the same PostgreSQL numeric weighted formula as purchasing. Stock/transit, carried item cost, locks, append-only inventory events and no-revenue semantics remain intact. It does not retroactively recost history or introduce a negative-stock costing policy.
+
+The context projects action-location IDs for UI affordances. Unconfigured/older responses fail closed for actions; the database is still authoritative. The Receive UI skips already-completed lines in multi-item transfers. Eight safe HTTP denial cases and two focused multi-line UI-helper cases passed locally; full local/CI checks and SQL execution remain required before declaring this candidate verified.
+
+Disposable SQL tests cover independent source/destination users, wrong-side creation/dispatch/receipt denial, involved-transfer visibility, action metadata, exact two-unit dispatch, partial receipts/replay, moving-average costs 466.67 then 442.86, conserved total stock, zero new sales/cash, path substitution, assignment/capability removal on retries, unchanged business effects after denials and private core ACLs. The fixture is rolled back; it does not touch Staging or Production.
+
+Compatibility: coordinate migration/API/Back Office so the scoped context supplies action metadata. Do not expose old private cores for rollback or revert financial history. Broader baseline review, authenticated populated Staging workflow/computation UAT and separately approved Production rollout remain required. No live migration, access/credential grant, transaction, deployment or paid resource occurred.

@@ -35,11 +35,25 @@ const context: WholesalePaymentsContext = {
   ],
 }
 describe('wholesale payment entry', () => {
+  it.each(['e_wallet', 'bank_transfer'] as const)(
+    'requires exactly four %s digits and preserves zero prefixes',
+    (methodType) => {
+      const online = { ...context, paymentMethods: [{ id: methodId, name: 'Bank', methodType }] }
+      for (const reference of ['', '123', '12345', 'AB12']) {
+        expect(() =>
+          prepareWholesalePayment(online, customerId, methodId, '100', reference, { [invoiceId]: '100' }),
+        ).toThrow()
+      }
+      expect(
+        prepareWholesalePayment(online, customerId, methodId, '100', '0047', { [invoiceId]: '100' }).reference,
+      ).toBe('0047')
+    },
+  )
   it.each(['WHOLESALE_PAYMENT_HCAP1', 'WHOLESALE_PAYMENT_HCAP3', 'IDEMPOTENCY_KEY_CONFLICT', 'UNKNOWN'])(
     'retains retry identity after potentially completed outcome %s',
     (code) => expect(paymentRejectedBeforePosting(code)).toBe(false),
   )
-  it.each(['WHOLESALE_PAYMENT_HCAP2', 'WHOLESALE_PAYMENT_HCAP4', 'WHOLESALE_PAYMENT_HCAP5'])(
+  it.each(['WHOLESALE_PAYMENT_HCAP2', 'WHOLESALE_PAYMENT_HCAP4', 'WHOLESALE_PAYMENT_HCAP5', 'WHOLESALE_PAYMENT_HCAP6'])(
     'allows correction only after definitive rejection %s',
     (code) => expect(paymentRejectedBeforePosting(code)).toBe(true),
   )

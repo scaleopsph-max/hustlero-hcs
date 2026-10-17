@@ -1,6 +1,7 @@
 'use client'
 
 import { selectActiveTenant } from '@/lib/active-tenant'
+import { nextTransferReceiptItem } from '@/lib/transfer-receipt'
 
 import { createClient, type SupabaseClient } from '@/lib/supabase-browser'
 import { ArrowRightLeft, Plus, Truck } from 'lucide-react'
@@ -49,7 +50,8 @@ export function TransferWorkspace() {
   const load = useCallback(async (nextToken: string, nextTenant: string) => {
     const next = transferContextSchema.parse(await request('/v1/transfers', nextToken, nextTenant))
     setContext(next)
-    setSource((current) => current || next.locations[0]?.id || '')
+    const sources = next.locations.filter((location) => next.actionLocationIds?.includes(location.id))
+    setSource((current) => (sources.some((location) => location.id === current) ? current : sources[0]?.id || ''))
     setDestination((current) => current || next.locations[1]?.id || '')
     setVariant((current) => current || next.variants[0]?.id || '')
   }, [])
@@ -166,11 +168,13 @@ export function TransferWorkspace() {
           <div className="grid gap-3 sm:grid-cols-2">
             <select className={inputClass} value={source} onChange={(event) => setSource(event.target.value)} required>
               <option value="">Source branch</option>
-              {context.locations.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
+              {context.locations
+                .filter((item) => context.actionLocationIds?.includes(item.id))
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
             </select>
             <select
               className={inputClass}
@@ -207,7 +211,7 @@ export function TransferWorkspace() {
             type="submit"
             variant="primary"
             size="sm"
-            disabled={busy || !context.locations.length || !context.variants.length}
+            disabled={busy || !source || !context.actionLocationIds?.includes(source) || !context.variants.length}
           >
             <Plus size={16} className="mr-2" />
             Create draft transfer
@@ -241,18 +245,19 @@ export function TransferWorkspace() {
                     >
                       {transfer.status.replace('_', ' ')}
                     </Chip>
-                    {transfer.status === 'draft' ? (
+                    {transfer.status === 'draft' && context.actionLocationIds?.includes(transfer.sourceLocationId) ? (
                       <Button size="sm" variant="secondary" onClick={() => void dispatch(transfer.id)} disabled={busy}>
                         <Truck size={15} className="mr-1.5" />
                         Dispatch
                       </Button>
                     ) : null}
-                    {transfer.status === 'dispatched' || transfer.status === 'partially_received' ? (
+                    {(transfer.status === 'dispatched' || transfer.status === 'partially_received') &&
+                    context.actionLocationIds?.includes(transfer.destinationLocationId) ? (
                       <Button
                         size="sm"
                         variant="primary"
                         onClick={() => {
-                          const item = transfer.items[0]
+                          const item = nextTransferReceiptItem(transfer.items)
                           if (item)
                             void receive(transfer.id, item.id, item.requestedQuantityMilli - item.receivedQuantityMilli)
                         }}

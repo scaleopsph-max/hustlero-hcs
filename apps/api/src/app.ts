@@ -272,6 +272,9 @@ import {
 } from './loyalty-repository'
 import {
   loadDashboardFromPostgres,
+  loadPosPaymentReferenceReportFromPostgres,
+  loadWholesalePaymentReferenceReportFromPostgres,
+  type PosPaymentReferenceReportLoader,
   loadWholesaleSettlementFromPostgres,
   type WholesaleSettlementLoader,
   loadInventoryReportFromPostgres,
@@ -474,6 +477,8 @@ interface AppDependencies {
   updateLoyaltyPolicy: LoyaltyPolicyUpdater
   loadDashboard: DashboardLoader
   loadSalesReport: SalesReportLoader
+  loadPosPaymentReferenceReport: PosPaymentReferenceReportLoader
+  loadWholesalePaymentReferenceReport: PosPaymentReferenceReportLoader
   loadWholesaleSettlement: WholesaleSettlementLoader
   loadWholesaleStatement: WholesaleStatementLoader
   loadInventoryReport: InventoryReportLoader
@@ -577,6 +582,8 @@ const defaultDependencies: AppDependencies = {
   updateLoyaltyPolicy: updateLoyaltyPolicyInPostgres,
   loadDashboard: loadDashboardFromPostgres,
   loadSalesReport: loadSalesReportFromPostgres,
+  loadPosPaymentReferenceReport: loadPosPaymentReferenceReportFromPostgres,
+  loadWholesalePaymentReferenceReport: loadWholesalePaymentReferenceReportFromPostgres,
   loadWholesaleSettlement: loadWholesaleSettlementFromPostgres,
   loadWholesaleStatement: loadWholesaleStatementFromPostgres,
   loadInventoryReport: loadInventoryReportFromPostgres,
@@ -2356,6 +2363,7 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
         HCAP3: 'The authorized customer, payment method, invoice, or location is unavailable.',
         HCAP4: 'Classify the invoice before allocating a payment.',
         HCAP5: 'The allocation exceeds the current open invoice balance.',
+        HCAP6: 'Enter exactly four transaction reference digits for online payments.',
       }
       return context.json(
         apiErrorResponseSchema.parse({
@@ -2501,7 +2509,7 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
     const status = code === 'HCAR1' ? 403 : code === 'HCAR3' ? 404 : code === 'HCAR4' ? 409 : 400
     const message =
       code === 'HCAR1'
-        ? 'Only an active business owner may record opening receivables.'
+        ? 'Wholesale receivable access is not allowed.'
         : code === 'HCAR3'
           ? 'The eligible legacy invoice was not found.'
           : code === 'HCAR4'
@@ -3332,17 +3340,17 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
           }),
           409,
         )
-      if (code === 'HCS30' || code === 'HCS34')
+      if (code === 'HCS30' || code === 'HCS34' || code === 'HCS36')
         return context.json(
           apiErrorResponseSchema.parse({
             error: {
-              code: code === 'HCS34' ? 'PURCHASING_REFERENCE_NOT_FOUND' : 'PURCHASING_ACCESS_DENIED',
+              code: code !== 'HCS30' ? 'PURCHASING_REFERENCE_NOT_FOUND' : 'PURCHASING_ACCESS_DENIED',
               message:
-                code === 'HCS34' ? 'The supplier or location was not found.' : 'You do not have purchasing permission.',
+                code !== 'HCS30' ? 'The supplier or location was not found.' : 'You do not have purchasing permission.',
               requestId: context.get('requestId'),
             },
           }),
-          code === 'HCS34' ? 404 : 403,
+          code !== 'HCS30' ? 404 : 403,
         )
       if (code === 'HCS35')
         return context.json(
@@ -3398,6 +3406,17 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
       return context.json(purchaseOrderSendResponseSchema.parse(response))
     } catch (error) {
       const code = postgresErrorCode(error)
+      if (code === 'HCS30')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'PURCHASING_ACCESS_DENIED',
+              message: 'You do not have purchasing permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
       if (code === 'HCS08' || code === 'HCS37')
         return context.json(
           apiErrorResponseSchema.parse({
@@ -3479,6 +3498,17 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
       return context.json(purchaseReceiptResponseSchema.parse(response), 201)
     } catch (error) {
       const code = postgresErrorCode(error)
+      if (code === 'HCS30')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'PURCHASING_ACCESS_DENIED',
+              message: 'You do not have purchasing permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
       if (code === 'HCS08' || code === 'HCS40')
         return context.json(
           apiErrorResponseSchema.parse({
@@ -3606,7 +3636,7 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
           }),
           403,
         )
-      if (code === 'HCS52' || code === 'HCS53')
+      if (code === 'HCS52' || code === 'HCS53' || code === 'HCS55')
         return context.json(
           apiErrorResponseSchema.parse({
             error: {
@@ -3674,6 +3704,20 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
       )
     } catch (error) {
       const code = postgresErrorCode(error)
+      if (code === 'HCS50' || code === 'HCS08')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS50' ? 'TRANSFER_ACCESS_DENIED' : 'IDEMPOTENCY_KEY_CONFLICT',
+              message:
+                code === 'HCS50'
+                  ? 'You do not have transfer permission.'
+                  : 'This request key was used for another transfer.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          code === 'HCS50' ? 403 : 409,
+        )
       if (code === 'HCS57')
         return context.json(
           apiErrorResponseSchema.parse({
@@ -3756,6 +3800,20 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
       )
     } catch (error) {
       const code = postgresErrorCode(error)
+      if (code === 'HCS50' || code === 'HCS08')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: code === 'HCS50' ? 'TRANSFER_ACCESS_DENIED' : 'IDEMPOTENCY_KEY_CONFLICT',
+              message:
+                code === 'HCS50'
+                  ? 'You do not have transfer permission.'
+                  : 'This request key was used for another transfer.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          code === 'HCS50' ? 403 : 409,
+        )
       if (code === 'HCS59')
         return context.json(
           apiErrorResponseSchema.parse({
@@ -4848,7 +4906,13 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
 
   const loadReport = async (
     context: Context<{ Bindings: Bindings }>,
-    loader: DashboardLoader | SalesReportLoader | InventoryReportLoader | ShiftReportLoader | WholesaleSettlementLoader,
+    loader:
+      | DashboardLoader
+      | SalesReportLoader
+      | InventoryReportLoader
+      | ShiftReportLoader
+      | WholesaleSettlementLoader
+      | PosPaymentReferenceReportLoader,
   ) => {
     const resolved = await resolvePurchasingTenant(context)
     if (!resolved)
@@ -4882,7 +4946,10 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
     try {
       return context.json(await loader(resolved.userId, resolved.tenantId, parsed.data, context.env))
     } catch (error) {
-      if (loader === dependencies.loadWholesaleSettlement) {
+      if (
+        loader === dependencies.loadWholesaleSettlement ||
+        loader === dependencies.loadWholesalePaymentReferenceReport
+      ) {
         const response = receivableError(context, error)
         if (response) return response
       }
@@ -4892,6 +4959,12 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
 
   app.get('/v1/dashboard', (context) => loadReport(context, dependencies.loadDashboard))
   app.get('/v1/reports/sales', (context) => loadReport(context, dependencies.loadSalesReport))
+  app.get('/v1/reports/pos-payment-references', (context) =>
+    loadReport(context, dependencies.loadPosPaymentReferenceReport),
+  )
+  app.get('/v1/reports/wholesale-payment-references', (context) =>
+    loadReport(context, dependencies.loadWholesalePaymentReferenceReport),
+  )
   app.get('/v1/reports/inventory', (context) => loadReport(context, dependencies.loadInventoryReport))
   app.get('/v1/reports/shifts', (context) => loadReport(context, dependencies.loadShiftReport))
   app.get('/v1/reports/wholesale-settlement', (context) => loadReport(context, dependencies.loadWholesaleSettlement))
@@ -6596,6 +6669,18 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
             },
           }),
           403,
+        )
+      }
+      if (code === 'HCS32') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVENTORY_IMPORT_NOT_FOUND',
+              message: 'The inventory import was not found.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          404,
         )
       }
       if (code === 'HCS30' || code === '22P02' || code === '22003') {

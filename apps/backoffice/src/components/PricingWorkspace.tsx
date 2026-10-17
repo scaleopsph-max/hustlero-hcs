@@ -8,7 +8,8 @@ import {
   sessionContextResponseSchema,
   type PricingContext,
 } from '@hcs/contracts'
-import { Button, Chip, Glass, formatPeso, parsePeso } from '@hcs/ui'
+import { Button, Chip, Glass, formatPeso } from '@hcs/ui'
+import { pricingAmountMinor, pricingThresholdMilli } from '@/lib/pricing-input'
 import { Save, Tags } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 
@@ -39,6 +40,7 @@ export function PricingWorkspace() {
   const [groupCode, setGroupCode] = useState('CORE')
   const [groupName, setGroupName] = useState('Core products')
   const [threshold, setThreshold] = useState('6')
+  const [categoryId, setCategoryId] = useState('')
   const [isDefault, setIsDefault] = useState(true)
   const [isActive, setIsActive] = useState(true)
   const [prices, setPrices] = useState<Record<string, string>>({})
@@ -78,7 +80,7 @@ export function PricingWorkspace() {
   }, [auth, load])
 
   const configuredCount = useMemo(
-    () => Object.values(prices).filter((price) => parsePeso(price) >= 0 && price !== '').length,
+    () => Object.values(prices).filter((price) => price !== '' && pricingAmountMinor(price) !== null).length,
     [prices],
   )
 
@@ -90,6 +92,7 @@ export function PricingWorkspace() {
     setGroupCode(list.pricingGroup.code)
     setGroupName(list.pricingGroup.name)
     setThreshold(String(list.pricingGroup.thresholdMilli / 1000))
+    setCategoryId(list.pricingGroup.categoryId ?? '')
     setIsDefault(list.isDefault)
     setIsActive(list.isActive)
     setCustomerIds(list.customerIds)
@@ -102,9 +105,19 @@ export function PricingWorkspace() {
   async function save(event: FormEvent) {
     event.preventDefault()
     if (!token || !tenantId || !data) return
+    const thresholdMilli = pricingThresholdMilli(threshold)
+    if (
+      thresholdMilli === null ||
+      Object.values(prices).some((price) => price !== '' && pricingAmountMinor(price) === null)
+    ) {
+      setError('Enter valid prices with at most two decimals and a positive minimum with at most three decimals.')
+      return
+    }
     const entries = data.variants.flatMap((variant) => {
       const value = prices[variant.id]
-      return value === undefined || value === '' ? [] : [{ variantId: variant.id, unitPriceMinor: parsePeso(value) }]
+      return value === undefined || value === ''
+        ? []
+        : [{ variantId: variant.id, unitPriceMinor: pricingAmountMinor(value)! }]
     })
     setBusy(true)
     setError(null)
@@ -121,7 +134,12 @@ export function PricingWorkspace() {
             pricingType,
             isDefault,
             isActive,
-            pricingGroup: { code: groupCode, name: groupName, thresholdMilli: Math.round(Number(threshold) * 1000) },
+            pricingGroup: {
+              code: groupCode,
+              name: groupName,
+              thresholdMilli,
+              categoryId: categoryId || null,
+            },
             customerIds,
             entries,
           }),
@@ -235,7 +253,29 @@ export function PricingWorkspace() {
               </label>
             </div>
             <label className="grid gap-2 text-sm font-medium">
-              Minimum group quantity
+              Automatic wholesale category
+              <select
+                value={categoryId}
+                onChange={(event) => setCategoryId(event.target.value)}
+                disabled={busy || !data.canManage}
+                className="min-h-11 border border-ink-900/15 px-3"
+              >
+                <option value="">None</option>
+                {Array.from(
+                  new Map(
+                    data.variants
+                      .filter((variant) => variant.categoryId)
+                      .map((variant) => [variant.categoryId!, variant.categoryName ?? 'Category']),
+                  ).entries(),
+                ).map(([id, label]) => (
+                  <option key={id} value={id}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-2 text-sm font-medium">
+              {categoryId ? 'Minimum category quantity' : 'Minimum group quantity'}
               <input
                 inputMode="decimal"
                 value={threshold}
@@ -302,7 +342,7 @@ export function PricingWorkspace() {
             <Button
               type="submit"
               variant="primary"
-              disabled={busy || !data.canManage || configuredCount === 0 || Number(threshold) <= 0}
+              disabled={busy || !data.canManage || configuredCount === 0 || pricingThresholdMilli(threshold) === null}
             >
               <Save size={16} className="mr-2" />
               {busy ? 'Saving...' : 'Save price list'}

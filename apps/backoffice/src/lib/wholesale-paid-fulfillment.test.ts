@@ -57,7 +57,13 @@ describe('paid fulfillment contract', () => {
   )
   it('does not mix credit override with full payment', () =>
     expect(wholesaleOrderFulfillRequestSchema.safeParse({ ...payload, creditOverrideId: id }).success).toBe(false))
-  it.each(['WHOLESALE_PAID_HCSP1', 'WHOLESALE_PAID_HCSP2', 'WHOLESALE_PAID_HCSP3'])(
+  it.each(['e_wallet', 'bank_transfer'])('validates %s references without losing leading zeroes', (methodType) => {
+    for (const reference of ['', '123', '12345', 'AB12', '\uFF11\uFF12\uFF13\uFF14']) {
+      expect(() => preparePaidFulfillment(order, { [id]: '1' }, id, '450', reference, methodType)).toThrow()
+    }
+    expect(preparePaidFulfillment(order, { [id]: '1' }, id, '450', '0047', methodType).payment?.reference).toBe('0047')
+  })
+  it.each(['WHOLESALE_PAID_HCSP1', 'WHOLESALE_PAID_HCSP2', 'WHOLESALE_PAID_HCSP3', 'WHOLESALE_PAYMENT_HCAP6'])(
     'unlocks definitive rollback %s',
     (code) => expect(paidFulfillmentDefinitivelyRejected(code)).toBe(true),
   )

@@ -124,7 +124,13 @@ export type WholesaleReceivablesContext = z.infer<typeof wholesaleReceivablesCon
 export const wholesalePaymentsContextSchema = z.object({
   canRecord: z.boolean(),
   invoices: z.array(wholesaleReceivablesContextSchema.shape.invoices.element.safeExtend({ canAllocate: z.boolean() })),
-  paymentMethods: z.array(z.object({ id: z.uuid(), name: z.string() })),
+  paymentMethods: z.array(
+    z.object({
+      id: z.uuid(),
+      name: z.string(),
+      methodType: z.enum(['cash', 'e_wallet', 'bank_transfer', 'card_terminal', 'other']).optional(),
+    }),
+  ),
   payments: z.array(
     z
       .object({

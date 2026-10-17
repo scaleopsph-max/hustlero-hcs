@@ -1,6 +1,7 @@
 'use client'
 
 import { selectActiveTenant } from '@/lib/active-tenant'
+import { reportCsv } from '@/lib/report-csv'
 
 import { createClient } from '@/lib/supabase-browser'
 import { Clock3, CreditCard, Download, PackageSearch, Percent, ReceiptText, RefreshCw } from 'lucide-react'
@@ -43,13 +44,8 @@ async function call(path: string, token: string, tenantId: string) {
   return data
 }
 
-function csvCell(value: string | number) {
-  const text = String(value)
-  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
-}
-
 function downloadCsv(name: string, rows: Array<Array<string | number>>) {
-  const blob = new Blob([rows.map((row) => row.map(csvCell).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' })
+  const blob = new Blob([reportCsv(rows)], { type: 'text/csv;charset=utf-8' })
   const href = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = href

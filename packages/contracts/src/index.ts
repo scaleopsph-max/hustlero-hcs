@@ -24,11 +24,13 @@ export {
 export {
   pricingContextSchema,
   pricingTypeSchema,
+  posPricingModeSchema,
   priceListUpsertRequestSchema,
   priceListUpsertResponseSchema,
   wholesalePricingTypeSchema,
   type PricingContext,
   type PricingType,
+  type PosPricingMode,
   type PriceListUpsertRequest,
   type PriceListUpsertResponse,
 } from './pricing'
@@ -385,3 +387,4 @@ export {
   type WholesaleStatement,
   type WholesaleStatementQuery,
 } from './wholesale-statements'
+export * from './payment-references'
