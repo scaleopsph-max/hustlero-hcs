@@ -24,11 +24,13 @@ export {
 export {
   pricingContextSchema,
   pricingTypeSchema,
+  posPricingModeSchema,
   priceListUpsertRequestSchema,
   priceListUpsertResponseSchema,
   wholesalePricingTypeSchema,
   type PricingContext,
   type PricingType,
+  type PosPricingMode,
   type PriceListUpsertRequest,
   type PriceListUpsertResponse,
 } from './pricing'

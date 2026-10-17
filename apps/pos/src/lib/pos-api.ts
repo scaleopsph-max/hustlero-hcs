@@ -1,9 +1,9 @@
 import {
   posCustomerSchema,
   posPinLoginResponseSchema,
-  pricingTypeSchema,
+  posPricingModeSchema,
   type PosCustomer,
-  type PricingType,
+  type PosPricingMode,
 } from '@hcs/contracts'
 
 export const POS_SESSION_KEY = 'hustlero.pos.session'
@@ -63,12 +63,12 @@ export function writePosCustomer(customer: PosCustomer | null) {
   else sessionStorage.removeItem(POS_CUSTOMER_KEY)
 }
 
-export function readPosPricingType(): PricingType {
-  const parsed = pricingTypeSchema.safeParse(sessionStorage.getItem(POS_PRICING_TYPE_KEY))
-  return parsed.success ? parsed.data : 'retail'
+export function readPosPricingType(): PosPricingMode {
+  const parsed = posPricingModeSchema.safeParse(sessionStorage.getItem(POS_PRICING_TYPE_KEY))
+  return parsed.success ? parsed.data : 'auto'
 }
 
-export function writePosPricingType(pricingType: PricingType) {
+export function writePosPricingType(pricingType: PosPricingMode) {
   sessionStorage.setItem(POS_PRICING_TYPE_KEY, pricingType)
 }
 

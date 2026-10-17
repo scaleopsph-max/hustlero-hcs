@@ -8,7 +8,7 @@ import {
   posSalesContextSchema,
   type PosCustomer,
   type PosSalesContext,
-  type PricingType,
+  type PosPricingMode,
 } from '@hcs/contracts'
 import { Button, Chip, Glass, Logo, Surface, buttonClasses, cn, formatPeso, parsePeso } from '@hcs/ui'
 import { SyncPill } from '@/components/SyncPill'
@@ -32,7 +32,7 @@ export default function SellScreen() {
   const [context, setContext] = useState<PosSalesContext | null>(null)
   const [lines, setLines] = useState<PosCartLine[]>([])
   const [customer, setCustomer] = useState<PosCustomer | null>(null)
-  const [pricingType, setPricingType] = useState<PricingType>('retail')
+  const [pricingType, setPricingType] = useState<PosPricingMode>('auto')
   const [category, setCategory] = useState('All')
   const [query, setQuery] = useState('')
   const [openingCash, setOpeningCash] = useState('0.00')
@@ -72,7 +72,7 @@ export default function SellScreen() {
   )
   const total = pricing.totalCentavos
 
-  function selectPricingType(next: PricingType) {
+  function selectPricingType(next: PosPricingMode) {
     setPricingType(next)
     writePosPricingType(next)
     setError(null)
@@ -258,8 +258,8 @@ export default function SellScreen() {
               <ShoppingBag size={21} className="text-gold-300" />
             </div>
             <PosCustomerPicker selected={customer} onSelect={setCustomer} />
-            <div className="grid grid-cols-3 gap-1" aria-label="Pricing type">
-              {(['retail', 'wholesale', 'dealer'] as const).map((type) => (
+            <div className="grid grid-cols-2 gap-1 sm:grid-cols-4" aria-label="Pricing type">
+              {(['auto', 'retail', 'wholesale', 'dealer'] as const).map((type) => (
                 <button
                   key={type}
                   type="button"

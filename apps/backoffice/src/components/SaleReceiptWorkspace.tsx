@@ -277,6 +277,9 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
                   <td className="px-6 py-4">
                     <div className="font-semibold">{line.productName}</div>
                     <div className="text-ink-500">{line.variantName}</div>
+                    {line.pricingType ? (
+                      <div className="text-xs capitalize text-ink-500">{line.pricingType}</div>
+                    ) : null}
                   </td>
                   <td className="px-4 py-4">{line.sku}</td>
                   <td className="px-4 py-4 text-right">{line.quantityMilli / 1000}</td>

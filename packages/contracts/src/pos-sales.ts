@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { paymentReferenceLastFourSchema } from './payment-references'
+import { posPricingModeSchema } from './pricing'
 
 const id = z.uuid()
 const timestamp = z.iso.datetime({ offset: true })
@@ -28,6 +29,7 @@ export const posSalesContextSchema = z.object({
       sku: z.string(),
       barcode: z.string().nullable(),
       category: z.string().nullable(),
+      categoryId: id.nullable().optional(),
       retailPriceCentavos: z.number().int().nonnegative(),
       pricingOptions: z
         .array(
@@ -37,6 +39,8 @@ export const posSalesContextSchema = z.object({
             priceListName: z.string(),
             pricingGroupId: id,
             pricingGroupName: z.string(),
+            categoryId: id.nullable().optional(),
+            priceListUpdatedAt: timestamp.optional(),
             thresholdMilli: z.number().int().positive(),
             unitPriceCentavos: z.number().int().nonnegative(),
             isDefault: z.boolean(),
@@ -88,7 +92,7 @@ export const posSaleCompleteRequestSchema = z.object({
       'Duplicate payment methods',
     ),
   customerId: id.nullable().optional(),
-  pricingType: z.enum(['retail', 'wholesale', 'dealer']).default('retail'),
+  pricingType: posPricingModeSchema.default('retail'),
 })
 
 export const posSaleCompleteResponseSchema = z.object({
@@ -181,6 +185,13 @@ export const saleReceiptDetailSchema = z.object({
       refundableQuantityMilli: z.number().int().nonnegative(),
       unitPriceCentavos: z.number().int().nonnegative(),
       lineTotalCentavos: z.number().int().nonnegative(),
+      pricingType: z.enum(['retail', 'wholesale', 'dealer']).nullable().optional(),
+      pricingBasis: z.enum(['category', 'manual']).nullable().optional(),
+      pricingCategoryId: id.nullable().optional(),
+      pricingGroupId: id.nullable().optional(),
+      pricingQuantityMilli: z.number().int().nonnegative().nullable().optional(),
+      pricingThresholdMilli: z.number().int().positive().nullable().optional(),
+      pricingPriceListId: id.nullable().optional(),
     }),
   ),
   payments: z.array(

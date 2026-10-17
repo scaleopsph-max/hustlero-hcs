@@ -10,7 +10,7 @@ import {
   type PosCustomer,
   type PosSaleCompleteResponse,
   type PosSalesContext,
-  type PricingType,
+  type PosPricingMode,
 } from '@hcs/contracts'
 import { Button, Glass, Keypad, Surface, cn, formatPeso, parsePeso } from '@hcs/ui'
 import { SubHeader } from '@/components/SubHeader'
@@ -51,7 +51,7 @@ export default function Checkout() {
   const [context, setContext] = useState<PosSalesContext | null>(null)
   const [lines, setLines] = useState<PosCartLine[]>([])
   const [customer, setCustomer] = useState<PosCustomer | null>(null)
-  const [pricingType, setPricingType] = useState<PricingType>('retail')
+  const [pricingType, setPricingType] = useState<PosPricingMode>('auto')
   const [selectedMethodId, setSelectedMethodId] = useState('')
   const [amount, setAmount] = useState('')
   const [received, setReceived] = useState('')

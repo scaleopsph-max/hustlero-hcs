@@ -3,6 +3,7 @@ import { z } from 'zod'
 const id = z.uuid()
 
 export const pricingTypeSchema = z.enum(['retail', 'wholesale', 'dealer'])
+export const posPricingModeSchema = z.enum(['auto', 'retail', 'wholesale', 'dealer'])
 export const wholesalePricingTypeSchema = z.enum(['wholesale', 'dealer'])
 
 export const pricingContextSchema = z.object({
@@ -14,6 +15,8 @@ export const pricingContextSchema = z.object({
       variantName: z.string(),
       sku: z.string(),
       retailPriceMinor: z.number().int().nonnegative(),
+      categoryId: id.nullable().optional(),
+      categoryName: z.string().nullable().optional(),
     }),
   ),
   customers: z.array(
@@ -27,7 +30,13 @@ export const pricingContextSchema = z.object({
       pricingType: wholesalePricingTypeSchema,
       isDefault: z.boolean(),
       isActive: z.boolean(),
-      pricingGroup: z.object({ id, code: z.string(), name: z.string(), thresholdMilli: z.number().int().positive() }),
+      pricingGroup: z.object({
+        id,
+        code: z.string(),
+        name: z.string(),
+        thresholdMilli: z.number().int().positive(),
+        categoryId: id.nullable().optional(),
+      }),
       customerIds: z.array(id),
       entries: z.array(z.object({ variantId: id, unitPriceMinor: z.number().int().nonnegative() })),
     }),
@@ -55,6 +64,7 @@ export const priceListUpsertRequestSchema = z.object({
       .regex(/^[A-Za-z0-9_-]+$/),
     name: z.string().trim().min(1).max(120),
     thresholdMilli: z.number().int().positive(),
+    categoryId: id.nullable().optional(),
   }),
   customerIds: z.array(id).max(500).default([]),
   entries: z
@@ -74,6 +84,7 @@ export const priceListUpsertResponseSchema = z.object({
 })
 
 export type PricingType = z.infer<typeof pricingTypeSchema>
+export type PosPricingMode = z.infer<typeof posPricingModeSchema>
 export type PricingContext = z.infer<typeof pricingContextSchema>
 export type PriceListUpsertRequest = z.infer<typeof priceListUpsertRequestSchema>
 export type PriceListUpsertResponse = z.infer<typeof priceListUpsertResponseSchema>
