@@ -1,5 +1,13 @@
 import type { PosPaymentReferenceReport } from '@hcs/contracts'
 
+export type PaymentReferenceScope = { from: string; to: string; locationId: string }
+
+export function paymentReferenceScopeMatches(loaded: PaymentReferenceScope | null, selected: PaymentReferenceScope) {
+  return (
+    !!loaded && loaded.from === selected.from && loaded.to === selected.to && loaded.locationId === selected.locationId
+  )
+}
+
 export function paymentReferenceDecimal(value: bigint): string {
   const magnitude = value < 0n ? -value : value
   return `${value < 0n ? '-' : ''}${magnitude / 100n}.${String(magnitude % 100n).padStart(2, '0')}`
@@ -17,9 +25,16 @@ export function paymentReferenceTotals(rows: PosPaymentReferenceReport['rows']) 
   return totals
 }
 
-export function paymentReferenceCsv(report: PosPaymentReferenceReport): string {
+export function paymentReferenceCsv(
+  report: PosPaymentReferenceReport,
+  scope: PaymentReferenceScope & { branchName: string; methodName: string },
+): string {
   const rows: Array<Array<string | number>> = [
     ['Timezone', report.timezone],
+    ['From (inclusive)', scope.from],
+    ['To (inclusive)', scope.to],
+    ['Branch', scope.branchName, scope.locationId || 'All permitted branches'],
+    ['Payment method', scope.methodName],
     [
       'Receipt',
       'Recorded at',

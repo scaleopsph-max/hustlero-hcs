@@ -10,7 +10,13 @@ import {
 import { formatPeso } from '@hcs/ui'
 import { createClient } from '@/lib/supabase-browser'
 import { selectActiveTenant } from '@/lib/active-tenant'
-import { paymentReferenceCsv, paymentReferenceDecimal, paymentReferenceTotals } from '@/lib/payment-reference-report'
+import {
+  paymentReferenceCsv,
+  paymentReferenceDecimal,
+  paymentReferenceScopeMatches,
+  paymentReferenceTotals,
+  type PaymentReferenceScope,
+} from '@/lib/payment-reference-report'
 
 const field = 'min-h-10 min-w-0 w-full rounded border border-ink-900/20 bg-white px-3 py-2'
 const today = () =>
@@ -41,7 +47,9 @@ export function PaymentReferenceReport() {
   const [to, setTo] = useState(today)
   const [location, setLocation] = useState('')
   const [method, setMethod] = useState('')
-  const [report, setReport] = useState<PosPaymentReferenceReport | null>(null)
+  const [loadedReport, setReport] = useState<PosPaymentReferenceReport | null>(null)
+  const [loadedScope, setLoadedScope] = useState<PaymentReferenceScope | null>(null)
+  const report = paymentReferenceScopeMatches(loadedScope, { from, to, locationId: location }) ? loadedReport : null
   const [locations, setLocations] = useState<PosPaymentReferenceReport['locations']>([])
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -55,6 +63,7 @@ export function PaymentReferenceReport() {
     setBusy(true)
     setError(null)
     setReport(null)
+    const requestedScope = { from, to, locationId: location }
     try {
       if (!auth) throw new Error('Authentication is not configured.')
       const { data, error: sessionError } = await auth.auth.getSession()
@@ -73,6 +82,7 @@ export function PaymentReferenceReport() {
       )
       if (alive.current) {
         setReport(next)
+        setLoadedScope(requestedScope)
         setLocations(next.locations)
         setMethod('')
       }
@@ -97,7 +107,23 @@ export function PaymentReferenceReport() {
   function download() {
     if (!report) return
     const href = URL.createObjectURL(
-      new Blob([paymentReferenceCsv({ ...report, rows })], { type: 'text/csv;charset=utf-8' }),
+      new Blob(
+        [
+          paymentReferenceCsv(
+            { ...report, rows },
+            {
+              from,
+              to,
+              locationId: location,
+              branchName: location
+                ? (locations.find((item) => item.id === location)?.name ?? location)
+                : 'All permitted branches',
+              methodName: method ? (methods.find(([id]) => id === method)?.[1] ?? method) : 'All methods',
+            },
+          ),
+        ],
+        { type: 'text/csv;charset=utf-8' },
+      ),
     )
     const link = document.createElement('a')
     link.href = href
@@ -113,6 +139,7 @@ export function PaymentReferenceReport() {
           <input
             className={field}
             type="date"
+            disabled={busy}
             value={from}
             onChange={(event) => setFrom(event.target.value)}
             required
@@ -120,11 +147,23 @@ export function PaymentReferenceReport() {
         </label>
         <label className="grid gap-1 text-sm">
           To
-          <input className={field} type="date" value={to} onChange={(event) => setTo(event.target.value)} required />
+          <input
+            className={field}
+            type="date"
+            value={to}
+            onChange={(event) => setTo(event.target.value)}
+            disabled={busy}
+            required
+          />
         </label>
         <label className="grid gap-1 text-sm">
           Branch
-          <select className={field} value={location} onChange={(event) => setLocation(event.target.value)}>
+          <select
+            className={field}
+            value={location}
+            onChange={(event) => setLocation(event.target.value)}
+            disabled={busy}
+          >
             <option value="">All permitted branches</option>
             {locations.map((item) => (
               <option value={item.id} key={item.id}>
