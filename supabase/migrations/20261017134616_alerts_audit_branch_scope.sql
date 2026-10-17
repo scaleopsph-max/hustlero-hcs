@@ -25,8 +25,8 @@ begin
   from app.tenant_memberships m
   where m.tenant_id = p_tenant_id and m.user_id = p_actor_user_id and m.status = 'active';
 
-  select is_owner into v_is_owner from app.tenant_memberships
-  where tenant_id=p_tenant_id and user_id=p_actor_user_id and status='active';
+  select coalesce((select is_owner from app.tenant_memberships
+  where tenant_id=p_tenant_id and user_id=p_actor_user_id and status='active'),false) into v_is_owner;
 
   perform app.sync_core_alerts(p_tenant_id);
 
@@ -77,8 +77,8 @@ begin
       ))
   ) then raise exception using errcode='HCSE0', message='Alert management is not allowed'; end if;
 
-  select is_owner into v_is_owner from app.tenant_memberships
-  where tenant_id=p_tenant_id and user_id=p_actor_user_id and status='active';
+  select coalesce((select is_owner from app.tenant_memberships
+  where tenant_id=p_tenant_id and user_id=p_actor_user_id and status='active'),false) into v_is_owner;
 
   select * into v_alert from app.risk_alerts where tenant_id=p_tenant_id and id=p_alert_id for update;
   if not found or not (v_is_owner or app.can_read_wholesale_location(p_actor_user_id,p_tenant_id,v_alert.location_id)) then
@@ -127,8 +127,8 @@ begin
         where mr.tenant_id=m.tenant_id and mr.user_id=m.user_id and rp.permission_code='audit.read'
       ))
   ) then raise exception using errcode='HCSE0', message='Audit access is not allowed'; end if;
-  select is_owner into v_is_owner from app.tenant_memberships
-  where tenant_id=p_tenant_id and user_id=p_actor_user_id and status='active';
+  select coalesce((select is_owner from app.tenant_memberships
+  where tenant_id=p_tenant_id and user_id=p_actor_user_id and status='active'),false) into v_is_owner;
 
   if p_from is null or p_to is null or p_to<p_from or p_to-p_from>366 or p_limit not between 1 and 100 or p_offset<0
     or (p_actor_type is not null and p_actor_type not in ('tenant_user','pos_employee','platform_admin','system')) then
