@@ -3340,17 +3340,17 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
           }),
           409,
         )
-      if (code === 'HCS30' || code === 'HCS34')
+      if (code === 'HCS30' || code === 'HCS34' || code === 'HCS36')
         return context.json(
           apiErrorResponseSchema.parse({
             error: {
-              code: code === 'HCS34' ? 'PURCHASING_REFERENCE_NOT_FOUND' : 'PURCHASING_ACCESS_DENIED',
+              code: code !== 'HCS30' ? 'PURCHASING_REFERENCE_NOT_FOUND' : 'PURCHASING_ACCESS_DENIED',
               message:
-                code === 'HCS34' ? 'The supplier or location was not found.' : 'You do not have purchasing permission.',
+                code !== 'HCS30' ? 'The supplier or location was not found.' : 'You do not have purchasing permission.',
               requestId: context.get('requestId'),
             },
           }),
-          code === 'HCS34' ? 404 : 403,
+          code !== 'HCS30' ? 404 : 403,
         )
       if (code === 'HCS35')
         return context.json(
@@ -3406,6 +3406,17 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
       return context.json(purchaseOrderSendResponseSchema.parse(response))
     } catch (error) {
       const code = postgresErrorCode(error)
+      if (code === 'HCS30')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'PURCHASING_ACCESS_DENIED',
+              message: 'You do not have purchasing permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
       if (code === 'HCS08' || code === 'HCS37')
         return context.json(
           apiErrorResponseSchema.parse({
@@ -3487,6 +3498,17 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
       return context.json(purchaseReceiptResponseSchema.parse(response), 201)
     } catch (error) {
       const code = postgresErrorCode(error)
+      if (code === 'HCS30')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'PURCHASING_ACCESS_DENIED',
+              message: 'You do not have purchasing permission.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          403,
+        )
       if (code === 'HCS08' || code === 'HCS40')
         return context.json(
           apiErrorResponseSchema.parse({
