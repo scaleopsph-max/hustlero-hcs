@@ -131,7 +131,7 @@ export function PlatformConsole() {
   }
 
   async function signOut() {
-    await auth?.auth.signOut()
+    await auth?.auth.signOut({ scope: 'local' })
     setContext(null)
     setView('signed_out')
   }

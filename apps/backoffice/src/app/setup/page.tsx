@@ -414,7 +414,7 @@ export default function SetupPage() {
         {user && auth && mode !== 'update-password' ? (
           <button
             type="button"
-            onClick={() => void auth.auth.signOut()}
+            onClick={() => void auth.auth.signOut({ scope: 'local' })}
             className="inline-flex items-center gap-2 text-sm font-medium"
           >
             <LogOut size={17} />
