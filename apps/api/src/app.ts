@@ -6671,6 +6671,18 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
           403,
         )
       }
+      if (code === 'HCS32') {
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVENTORY_IMPORT_NOT_FOUND',
+              message: 'The inventory import was not found.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          404,
+        )
+      }
       if (code === 'HCS30' || code === '22P02' || code === '22003') {
         return context.json(
           apiErrorResponseSchema.parse({

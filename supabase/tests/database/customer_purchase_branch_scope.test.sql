@@ -82,8 +82,8 @@ insert into app.sale_payments(id,tenant_id,sale_id,payment_method_id,amount,tend
 
 insert into app.role_permissions(tenant_id,role_id,permission_code) values
 ('2d000000-0000-4000-8000-000000000001','f1000000-0000-4000-8000-000000000001','customers.read');
-insert into app.customers(id,tenant_id,customer_number,full_name,phone,created_by_user_id)
-values('fa000000-0000-4000-8000-000000000001','2d000000-0000-4000-8000-000000000001','SCOPE-C1','Shared Customer','09123456789','1d000000-0000-4000-8000-000000000001');
+insert into app.customers(id,tenant_id,customer_number,full_name,phone,origin,created_by_user_id)
+values('fa000000-0000-4000-8000-000000000001','2d000000-0000-4000-8000-000000000001','SCOPE-C1','Shared Customer','09123456789','backoffice','1d000000-0000-4000-8000-000000000001');
 update app.sales set customer_id='fa000000-0000-4000-8000-000000000001' where tenant_id='2d000000-0000-4000-8000-000000000001';
 create function pg_temp.customer_scope(p_actor uuid) returns jsonb language sql as $$
   select app.load_customer(p_actor,'2d000000-0000-4000-8000-000000000001','fa000000-0000-4000-8000-000000000001');
