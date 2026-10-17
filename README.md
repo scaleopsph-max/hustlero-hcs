@@ -6,13 +6,14 @@ The product combines a branch-ready POS, inventory control, sales reporting, cus
 
 ## Current status
 
-The project is in **Pre-Development Foundation**. The functional specification and UI direction are approved inputs, but no production feature implementation, database migration, or Cloudflare deployment has started.
+The project is in **Phase 1 - Platform Skeleton**. The blueprint is approved, the approved UI source is imported, the monorepo and API foundations are active, and the first tenancy migration is versioned but not applied to any remote environment.
 
 Read these documents before making changes:
 
 - [Locked product specification](docs/PROJECT_SPEC.md)
 - [Foundation index](docs/FOUNDATION.md)
 - [System architecture](docs/architecture/SYSTEM_ARCHITECTURE.md)
+- [Authentication and database connectivity](docs/architecture/AUTH_AND_DATABASE_CONNECTIVITY.md)
 - [MVP scope](docs/product/MVP_SCOPE.md)
 - [Database blueprint](docs/database/DATABASE_BLUEPRINT.md)
 - [Permissions and security](docs/security/PERMISSIONS_AND_SECURITY.md)
@@ -22,13 +23,18 @@ Read these documents before making changes:
 - [Roadmap](docs/ROADMAP.md)
 - [Project state](docs/PROJECT_STATE.md)
 
-## Approval gate
+## Local development
 
-Development begins only after the owner sends:
+Use Node.js from `.nvmrc`, then install and verify the workspace:
 
-`APPROVED BLUEPRINT - PROCEED TO BUILD`
+```bash
+npm install
+npm run check
+```
 
-Until then, changes are limited to discovery, architecture, planning, documentation, and non-production validation.
+Start an individual application with `npm run dev:web`, `npm run dev:backoffice`, `npm run dev:pos`, `npm run dev:admin`, or `npm run dev:api`.
+
+The Cloudflare compatibility builds are available through `npm run build:cloudflare`. A Docker-compatible runtime is required before running `npx supabase start`, `npx supabase db reset`, or the database test suite locally; the same database checks also run in GitHub CI.
 
 ## Repository
 

@@ -1,0 +1,53 @@
+{
+  "name": "hustlero-hcs",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HUSTLERO (HCS) multi-tenant retail operating system.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "build:cloudflare": "npm run build:vinext --workspaces --if-present",
+    "check": "npm run security:secrets && npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run build:cloudflare",
+    "dev:admin": "npm run dev -w @hcs/admin",
+    "dev:api": "npm run dev -w @hcs/api",
+    "dev:backoffice": "npm run dev -w @hcs/backoffice",
+    "dev:pos": "npm run dev -w @hcs/pos",
+    "dev:web": "npm run dev -w @hcs/web",
+    "format": "prettier --write \"apps/**/*.{ts,tsx,js,mjs,json,jsonc,css}\" \"packages/**/*.{ts,tsx,js,mjs,json,css}\" \"*.{ts,js,mjs,json,jsonc}\" \".github/**/*.yml\" \"scripts/staging-*.mjs\"",
+    "format:check": "prettier --check \"apps/**/*.{ts,tsx,js,mjs,json,jsonc,css}\" \"packages/**/*.{ts,tsx,js,mjs,json,css}\" \"*.{ts,js,mjs,json,jsonc}\" \".github/**/*.yml\" \"scripts/staging-*.mjs\"",
+    "lint": "eslint apps packages \"scripts/staging-*.mjs\"",
+    "security:dependencies": "node scripts/dependency-audit.mjs",
+    "security:secrets": "node scripts/secret-scan.mjs",
+    "test": "vitest run && node --test scripts/staging-isolation-uat.test.mjs scripts/staging-fund-recovery-uat.test.mjs scripts/staging-paid-replay-uat.test.mjs scripts/staging-paid-rollback-uat.test.mjs scripts/staging-approval-consumption-uat.test.mjs scripts/staging-second-tenant-uat.test.mjs scripts/staging-second-tenant-fixtures.test.mjs scripts/staging-cross-tenant-owner.test.mjs scripts/staging-cross-tenant-tester.test.mjs",
+    "test:watch": "vitest",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.5.2",
+    "eslint": "10.11.0",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "17.12.0",
+    "prettier": "3.9.8",
+    "sharp": "0.35.5",
+    "supabase": "2.117.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.0",
+    "vitest": "4.1.11"
+  },
+  "overrides": {
+    "sharp": "$sharp",
+    "source-map-js": "1.2.2"
+  },
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "packageManager": "npm@11.16.0",
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "workerd@1.20260921.1": true
+  }
+}

@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>POS sell screen</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:'Figtree','Segoe UI',system-ui,sans-serif;color:#F5F5F6;background:#08080A;font-variant-numeric:tabular-nums}
+button,input{font-family:inherit}
+input::placeholder{color:#B4B4BA}
+a{color:#E2C15F}a:hover{color:#F5E9BE}
+.g{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);box-shadow:0 8px 32px rgba(0,0,0,0.35),inset 0 1px 0 rgba(255,255,255,0.10);-webkit-backdrop-filter:blur(24px) saturate(140%);backdrop-filter:blur(24px) saturate(140%)}
+.gs{background:rgba(255,255,255,0.10);border:1px solid rgba(255,255,255,0.18);box-shadow:0 16px 48px rgba(0,0,0,0.45),inset 0 1px 0 rgba(255,255,255,0.16);-webkit-backdrop-filter:blur(32px) saturate(150%);backdrop-filter:blur(32px) saturate(150%)}
+.gg{background:rgba(212,175,55,0.14);border:1px solid rgba(212,175,55,0.45);box-shadow:0 8px 32px rgba(0,0,0,0.35),inset 0 1px 0 rgba(255,255,255,0.14);-webkit-backdrop-filter:blur(24px) saturate(140%);backdrop-filter:blur(24px) saturate(140%)}
+</style>
+</helmet>
+<div style="position:relative;overflow:hidden;isolation:isolate;width:1280px;height:800px;padding:12px;display:flex;flex-direction:column;gap:12px;background:#08080A;">
+  <div style="position:absolute;z-index:-1;left:180px;top:300px;width:520px;height:520px;border-radius:50%;background:#D4AF37;opacity:0.22;filter:blur(140px);pointer-events:none;"></div>
+  <div style="position:absolute;z-index:-1;right:-100px;top:-120px;width:520px;height:520px;border-radius:50%;background:#6B6B75;opacity:0.34;filter:blur(140px);pointer-events:none;"></div>
+  <div style="position:absolute;z-index:-1;right:80px;top:520px;width:440px;height:440px;border-radius:50%;background:#D4AF37;opacity:0.20;filter:blur(140px);pointer-events:none;"></div>
+
+  <div class="g" style="height:64px;flex:none;border-radius:20px;padding:0 16px;display:flex;align-items:center;gap:20px;">
+    <div style="display:flex;align-items:center;gap:12px;flex:none;">
+      <svg viewBox="0 0 32 32" role="img" aria-label="HCS logo" style="width:34px;height:34px;flex:none"><rect width="32" height="32" rx="8" style="fill:#D4AF37"></rect><path d="M10 8v16M22 8v16" style="fill:none;stroke:#0A0A0B;stroke-width:3.5;stroke-linecap:round"></path><path d="M10 16h12" style="fill:none;stroke:#0A0A0B;stroke-width:3.5;stroke-linecap:round"></path></svg>
+      <div style="display:flex;flex-direction:column;"><span style="font-size:15px;font-weight:600;line-height:18px;color:#fff;">Main Branch</span><span style="font-size:13px;line-height:16px;color:#B4B4BA;">Register 1</span></div>
+    </div>
+    <div style="position:relative;flex:1 1 0;max-width:380px;min-width:0;">
+      <svg viewBox="0 0 24 24" style="position:absolute;left:14px;top:12px;width:20px;height:20px;color:#B4B4BA;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="M4 8V5a1 1 0 0 1 1-1h3 M16 4h3a1 1 0 0 1 1 1v3 M20 16v3a1 1 0 0 1-1 1h-3 M8 20H5a1 1 0 0 1-1-1v-3 M8 9v6 M12 9v6 M16 9v6"></path></svg>
+      <label for="pos-q" style="position:absolute;left:-9999px;">Scan barcode or search products</label>
+      <input id="pos-q" type="text" placeholder="Scan barcode or search products" style="width:100%;height:44px;padding:0 14px 0 44px;border:1px solid rgba(255,255,255,0.20);border-radius:14px;background:rgba(255,255,255,0.08);color:#fff;font-size:15px;">
+    </div>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex:none;">
+      <span style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:999px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);font-size:13px;font-weight:600;color:#fff;"><span style="width:9px;height:9px;border-radius:999px;background:#4AC480;"></span>Online, synced</span>
+      <sc-for list="{{headerBtns}}" as="h" hint-placeholder-count="2">
+        <button style="display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;border:1px solid rgba(255,255,255,0.20);border-radius:12px;background:transparent;color:#fff;font-size:14px;font-weight:600;">
+          <svg viewBox="0 0 24 24" style="width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="{{h.icon}}"></path></svg>{{h.label}}
+        </button>
+      </sc-for>
+      <a href="POS-Close.dc.html" style="display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;border:1px solid rgba(255,255,255,0.20);border-radius:12px;color:#fff;font-size:14px;font-weight:600;text-decoration:none;">
+        <svg viewBox="0 0 24 24" style="width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="M9 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h4 M16 8l4 4-4 4 M20 12H9"></path></svg>Close register
+      </a>
+      <div style="width:40px;height:40px;border-radius:999px;background:#D4AF37;color:#0A0A0B;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;" aria-label="Signed in as Ana R.">AR</div>
+    </div>
+  </div>
+
+  <div style="flex:1 1 0;min-height:0;display:flex;gap:12px;">
+
+    <div style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:16px;padding:4px 0;">
+      <div style="display:flex;gap:10px;">
+        <sc-for list="{{categories}}" as="c" hint-placeholder-count="6">
+          <button style="height:44px;padding:0 20px;border-radius:999px;font-size:15px;font-weight:600;border:1px solid {{c.border}};background:{{c.bg}};color:{{c.fg}};">{{c.label}}</button>
+        </sc-for>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4, minmax(0,1fr));gap:12px;">
+        <sc-for list="{{tiles}}" as="t" hint-placeholder-count="16">
+          <button style="min-height:118px;padding:14px;border-radius:20px;border:1px solid {{t.border}};background:{{t.bg}};-webkit-backdrop-filter:blur(24px) saturate(140%);backdrop-filter:blur(24px) saturate(140%);text-align:left;display:flex;flex-direction:column;justify-content:space-between;gap:10px;color:{{t.nameColor}};">
+            <span style="display:flex;flex-direction:column;gap:2px;"><span style="font-size:16px;line-height:20px;font-weight:600;">{{t.name}}</span><span style="font-size:13px;color:{{t.subColor}};">{{t.sub}}</span></span>
+            <span style="display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;"><span style="font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:22px;line-height:26px;font-weight:700;color:{{t.priceColor}};">{{t.price}}</span><span style="display:inline-flex;align-items:center;height:24px;padding:0 8px;border-radius:999px;background:{{t.chipBg}};color:{{t.chipFg}};font-size:12px;font-weight:600;">{{t.stock}}</span></span>
+          </button>
+        </sc-for>
+      </div>
+    </div>
+
+    <div class="gs" style="width:400px;flex:none;border-radius:28px;padding:14px;display:flex;flex-direction:column;gap:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h1 style="margin:0;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:22px;line-height:28px;font-weight:700;color:#fff;">Current sale</h1>
+        <button style="display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;border:1px solid rgba(255,255,255,0.20);border-radius:12px;background:rgba(255,255,255,0.08);font-size:14px;font-weight:600;color:#fff;"><svg viewBox="0 0 24 24" style="width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="M8 5v14 M16 5v14"></path></svg>Hold</button>
+      </div>
+      <button style="display:flex;align-items:center;gap:10px;height:44px;padding:0 14px;border:1px dashed rgba(255,255,255,0.35);border-radius:12px;background:transparent;font-size:14px;font-weight:600;color:#E9E9EB;"><svg viewBox="0 0 24 24" style="width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round"><path d="M14 20v-1a5 5 0 0 0-5-5H7a5 5 0 0 0-5 5v1 M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M19 8v6 M22 11h-6"></path></svg>Add customer</button>
+      <div style="display:flex;gap:2px;padding:3px;background:rgba(255,255,255,0.08);border-radius:14px;">
+        <button style="flex:1 1 0;height:44px;border:0;border-radius:11px;background:transparent;font-size:14px;font-weight:600;color:#D6D6DA;">Retail</button>
+        <button style="flex:1 1 0;height:44px;border:0;border-radius:11px;background:#F5F5F6;font-size:14px;font-weight:700;color:#0A0A0B;">Wholesale (auto)</button>
+      </div>
+
+      <div style="display:flex;flex-direction:column;">
+        <sc-for list="{{cart}}" as="i" hint-placeholder-count="2">
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.10);">
+            <div style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:2px;"><span style="font-size:15px;line-height:19px;font-weight:600;color:#fff;">{{i.name}}</span><span style="font-size:12px;line-height:16px;color:#B4B4BA;">{{i.unit}}</span></div>
+            <div style="display:flex;align-items:center;flex:none;">
+              <button aria-label="Decrease quantity" style="width:44px;height:44px;border:1px solid rgba(255,255,255,0.20);border-radius:12px 0 0 12px;background:rgba(255,255,255,0.08);color:#fff;display:flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"><path d="M5 12h14"></path></svg></button>
+              <span style="width:38px;height:44px;border-top:1px solid rgba(255,255,255,0.20);border-bottom:1px solid rgba(255,255,255,0.20);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff;">{{i.qty}}</span>
+              <button aria-label="Increase quantity" style="width:44px;height:44px;border:1px solid rgba(255,255,255,0.20);border-radius:0 12px 12px 0;background:rgba(255,255,255,0.08);color:#fff;display:flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"><path d="M12 5v14 M5 12h14"></path></svg></button>
+            </div>
+            <span style="width:84px;flex:none;text-align:right;font-size:16px;font-weight:700;color:#fff;">{{i.total}}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <div class="gg" style="border-radius:18px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;">
+        <div style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:#F5E9BE;"><svg viewBox="0 0 24 24" style="width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round"><path d="M3 12V4h8l10 10-8 8z M7.5 8.5v.01"></path></svg>Wholesale price applied to Beverages</div>
+        <span style="font-size:13px;line-height:18px;color:#F5F5F6;">12 items reached the pricing-group threshold. Add a reseller so this price stays on their account.</span>
+        <div style="display:flex;gap:8px;"><button style="height:44px;padding:0 16px;border:0;border-radius:12px;background:#F5F5F6;color:#0A0A0B;font-size:14px;font-weight:600;">Add reseller</button><button style="height:44px;padding:0 14px;border:0;border-radius:12px;background:transparent;color:#F5E9BE;font-size:14px;font-weight:600;">Not now</button></div>
+      </div>
+
+      <div style="margin-top:auto;display:flex;flex-direction:column;gap:4px;">
+        <div style="display:flex;justify-content:space-between;font-size:14px;color:#D6D6DA;"><span>Subtotal</span><span>₱1,986.00</span></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:14px;color:#D6D6DA;"><button style="height:36px;padding:0;border:0;background:transparent;font-size:14px;font-weight:600;color:#E2C15F;text-decoration:underline;">Add discount</button><span>₱0.00</span></div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;"><span style="font-size:18px;font-weight:700;color:#fff;">Total</span><span style="font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:36px;line-height:40px;font-weight:700;color:#fff;">₱1,986.00</span></div>
+      </div>
+      <a href="POS-Checkout.dc.html" style="display:flex;align-items:center;justify-content:center;height:64px;border-radius:18px;background:#D4AF37;color:#0A0A0B;font-size:20px;font-weight:700;text-decoration:none;">Charge ₱1,986.00</a>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const neutral = { chipBg: 'rgba(255,255,255,0.10)', chipFg: '#E9E9EB' };
+    const low = { chipBg: 'rgba(212,175,55,0.20)', chipFg: '#E9CB6E' };
+    const out = { chipBg: 'rgba(240,98,91,0.18)', chipFg: '#FF9A94' };
+    const tile = (name, sub, price, stock, tone, disabled) => Object.assign({
+      name: name, sub: sub, price: price, stock: stock,
+      bg: disabled ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.07)',
+      border: disabled ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.14)',
+      nameColor: disabled ? '#8A8A92' : '#FFFFFF',
+      subColor: disabled ? '#8A8A92' : '#B4B4BA',
+      priceColor: disabled ? '#8A8A92' : '#E2C15F'
+    }, tone);
+    return {
+      headerBtns: [
+        { label: 'Receipts', icon: 'M5 3v18l2.5-1.5L10 21l2-1.5 2 1.5 2.5-1.5L19 21V3l-2.5 1.5L14 3l-2 1.5L10 3 7.5 4.5z M9 8.5h6 M9 12h6 M9 15.5h4' },
+        { label: 'Cash', icon: 'M3 7h18v10H3z M12 14.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z' }
+      ],
+      categories: [
+        { label: 'All', bg: '#F5F5F6', fg: '#0A0A0B', border: '#F5F5F6' },
+        { label: 'Beverages', bg: 'rgba(255,255,255,0.08)', fg: '#FFFFFF', border: 'rgba(255,255,255,0.20)' },
+        { label: 'Bakery', bg: 'rgba(255,255,255,0.08)', fg: '#FFFFFF', border: 'rgba(255,255,255,0.20)' },
+        { label: 'Pantry', bg: 'rgba(255,255,255,0.08)', fg: '#FFFFFF', border: 'rgba(255,255,255,0.20)' },
+        { label: 'Supplies', bg: 'rgba(255,255,255,0.08)', fg: '#FFFFFF', border: 'rgba(255,255,255,0.20)' },
+        { label: 'Merch', bg: 'rgba(255,255,255,0.08)', fg: '#FFFFFF', border: 'rgba(255,255,255,0.20)' }
+      ],
+      tiles: [
+        tile('Cold brew 500 ml', 'Original', '₱140.00', '16 left', neutral, false),
+        tile('Cold brew 500 ml', 'Caramel', '₱150.00', '42 left', neutral, false),
+        tile('Cold brew 1 L', 'Original', '₱320.00', '9 left', neutral, false),
+        tile('Ube pandesal', 'Pack of 6', '₱95.00', '60 left', neutral, false),
+        tile('Cheese roll', 'Pack of 4', '₱110.00', '28 left', neutral, false),
+        tile('Ensaymada', 'Single', '₱45.00', '24 left', neutral, false),
+        tile('Banana bread', 'Slice', '₱75.00', '12 left', neutral, false),
+        tile('Brown sugar', '1 kg', '₱78.00', 'Out of stock', out, true),
+        tile('Oat milk', '1 L', '₱165.00', '6 left', low, false),
+        tile('Coffee beans', 'Arabica 250 g', '₱420.00', '27 left', neutral, false),
+        tile('Drip bag', 'Box of 10', '₱260.00', '33 left', neutral, false),
+        tile('Paper cup', '12 oz, 50 pcs', '₱85.00', '210 left', neutral, false),
+        tile('Tumbler', 'Matte green', '₱650.00', '4 left', low, false),
+        tile('Mug', 'Ceramic', '₱280.00', '11 left', neutral, false),
+        tile('Tote bag', 'Canvas', '₱220.00', '14 left', neutral, false),
+        tile('Reusable straw', 'Set of 4', '₱130.00', '19 left', neutral, false)
+      ],
+      cart: [
+        { name: 'Cold brew 500 ml, Original', unit: '₱118.00 each, wholesale (was ₱140.00)', qty: '12', total: '₱1,416.00' },
+        { name: 'Ube pandesal, pack of 6', unit: '₱95.00 each', qty: '6', total: '₱570.00' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

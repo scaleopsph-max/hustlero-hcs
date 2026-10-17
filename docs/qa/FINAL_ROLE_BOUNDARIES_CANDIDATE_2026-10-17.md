@@ -1,0 +1,11 @@
+# Final Role Boundary Corrections
+
+Review base: `ec9f14eb26198a5400ce49e194b380162d2cd3ab`. Owner requested completion of reviewed-main integration, Staging UAT and Production rollout tonight. The target does not waive confirmed security defects or exact release approvals.
+
+Remaining review found three source defects: personal Notifications could contain other-branch alert/approval metadata from tenant-wide fan-out and legacy inbox rows; inventory approval readers/decision commands lacked allowed-location checks, including cached decisions; the default system cashier template granted branch-wide register reads despite the locked own-register rule. No live exploit or grant was executed.
+
+Three ordered migrations address these boundaries. Notification generation, rows, unread counts, pagination and read/bulk-read mutations enforce current owner/allowed-branch scope while preserving recipient checks and immutable history. Tenant-wide/null-location records remain owner-only under this branch predicate. Existing membership-based personal inbox eligibility is not replaced by a new role grant. Approval readers filter requests; decisions revalidate capability and target branch before the existing core/replay and bind the returned request ID. Original stock computations remain private and intact.
+
+For registers, explicit `registers.read` remains assigned-branch read, while `registers.read_own` or operate-only access is limited to the linked active employee's current sessions/history. Only locked system cashier templates lose the old broad default and gain own-read; custom roles and explicit combinations remain unchanged. Future system templates use the corrected default. Authorization uses capability codes and employee linkage, not role names. Owner context remains unchanged. This is a privilege reduction, not new broader staff access.
+
+Disposable regression coverage and exact-source CI are required before closure. No runtime UI, shared migration, financial operation, credential/access creation or live deployment is authorized by this candidate. Once verified, resume reviewed-main integration and exact environment preflight, not another module. Preserve business/notification history and never restore externally callable unscoped cores as rollback.

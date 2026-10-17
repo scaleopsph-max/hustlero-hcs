@@ -1,0 +1,2 @@
+-- Intentionally empty. Development identities are created through Supabase Auth,
+-- and tenant fixtures will be added only with deterministic integration tests.

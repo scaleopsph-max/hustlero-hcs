@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HCS landing page</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:'Figtree','Segoe UI',system-ui,sans-serif;color:#F5F5F6;background:#08080A;font-variant-numeric:tabular-nums}
+button,input{font-family:inherit}
+a{color:#E2C15F}a:hover{color:#F5E9BE}
+.g{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);box-shadow:0 8px 32px rgba(0,0,0,0.35),inset 0 1px 0 rgba(255,255,255,0.10);-webkit-backdrop-filter:blur(24px) saturate(140%);backdrop-filter:blur(24px) saturate(140%)}
+.gs{background:rgba(255,255,255,0.10);border:1px solid rgba(255,255,255,0.18);box-shadow:0 16px 48px rgba(0,0,0,0.45),inset 0 1px 0 rgba(255,255,255,0.16);-webkit-backdrop-filter:blur(32px) saturate(150%);backdrop-filter:blur(32px) saturate(150%)}
+.gg{background:rgba(212,175,55,0.14);border:1px solid rgba(212,175,55,0.45);box-shadow:0 8px 32px rgba(0,0,0,0.35),inset 0 1px 0 rgba(255,255,255,0.14);-webkit-backdrop-filter:blur(24px) saturate(140%);backdrop-filter:blur(24px) saturate(140%)}
+.ld{background:rgba(255,255,255,0.86);border:1px solid rgba(255,255,255,0.95);box-shadow:0 0 0 1px rgba(14,14,16,0.05),0 16px 48px rgba(0,0,0,0.30),inset 0 1px 0 #fff;-webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%)}
+.dk{background:rgba(14,14,16,0.88);border:1px solid rgba(255,255,255,0.10);box-shadow:0 16px 48px rgba(0,0,0,0.30),inset 0 1px 0 rgba(255,255,255,0.10);-webkit-backdrop-filter:blur(24px) saturate(140%);backdrop-filter:blur(24px) saturate(140%)}
+</style>
+</helmet>
+<div style="position:relative;overflow:hidden;isolation:isolate;width:1440px;height:5200px;display:flex;flex-direction:column;background:#08080A;">
+  <div style="position:absolute;z-index:-1;left:780px;top:60px;width:640px;height:640px;border-radius:50%;background:#D4AF37;opacity:0.34;filter:blur(150px);pointer-events:none;"></div>
+  <div style="position:absolute;z-index:-1;left:-200px;top:200px;width:560px;height:560px;border-radius:50%;background:#6B6B75;opacity:0.30;filter:blur(150px);pointer-events:none;"></div>
+  <div style="position:absolute;z-index:-1;left:-160px;top:1100px;width:520px;height:520px;border-radius:50%;background:#D4AF37;opacity:0.16;filter:blur(150px);pointer-events:none;"></div>
+  <div style="position:absolute;z-index:-1;right:-160px;top:1900px;width:560px;height:560px;border-radius:50%;background:#D4AF37;opacity:0.26;filter:blur(150px);pointer-events:none;"></div>
+  <div style="position:absolute;z-index:-1;left:-120px;top:2000px;width:520px;height:520px;border-radius:50%;background:#6B6B75;opacity:0.28;filter:blur(150px);pointer-events:none;"></div>
+  <div style="position:absolute;z-index:-1;left:500px;top:3600px;width:520px;height:520px;border-radius:50%;background:#D4AF37;opacity:0.18;filter:blur(150px);pointer-events:none;"></div>
+  <div style="position:absolute;z-index:-1;left:200px;top:4800px;width:800px;height:420px;border-radius:50%;background:#D4AF37;opacity:0.34;filter:blur(150px);pointer-events:none;"></div>
+
+  <!-- Hero -->
+  <div id="top" style="display:flex;flex-direction:column;">
+    <div style="height:88px;padding:0 80px;display:flex;align-items:center;justify-content:space-between;">
+      <a href="#top" style="display:flex;align-items:center;gap:12px;text-decoration:none;color:#fff;">
+        <svg viewBox="0 0 32 32" role="img" aria-label="HCS logo" style="width:40px;height:40px;flex:none"><rect width="32" height="32" rx="8" style="fill:#D4AF37"></rect><path d="M10 8v16M22 8v16" style="fill:none;stroke:#0A0A0B;stroke-width:3.5;stroke-linecap:round"></path><path d="M10 16h12" style="fill:none;stroke:#0A0A0B;stroke-width:3.5;stroke-linecap:round"></path></svg>
+        <span style="font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:21px;font-weight:700;">Hustler Central</span>
+      </a>
+      <div class="g" style="display:flex;align-items:center;gap:32px;height:60px;padding:0 10px 0 32px;border-radius:999px;">
+        <a href="#product" style="color:#E9E9EB;font-size:16px;font-weight:500;text-decoration:none;">Product</a>
+        <a href="#modules" style="color:#E9E9EB;font-size:16px;font-weight:500;text-decoration:none;">Free core and modules</a>
+        <a href="https://app.hustlercentral.com" style="color:#E9E9EB;font-size:16px;font-weight:500;text-decoration:none;">Sign in</a>
+        <a href="#start" style="display:inline-flex;align-items:center;height:44px;padding:0 24px;border-radius:999px;background:#D4AF37;color:#0A0A0B;font-size:16px;font-weight:700;text-decoration:none;">Start free</a>
+      </div>
+    </div>
+
+    <div style="padding:40px 80px 96px;display:flex;gap:72px;align-items:flex-start;">
+      <div style="width:660px;flex:none;display:flex;flex-direction:column;gap:28px;padding-top:24px;">
+        <h1 style="margin:0;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:72px;line-height:74px;letter-spacing:-0.02em;font-weight:700;color:#fff;text-wrap:balance;">Know where every peso and every item went.</h1>
+        <p style="margin:0;font-size:20px;line-height:30px;color:#D6D6DA;max-width:580px;">Hustler Central System runs your counter, your stock and your books from one place. Sell at the register, restock across branches, and close the day knowing the numbers are true.</p>
+        <div style="display:flex;align-items:center;gap:28px;margin-top:8px;">
+          <a href="#start" style="display:inline-flex;align-items:center;height:60px;padding:0 34px;border-radius:16px;background:#D4AF37;color:#0A0A0B;font-size:18px;font-weight:700;text-decoration:none;">Start free</a>
+          <a href="#product" style="color:#fff;font-size:17px;font-weight:600;text-decoration:underline;text-underline-offset:5px;">See what one sale updates</a>
+        </div>
+        <span style="font-size:15px;line-height:22px;color:#B4B4BA;">The free core plan covers POS, inventory, basic reports and daily close.</span>
+      </div>
+
+      <div style="flex:1 1 0;min-width:0;display:flex;justify-content:flex-end;">
+        <div style="width:470px;display:flex;flex-direction:column;">
+          <div class="ld" style="border-radius:8px 8px 0 0;border-bottom:0;padding:30px 34px 22px;display:flex;flex-direction:column;gap:18px;color:#0E0E10;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;">
+              <div style="display:flex;flex-direction:column;gap:2px;"><span style="font-size:16px;font-weight:700;">Main Branch, Register 1</span><span style="font-size:14px;color:#46464C;">Receipt HCS-000482</span></div>
+              <span style="display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:999px;background:#F8EDC3;color:#6B5214;font-size:12px;font-weight:600;">Sample</span>
+            </div>
+            <div style="border-top:2px dashed #8A8A92;"></div>
+            <div style="display:flex;flex-direction:column;gap:14px;">
+              <sc-for list="{{receipt}}" as="l" hint-placeholder-count="3">
+                <div style="display:flex;justify-content:space-between;gap:16px;">
+                  <div style="display:flex;flex-direction:column;"><span style="font-size:15px;font-weight:600;">{{l.name}}</span><span style="font-size:13px;color:#46464C;">{{l.qty}}</span></div>
+                  <span style="font-size:15px;font-weight:600;">{{l.amount}}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="border-top:2px dashed #8A8A92;"></div>
+            <div style="display:flex;flex-direction:column;gap:6px;">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;"><span style="font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:20px;font-weight:700;">Total</span><span style="font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:28px;font-weight:700;">₱453.00</span></div>
+              <div style="display:flex;justify-content:space-between;font-size:14px;color:#333338;"><span>Cash</span><span>₱500.00</span></div>
+              <div style="display:flex;justify-content:space-between;font-size:14px;color:#333338;"><span>Change</span><span>₱47.00</span></div>
+            </div>
+            <div style="border-top:2px dashed #8A8A92;"></div>
+            <div style="display:flex;flex-direction:column;gap:12px;">
+              <span style="font-size:15px;font-weight:700;color:#6B5214;">What this one sale updated</span>
+              <sc-for list="{{updates}}" as="u" hint-placeholder-count="4">
+                <div style="display:flex;gap:10px;align-items:flex-start;">
+                  <svg viewBox="0 0 24 24" style="width:20px;height:20px;flex:none;margin-top:1px;color:#8F6F1C;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>
+                  <span style="font-size:14px;line-height:20px;color:#333338;"><strong style="color:#0E0E10;">{{u.label}}</strong> {{u.text}}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <svg viewBox="0 0 470 12" style="display:block;width:470px;height:12px;fill:rgba(255,255,255,0.86)" aria-hidden="true"><polygon points="0,0 10,12 20,0 30,12 40,0 50,12 60,0 70,12 80,0 90,12 100,0 110,12 120,0 130,12 140,0 150,12 160,0 170,12 180,0 190,12 200,0 210,12 220,0 230,12 240,0 250,12 260,0 270,12 280,0 290,12 300,0 310,12 320,0 330,12 340,0 350,12 360,0 370,12 380,0 390,12 400,0 410,12 420,0 430,12 440,0 450,12 460,0 470,12 470,0"></polygon></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- The six verbs -->
+  <div id="product" style="padding:104px 80px;display:flex;gap:96px;">
+    <div style="width:400px;flex:none;display:flex;flex-direction:column;gap:20px;">
+      <h2 style="margin:0;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:46px;line-height:50px;letter-spacing:-0.015em;font-weight:700;color:#fff;text-wrap:balance;">Sell, then stay in control of everything that follows.</h2>
+      <p style="margin:0;font-size:18px;line-height:28px;color:#B4B4BA;">One business, one inventory, one sales truth. It holds across every branch and every channel you add.</p>
+    </div>
+    <div style="flex:1 1 0;min-width:0;border-top:2px solid #D4AF37;display:flex;flex-direction:column;">
+      <sc-for list="{{verbs}}" as="v" hint-placeholder-count="6">
+        <div style="display:flex;align-items:baseline;gap:32px;padding:28px 0;border-bottom:1px solid rgba(255,255,255,0.12);">
+          <div style="width:190px;flex:none;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:40px;line-height:44px;letter-spacing:-0.01em;font-weight:700;color:#E2C15F;">{{v.name}}</div>
+          <p style="margin:0;flex:1 1 0;font-size:18px;line-height:28px;color:#E9E9EB;">{{v.text}}</p>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <!-- Two apps -->
+  <div style="padding:104px 80px;display:flex;flex-direction:column;gap:56px;">
+    <div style="display:flex;flex-direction:column;gap:16px;max-width:820px;">
+      <h2 style="margin:0;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:46px;line-height:50px;letter-spacing:-0.015em;font-weight:700;color:#fff;text-wrap:balance;">The counter and the back office share one record.</h2>
+      <p style="margin:0;font-size:18px;line-height:28px;color:#B4B4BA;">Two separate apps, built for two different jobs, reading and writing the same stock and the same sales.</p>
+    </div>
+    <div style="display:flex;gap:24px;">
+      <div class="gs" style="flex:1 1 0;min-width:0;border-radius:28px;padding:44px;display:flex;flex-direction:column;gap:22px;">
+        <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:36px;line-height:40px;font-weight:700;color:#fff;">POS</span><span style="font-size:15px;color:#B4B4BA;">pos.hustlercentral.com</span></div>
+        <p style="margin:0;font-size:17px;line-height:27px;color:#E9E9EB;">Built for the counter. Big touch targets, PIN sign-in, and a status that always tells you whether you are online.</p>
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <sc-for list="{{posPoints}}" as="p" hint-placeholder-count="4">
+            <div style="display:flex;gap:12px;align-items:flex-start;">
+              <svg viewBox="0 0 24 24" style="width:22px;height:22px;flex:none;color:#D4AF37;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>
+              <span style="font-size:16px;line-height:24px;color:#F5F5F6;">{{p.text}}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div class="ld" style="flex:1 1 0;min-width:0;border-radius:28px;padding:44px;display:flex;flex-direction:column;gap:22px;color:#0E0E10;">
+        <div style="display:flex;flex-direction:column;gap:4px;"><span style="font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:36px;line-height:40px;font-weight:700;">Back Office</span><span style="font-size:15px;color:#46464C;">app.hustlercentral.com</span></div>
+        <p style="margin:0;font-size:17px;line-height:27px;color:#2A2A2E;">Built for owners and managers. See what sold, what is left, what needs approving and where the money should go.</p>
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <sc-for list="{{boPoints}}" as="p" hint-placeholder-count="4">
+            <div style="display:flex;gap:12px;align-items:flex-start;">
+              <svg viewBox="0 0 24 24" style="width:22px;height:22px;flex:none;color:#8F6F1C;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>
+              <span style="font-size:16px;line-height:24px;">{{p.text}}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Free core and modules (light) -->
+  <div id="modules" style="position:relative;overflow:hidden;isolation:isolate;padding:104px 80px;display:flex;flex-direction:column;gap:56px;background:#ECECEE;">
+    <div style="position:absolute;z-index:-1;left:-100px;top:-120px;width:560px;height:560px;border-radius:50%;background:#D4AF37;opacity:0.45;filter:blur(130px);pointer-events:none;"></div>
+    <div style="position:absolute;z-index:-1;right:-140px;top:420px;width:560px;height:560px;border-radius:50%;background:#5C5C63;opacity:0.30;filter:blur(130px);pointer-events:none;"></div>
+    <div style="display:flex;flex-direction:column;gap:16px;max-width:900px;">
+      <h2 style="margin:0;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:46px;line-height:50px;letter-spacing:-0.015em;font-weight:700;color:#0E0E10;text-wrap:balance;">Start with everything a small shop needs. Add the rest when you grow.</h2>
+      <p style="margin:0;font-size:18px;line-height:28px;color:#333338;">Safety and traceability are never behind a paywall. Paid modules add automation, scale and integrations.</p>
+    </div>
+    <div style="display:flex;gap:28px;align-items:flex-start;">
+      <div class="dk" style="width:520px;flex:none;border-radius:28px;padding:40px;display:flex;flex-direction:column;gap:24px;color:#fff;">
+        <div style="display:flex;flex-direction:column;gap:6px;"><span style="font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:32px;line-height:36px;font-weight:700;color:#E2C15F;">Free core</span><span style="font-size:16px;line-height:24px;color:#D6D6DA;">Enough to run a real small business from the first day.</span></div>
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <sc-for list="{{freeCore}}" as="f" hint-placeholder-count="9">
+            <div style="display:flex;gap:12px;align-items:flex-start;">
+              <svg viewBox="0 0 24 24" style="width:22px;height:22px;flex:none;color:#D4AF37;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>
+              <span style="font-size:16px;line-height:24px;">{{f.text}}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div class="ld" style="flex:1 1 0;min-width:0;border-radius:28px;padding:12px 36px 20px;display:flex;flex-direction:column;color:#0E0E10;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:20px 0 14px;border-bottom:2px solid #0E0E10;"><span style="font-size:16px;font-weight:700;">Add-on module</span><span style="font-size:16px;font-weight:700;">Price</span></div>
+        <sc-for list="{{modules}}" as="m" hint-placeholder-count="8">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:20px;padding:16px 0;border-bottom:1px solid rgba(14,14,16,0.10);">
+            <div style="display:flex;flex-direction:column;gap:2px;"><span style="font-size:17px;font-weight:600;">{{m.name}}</span><span style="font-size:14px;line-height:20px;color:#46464C;">{{m.text}}</span></div>
+            <span style="flex:none;display:inline-flex;align-items:center;height:32px;padding:0 12px;border:1.5px dashed #5C5C63;border-radius:10px;font-size:14px;font-weight:600;color:#333338;">[PRICE]</span>
+          </div>
+        </sc-for>
+        <span style="padding-top:18px;font-size:14px;line-height:22px;color:#333338;">If a paid module ends, your history stays available. Nothing you recorded disappears.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Doubts -->
+  <div style="padding:104px 80px;display:flex;flex-direction:column;gap:56px;">
+    <h2 style="margin:0;max-width:820px;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:46px;line-height:50px;letter-spacing:-0.015em;font-weight:700;color:#fff;text-wrap:balance;">Built for the moments when something goes wrong.</h2>
+    <div style="display:flex;gap:24px;">
+      <sc-for list="{{doubts}}" as="d" hint-placeholder-count="3">
+        <div class="g" style="flex:1 1 0;min-width:0;border-radius:24px;padding:32px;display:flex;flex-direction:column;gap:14px;">
+          <h3 style="margin:0;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:26px;line-height:32px;font-weight:700;color:#E2C15F;">{{d.q}}</h3>
+          <p style="margin:0;font-size:17px;line-height:27px;color:#E9E9EB;">{{d.a}}</p>
+        </div>
+      </sc-for>
+    </div>
+    <div style="border:2px dashed rgba(212,175,55,0.55);border-radius:24px;padding:32px 40px;display:flex;flex-direction:column;gap:8px;">
+      <span style="font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:28px;line-height:36px;font-weight:600;color:#B4B4BA;">[Customer quote goes here after your first pilot stores go live]</span>
+      <span style="font-size:15px;color:#B4B4BA;">[Store name, branch and location]</span>
+    </div>
+  </div>
+
+  <!-- Steps -->
+  <div id="start" style="padding:104px 80px;display:flex;flex-direction:column;gap:56px;">
+    <div style="display:flex;flex-direction:column;gap:16px;max-width:820px;">
+      <h2 style="margin:0;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:46px;line-height:50px;letter-spacing:-0.015em;font-weight:700;color:#fff;text-wrap:balance;">From sign-up to your first sale.</h2>
+      <p style="margin:0;font-size:18px;line-height:28px;color:#B4B4BA;">Skip anything that is not critical. It becomes a checklist you finish after you go live, and setup picks up where you left off.</p>
+    </div>
+    <div style="display:flex;gap:20px;">
+      <sc-for list="{{steps}}" as="s" hint-placeholder-count="5">
+        <div class="g" style="flex:1 1 0;min-width:0;border-radius:24px;padding:24px;display:flex;flex-direction:column;gap:14px;">
+          <div class="gg" style="width:52px;height:52px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:24px;font-weight:700;color:#F5E9BE;">{{s.n}}</div>
+          <span style="font-size:19px;line-height:26px;font-weight:700;color:#fff;">{{s.title}}</span>
+          <span style="font-size:15px;line-height:23px;color:#D6D6DA;">{{s.text}}</span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <!-- Final CTA -->
+  <div style="padding:40px 80px 96px;">
+    <div class="gg" style="border-radius:32px;padding:64px;display:flex;justify-content:space-between;align-items:center;gap:48px;">
+      <div style="display:flex;flex-direction:column;gap:14px;max-width:760px;">
+        <h2 style="margin:0;font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:52px;line-height:56px;letter-spacing:-0.02em;font-weight:700;color:#fff;text-wrap:balance;">Ready to sell? Set up your business and ring a test sale today.</h2>
+        <p style="margin:0;font-size:18px;line-height:28px;color:#E9E9EB;">The free core plan is enough to start.</p>
+      </div>
+      <a href="https://app.hustlercentral.com" style="flex:none;display:inline-flex;align-items:center;height:64px;padding:0 40px;border-radius:18px;background:#D4AF37;color:#0A0A0B;font-size:20px;font-weight:700;text-decoration:none;">Start free</a>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div style="flex-grow:1;padding:56px 80px;background:#050506;border-top:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;align-items:flex-start;gap:48px;">
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <svg viewBox="0 0 32 32" role="img" aria-label="HCS logo" style="width:36px;height:36px;flex:none"><rect width="32" height="32" rx="8" style="fill:#D4AF37"></rect><path d="M10 8v16M22 8v16" style="fill:none;stroke:#0A0A0B;stroke-width:3.5;stroke-linecap:round"></path><path d="M10 16h12" style="fill:none;stroke:#0A0A0B;stroke-width:3.5;stroke-linecap:round"></path></svg>
+        <span style="font-family:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;font-size:19px;font-weight:700;color:#fff;">Hustler Central System</span>
+      </div>
+      <span style="font-size:15px;line-height:22px;color:#B4B4BA;max-width:420px;">One business. One inventory. One sales truth. One command center. Many channels. Many branches.</span>
+    </div>
+    <div style="display:flex;gap:64px;">
+      <div style="display:flex;flex-direction:column;gap:12px;"><span style="font-size:15px;font-weight:700;color:#fff;">Apps</span><a href="https://app.hustlercentral.com" style="font-size:15px;color:#D6D6DA;text-decoration:none;">Back Office</a><a href="https://pos.hustlercentral.com" style="font-size:15px;color:#D6D6DA;text-decoration:none;">POS</a></div>
+      <div style="display:flex;flex-direction:column;gap:12px;"><span style="font-size:15px;font-weight:700;color:#fff;">Learn more</span><a href="#product" style="font-size:15px;color:#D6D6DA;text-decoration:none;">Product</a><a href="#modules" style="font-size:15px;color:#D6D6DA;text-decoration:none;">Free core and modules</a></div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":5200}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      receipt: [
+        { name: 'Cold brew 500 ml', qty: '2 × ₱140.00', amount: '₱280.00' },
+        { name: 'Ube pandesal, pack of 6', qty: '1 × ₱95.00', amount: '₱95.00' },
+        { name: 'Brown sugar 1 kg', qty: '1 × ₱78.00', amount: '₱78.00' }
+      ],
+      updates: [
+        { label: 'Stock:', text: 'cold brew −2, ube pandesal −1, brown sugar −1 at Main Branch.' },
+        { label: 'Cash drawer:', text: '₱453.00 added to Register 1.' },
+        { label: 'Cost:', text: "saved at today's average cost, so old reports never shift." },
+        { label: 'Reports:', text: 'gross profit updated on the dashboard.' }
+      ],
+      verbs: [
+        { name: 'Sell', text: 'Ring up sales at the counter with barcode scan, split payments, and wholesale prices that apply themselves when a customer buys enough.' },
+        { name: 'Control', text: 'Keep one stock count per location, changed only by recorded movements. Nothing edits a balance directly.' },
+        { name: 'Protect', text: 'Refunds, voids and big discounts wait for a manager PIN. A completed sale is reversed, never deleted.' },
+        { name: 'Analyze', text: 'Gross profit uses the cost at the time of sale, so last month stays true even after your supplier raises prices.' },
+        { name: 'Execute', text: 'Raise purchase orders, restock branches and send transfers, then check what actually arrived.' },
+        { name: 'Grow', text: 'Add branches, a warehouse, an online store and marketplaces when the business is ready, not before.' }
+      ],
+      posPoints: [
+        { text: 'Employee PIN sign-in on a registered device' },
+        { text: 'Open and close the register with a cash count' },
+        { text: 'Refunds, returns, exchanges and voids with manager approval' },
+        { text: 'Offline and syncing status always visible' }
+      ],
+      boPoints: [
+        { text: 'Products, variants, barcodes and movement history' },
+        { text: 'Purchasing, suppliers, transfers and receiving' },
+        { text: 'Daily business close and fund tracking' },
+        { text: 'Approvals, alerts, reports and a full audit trail' }
+      ],
+      freeCore: [
+        { text: 'POS with employee PIN access' },
+        { text: 'Products and basic inventory' },
+        { text: 'Basic sales and gross profit reports' },
+        { text: 'Customers, with optional loyalty' },
+        { text: 'Capital/COGS Fund and Operating Fund' },
+        { text: 'Expenses and daily business close' },
+        { text: 'Basic approvals, alerts and audit trail' },
+        { text: 'Basic import and export' },
+        { text: 'Owner, Admin, Manager, Cashier and Inventory Staff roles' }
+      ],
+      modules: [
+        { name: 'Advanced Inventory', text: 'Deeper stock analytics and controls.' },
+        { name: 'Warehouse', text: 'Central receiving and restocking for branches.' },
+        { name: 'Time Clock', text: 'Clock in, breaks and attendance hours.' },
+        { name: 'Online Store', text: 'Sell on your own storefront from the same stock.' },
+        { name: 'Shopee and TikTok Shop', text: 'Marketplace orders and settlements in one place.' },
+        { name: 'Advanced Wholesale', text: 'Sales orders, payment terms and partial fulfillment.' },
+        { name: 'Finance Pro', text: 'Custom funds, tax reserve and bank reconciliation.' },
+        { name: 'Advanced Reporting', text: 'Saved and scheduled reports with custom exports.' }
+      ],
+      doubts: [
+        { q: 'What if someone changes an old sale?', a: 'They cannot. A completed sale is never overwritten or deleted. A refund, return or void creates a linked reversal, and the original stays in your history.' },
+        { q: 'What if the internet drops at the counter?', a: 'The register keeps selling and shows Offline or Syncing on screen the whole time. Each sale is sent once, even if the connection flickers.' },
+        { q: 'What if the cash drawer is short?', a: 'Closing the register compares counted cash to expected cash. A large difference needs a manager to approve and raises an alert. The register never closes quietly.' }
+      ],
+      steps: [
+        { n: '1', title: 'Create your business', text: 'Add your business and your main location.' },
+        { n: '2', title: 'Add products and stock', text: 'Type them in or import a CSV, then set opening stock.' },
+        { n: '3', title: 'Set up payments and funds', text: 'Choose payment methods and your Capital/COGS and Operating funds.' },
+        { n: '4', title: 'Add your team', text: 'Create employees with PINs and link a register.' },
+        { n: '5', title: 'Ring a test sale', text: 'Run a guided sale, then go live.' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

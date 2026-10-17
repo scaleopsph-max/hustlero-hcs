@@ -45,8 +45,25 @@ Error codes are stable and operational. Unknown payment state must never be repo
 - `GET/PATCH /v1/onboarding`
 - `POST /v1/onboarding/go-live-check`
 
+Current Phase 1 implementation:
+
+- `POST /v1/tenants` requires a Supabase bearer token and a 16-128 character `Idempotency-Key`. Body: `name`, `slug`, optional `baseCurrency` (default `PHP`), optional `timezone` (default `Asia/Manila`), and `mainLocation` with `code` and `name`. It atomically creates the tenant, main store, owner membership and role, audit event, and outbox event. Identical retries replay the stored response; a changed body with the same key returns 409.
+- `GET /v1/onboarding` requires an owner bearer token. `X-Tenant-Id` selects only a tenant found in that user's server-resolved memberships and is required when the user owns multiple tenants. It derives every checklist item from persisted business records: business, location, questions, features, products, opening inventory when applicable, payment methods, basic funds, employees, registers, POS activation, and a completed test sale.
+- `PATCH /v1/onboarding` requires the same owner context. `business_questions` stores business type, one or more sales channels, inventory-tracking preference, and product setup method. `feature_selection` can run only afterward and may toggle only the tenant's entitled core modules: inventory, purchasing, customers, employees, and finance.
+- Catalog, sales, and basic reports are required core features and remain enabled. Unavailable paid add-ons cannot be selected or self-entitled through onboarding.
+- Identical step retries return success without adding duplicate audit/outbox records. Changed saved answers create a new audit event and outbox event.
+- The Products step becomes complete after the tenant has at least one non-archived product. Opening inventory completes after its first ledger movement and is automatically satisfied for businesses that explicitly do not track inventory.
+- `PATCH /v1/onboarding` with `step=basic_fund_setup` is owner-only and requires an `Idempotency-Key`. It atomically creates the tenant's Capital and Operating fund accounts, audit event, and outbox event without inventing an opening balance. Fund transactions remain append-only ledger entries.
+- `readyToSell` becomes true only when every required persisted step is complete. The Back Office checklist links to the existing setup workspaces and exposes the basic-fund command directly; it never marks an operational step complete from browser-only state.
+
 ### Catalog and inventory
 
+- `GET /v1/catalog`
+- `POST /v1/catalog/products`
+- `PATCH /v1/catalog/products/{productId}`
+- `POST /v1/catalog/products/{productId}/variants`
+- `PATCH /v1/catalog/products/{productId}/variants/{variantId}`
+- `DELETE /v1/catalog/products/{productId}/variants/{variantId}`
 - `POST/GET/PATCH /v1/products`
 - `POST/GET/PATCH /v1/variants`
 - `GET /v1/catalog/search`
@@ -54,9 +71,64 @@ Error codes are stable and operational. Unknown payment state must never be repo
 - `GET /v1/inventory/movements`
 - `POST /v1/inventory/adjustments`
 - `POST /v1/inventory/opening-balances`
+- `GET /v1/inventory/opening-balances`
+- `POST /v1/inventory/imports/preview`
+- `GET /v1/inventory/stock`
+- `PATCH /v1/inventory/reorder-level`
+- `GET /v1/inventory/movements`
+
+Current catalog implementation:
+
+- Catalog endpoints require a Supabase bearer token and a server-resolved tenant membership. `X-Tenant-Id` cannot select a tenant outside that membership.
+- Catalog reads require owner, `catalog.read`, or `catalog.manage` access. Product creation requires owner or `catalog.manage`, plus an active catalog entitlement.
+- `POST /v1/catalog/products` requires a 16-128 character `Idempotency-Key` and creates one product with its initial variant, tenant-unique SKU, optional category, and optional barcode atomically.
+- `POST /v1/catalog/products/{productId}/variants` adds a later variant to an existing tenant product. Variant labels can represent combinations such as `Black / XL`; each variant owns its tenant-unique SKU, optional barcode, price, cost, and inventory-tracking setting.
+- `PATCH /v1/catalog/products/{productId}` edits product-master name, category, and description without flattening or recreating its variants.
+- `PATCH /v1/catalog/products/{productId}/variants/{variantId}` edits the variant label, SKU, barcode, retail price, unit cost, and inventory-tracking setting.
+- `DELETE /v1/catalog/products/{productId}/variants/{variantId}` deactivates the variant instead of deleting its row. Inactive variants are hidden from the active catalog, historical references remain intact, and a product must keep at least one active variant.
+- Product prices cross the TypeScript boundary as integer centavos and are stored as PostgreSQL `numeric(18,2)`. SKU and barcode values are normalized before tenant-scoped uniqueness checks.
+- The command writes one audit event and one outbox event. Identical retries replay the stored response; a changed payload with the same key returns 409.
+- Catalog creation does not create or edit stock. Opening inventory remains a separate ledger-backed onboarding step.
+
+Current basic wholesale-pricing foundation:
+
+- `GET /v1/pricing` returns active tenant variants, active reseller customers, pricing groups, wholesale/dealer price lists, assignments, and integer-centavo prices. Access uses the same owner or catalog permission boundary as product management.
+- `POST /v1/pricing/price-lists` requires `catalog.manage`, an `Idempotency-Key`, one pricing-group quantity threshold in integer thousandths, and one or more tenant-owned variant prices in integer centavos.
+- A list may be the active default for its pricing type or may be assigned to specific active reseller customers. Reseller status does not bypass the quantity threshold.
+- Retail, wholesale, and dealer sales share the same branch-variant inventory balance. Price lists do not create inventory positions or movements.
+- The local transaction slice stores `pricing_type` and optional `price_list_id` sale snapshots, exposes protected POS pricing options, and resolves every wholesale/dealer price again inside the atomic PostgreSQL sale command. It requires an active reseller, prefers that customer's assigned list over the default list, requires every cart item to be present, and enforces the combined pricing-group threshold before stock or cash changes.
+- The POS displays Retail, Wholesale, and Dealer modes and mirrors the authoritative rules for immediate cashier feedback. The client still submits no unit prices or totals. Staging migration and sale/refund UAT remain release gates; the deployed Production POS continues to run the verified retail build.
+
+Current opening-inventory implementation:
+
+- `GET /v1/inventory/opening-balances` returns active inventory-tracked variants and their opening status for one server-authorized branch. Owners can select any active tenant branch; future employees are restricted to assigned branches.
+- `POST /v1/inventory/opening-balances` requires an `Idempotency-Key` and one or more positive entries. Quantities cross the TypeScript boundary as integer thousandths and unit costs as integer centavos.
+- `POST /v1/inventory/imports/preview` requires an `Idempotency-Key`, filename, cutover timestamp, and 1-5,000 raw CSV rows. PostgreSQL resolves tenant-owned branches and variants by SKU/barcode, rejects duplicate branch-variant rows, returns row-level errors/warnings and reconciled branch totals, and writes only private staging, audit, and outbox records. Preview never creates inventory movements or balances.
+- The command atomically appends one `OPENING_BALANCE` movement per submitted variant and creates its branch balance projection. No direct balance overwrite path or direct Worker table grant exists.
+- Opening inventory is one-time per branch and variant and must precede any other movement for that stock position. Corrections use future adjustment or reversal commands.
+- Successful batches create one audit event and one outbox event. Identical retries replay the response; changed retries and duplicate openings return 409.
+- The onboarding opening-inventory step becomes complete after the tenant records its first opening movement.
+
+Current adjustment implementation:
+
+- `POST /v1/inventory/adjustments` requires an `Idempotency-Key`, branch and variant references, a non-zero signed integer-thousandth quantity, optional integer-centavo unit cost, and a required human reason.
+- The command is restricted to tenant owners or members with `inventory.manage`, requires opening inventory first, locks the branch/variant balance, appends an `ADJUSTMENT` movement, updates the balance atomically, and blocks negative on-hand or available stock.
+- Successful adjustments create an audit event with the reason and one outbox event. Corrections remain append-only; no movement or balance row is edited directly.
+- Approval thresholds are intentionally deferred until the Approvals module and tenant policy configuration are implemented; this slice enforces inventory-management authorization and auditability.
+
+Current inventory visibility implementation:
+
+- `GET /v1/inventory/stock` returns the live balance projection for active inventory-tracked variants at a server-authorized branch. `available` is computed as `on_hand - reserved`; quantities cross the TypeScript boundary as integer thousandths.
+- Every stock item includes an optional branch-variant reorder level and a server-derived `not_started`, `out_of_stock`, `low_stock`, or `in_stock` status. A positive available quantity is low stock when it is at or below the active reorder level.
+- `PATCH /v1/inventory/reorder-level` requires owner or `inventory.manage` access and an `Idempotency-Key`. A non-negative integer-thousandth threshold enables monitoring for that branch and variant; `null` disables the policy without deleting its history.
+- Reorder-level changes are serialized, idempotent, audited, and outbox-backed. They never alter inventory movements or balances.
+- `GET /v1/inventory/movements` returns the newest ledger rows for a server-authorized branch, optionally filtered by variant and limited to 1-200 rows. Each row includes movement type, quantity, source reference, actor label, timestamp, and computed balance after.
+- Both read paths use private security-definer functions with pinned search paths and execute permission only for the Hyperdrive role. Direct table reads remain denied.
 
 ### Registers and sales
 
+- `GET /v1/register-operations`
+- `POST /v1/payment-methods`
 - `POST /v1/register-sessions/open`
 - `GET /v1/register-sessions/current`
 - `POST /v1/register-sessions/{id}/cash-movements`
@@ -69,20 +141,105 @@ Error codes are stable and operational. Unknown payment state must never be repo
 - `POST /v1/sales/{id}/refunds`
 - `POST /v1/sales/{id}/void`
 
+Current register foundation:
+
+- `GET /v1/register-operations` returns active payment methods, active employees and branch assignments, registers and their current open session, plus the latest 50 sessions.
+- Every tenant starts with Cash, E-wallet, Bank Transfer, and Card Terminal methods. Additional manual methods are owner-created through an idempotent command; no direct payment-provider charging occurs.
+- `POST /v1/register-sessions/open` accepts a register, an active employee assigned to that register's location, and integer-centavo opening cash. It atomically opens the session and appends the opening cash movement.
+- Only one open session may exist per register. `POST /v1/register-sessions/{id}/close` calculates expected cash from the append-only cash ledger, records counted cash and variance, and marks a non-zero variance as an explicit exception.
+- Open/close commands are currently Back Office owner operations for controlled development. The new device and employee session identity will authorize their POS-native equivalents in the sales slice.
+
+Current POS identity foundation:
+
+- `GET /v1/pos/devices` returns only registers and devices belonging to the authenticated server-resolved tenant.
+- `POST /v1/pos/devices/activation-codes` is owner-only and creates a 12-character one-time code that expires after 15 minutes. The API returns the raw code once; PostgreSQL stores only its SHA-256 hash.
+- `POST /v1/pos/devices/activate` consumes the one-time code and returns an opaque 256-bit device token. The token binds the device to its tenant, branch, and register; only the token hash is stored.
+- `POST /v1/pos/sessions/pin-login` requires the device token in `X-POS-Device-Token`, an active employee code assigned to that device branch, and a valid 4-6 digit PIN. Five failed PIN attempts lock that employee credential for 15 minutes.
+- A successful PIN login revokes the device's previous employee session and returns a new opaque 12-hour session token. Only its hash is stored. Future sales commands derive tenant, branch, register, and employee from this session instead of accepting those identifiers from the POS client.
+
+Current POS sales implementation:
+
+- `GET /v1/pos/context` requires `X-POS-Session-Token` and returns only the server-resolved employee, activated device, branch, register, current register session, active branch catalog, availability, and configured payment methods.
+- `POST /v1/pos/register-sessions/open` requires the POS session and `Idempotency-Key`; the request contains only integer-centavo opening cash. The employee, register, location, and tenant come from the POS session.
+- `POST /v1/pos/sales/complete` accepts unique lines containing only `variantId` and positive integer-thousandth `quantityMilli`, plus one to ten active payment-method allocations. Every allocation contains a server-known `paymentMethodId`, integer-centavo amount, and integer-centavo tendered amount. Client prices and totals are ignored by the strict contract.
+- Payment allocations must equal the server-calculated sale total exactly. Cash may be tendered above its allocated amount and produces change; manual e-wallet, bank-transfer, card-terminal, and other tenders must equal their allocated amount. Only the cash allocation affects the immutable register cash ledger.
+- PostgreSQL locks the register session, variants, payment methods, and inventory balances; recalculates retail totals; rejects unavailable stock or invalid payment allocation; and atomically writes the sale, immutable line snapshots, one payment row per tender, inventory and cash ledger rows, audit event, outbox event, and branch daily receipt number.
+- Identical retries return the stored receipt. Reusing a key with a different request returns 409. Expired POS sessions return 401; closed registers and insufficient stock return 409.
+- `GET /v1/sales` requires a bearer-authenticated server-resolved tenant with `sales.read` access and returns the latest 100 tenant receipts for Back Office.
+- `GET /v1/sales/{id}` returns immutable receipt, line, payment, and linked reversal snapshots plus server-computed remaining refundable quantities.
+- `POST /v1/sales/{id}/refunds` accepts only sale-line IDs, integer-thousandth quantities, return-to-stock choices, and a reason. PostgreSQL calculates the amount from the original sale snapshots and atomically appends the refund, item, payment, inventory, cash, audit, and outbox records.
+- `POST /v1/sales/{id}/void` accepts only a reason and reverses every remaining line of a completed cash sale. The original receipt is retained and marked `voided`. Split and non-cash receipts remain immutable but do not expose reversal actions until a dedicated payment-return allocation contract is approved and implemented.
+- Cash refunds and voids currently require the original register session to remain open. A closed register is never silently changed after reconciliation; cross-session refund settlement is a later explicit workflow.
+- Back Office receipt reprint uses the immutable receipt detail and a print-specific layout. Printing never edits the original sale.
+
 ### Customers, controls, and reporting
 
-- `POST/GET/PATCH /v1/customers`
-- `GET /v1/customers/{id}/activity`
+- `GET /v1/customers` supports tenant-scoped search by name, customer number, email, or phone and returns customer groups plus server-derived net spend and visit counts.
+- `POST /v1/customers` and `PATCH /v1/customers/{id}` require bearer authentication, server-resolved tenant context, permissions, strict contact/consent fields, and an `Idempotency-Key`.
+- `GET /v1/customers/{id}` returns profile, consent, append-only notes, and linked purchase/refund history. Spend and visits are derived from sale and reversal truth rather than mutable counters.
+- `POST /v1/customers/{id}/notes` appends an attributed note; customer notes cannot be edited or deleted.
+- `GET /v1/pos/customers` searches only active customers in the POS session's tenant. `POST /v1/pos/customers` creates a tenant/branch-attributed profile from the active employee session.
+- `POST /v1/pos/sales/complete` accepts an optional customer ID. PostgreSQL validates that the selected active customer belongs to the POS tenant and links the sale atomically; prices, totals, tenant, branch, register, and employee remain server-authoritative.
+- `GET /v1/loyalty` returns the tenant policy, aggregate account totals, and recent immutable point transactions. It requires server-resolved tenant membership and `loyalty.read` permission.
+- `PATCH /v1/loyalty/policy` requires `loyalty.manage`, an `Idempotency-Key`, and a positive integer-centavo spend amount before earning can be enabled. Loyalty is disabled with no arbitrary rate for new tenants.
+- A newly committed customer-linked POS sale earns `floor(total centavos / configured spend per point)` only while the policy is enabled. The transaction stores the rate snapshot and the POS response returns points earned and the resulting balance.
+- Completed refunds append proportional negative point transactions using the original sale's rate snapshot. Policy changes never recalculate prior earnings, and the account balance must equal the sum of its immutable ledger.
 - `GET/POST /v1/approvals`
 - `POST /v1/approvals/{id}/decisions`
-- `GET/PATCH /v1/alerts`
-- `GET/PATCH /v1/notifications`
+- `GET /v1/alerts` requires server-resolved tenant membership and `alerts.read`. It synchronizes deterministic conditions before returning status counts, management capability, and tenant-scoped alert records.
+- The inventory rule set opens warning alerts for active tracked variants with zero or negative branch availability and attention alerts when positive availability is at or below an active branch-variant reorder level. Both conditions use tenant-scoped deduplication and resolve automatically after the condition clears or monitoring is disabled. Closed register sessions with non-zero cash variance remain attention alerts.
+- `PATCH /v1/alerts/{id}` requires `alerts.manage` and accepts `acknowledged`, `resolved`, or `dismissed` plus an optional note. Setting the same state is naturally idempotent; actual transitions append an audit event and alert records cannot be deleted.
+- `GET /v1/audit-activity` requires `audit.read`, inclusive ISO business dates, and accepts optional location, actor type, action, entity type, search, limit, and offset filters. It reads append-only business audit events only; technical request logs remain separate.
+- `GET /v1/notifications` returns only the authenticated tenant member's recipient-specific history, unread count, linked record, location, and per-channel delivery status. `unreadOnly`, `limit`, and `offset` are validated server-side.
+- `PATCH /v1/notifications/{id}` sets that recipient's read/unread state. Reading a notification never acknowledges or resolves its linked alert or approval.
+- `PATCH /v1/notifications/read-all` marks the current member's unread notifications as read. Alert and pending-approval notifications are materialized idempotently from server-owned records and routed by role capability; email remains `not_configured` until a provider is selected.
 - `GET /v1/dashboard`
 - `GET /v1/reports/sales`
 - `GET /v1/reports/inventory`
+- `GET /v1/reports/shifts`
+- The three reporting reads require `from` and `to` ISO business dates, accept an optional tenant-owned `locationId`, and currently accept `channel=all|pos`. Date ranges are inclusive and limited to 367 business days.
+- Dashboard and sales-report totals share one PostgreSQL projection. Gross sales use sale commit dates; refunds use reversal commit dates; net COGS reverses the original line-cost snapshot on the refund date; gross profit is net sales less net COGS.
+- Inventory reporting is a current balance snapshot. Stock valuation is on-hand quantity multiplied by the current average unit cost. Out-of-stock is available quantity less than or equal to zero; low-stock is positive availability at or below the active branch-variant reorder level. Dashboard and inventory CSV output use the same server projection.
+- Basic CSV downloads serialize the validated sales and inventory report payload already shown to the user. The asynchronous `POST /v1/exports` contract remains reserved for large, scheduled, or custom exports.
+- Shift reporting groups register sessions by their opening business date in the tenant timezone, applies the same location and channel filters, and reconciles session sales/refunds plus expected, counted, and variance cash values. Receipt history remains the immutable Sales archive rather than a duplicated reporting table.
 - `POST /v1/exports`
 
+### Platform administration
+
+- `GET /v1/platform/context` requires a valid Supabase bearer token with `aal2` and an active row in the private platform-admin allowlist. It returns the operator role, aggregate tenant counts, read-only platform feature availability, and the real active/suspended tenant directory with effective entitlement state.
+- `PATCH /v1/platform/tenants/{tenantId}/entitlements/{featureCode}` requires an `Idempotency-Key`, a human reason, the desired entitled state, and an optional future expiry. Super Admin and Operations may grant or revoke; revocation forces tenant enablement off but never deletes historical module data.
+- `PATCH /v1/platform/tenants/{tenantId}/status` requires an `Idempotency-Key`, a human reason, and `active` or `suspended`. Only Super Admin may change tenant status. Suspension blocks tenant access while preserving all business records.
+- `GET /v1/platform/support-access` returns only the current platform operator's latest support grants and whether their role may self-issue a grant.
+- `POST /v1/platform/support-access` requires AAL2, an `Idempotency-Key`, tenant, ticket reference, reason, and a 15-120 minute duration. Super Admin and Operations may issue read-only `tenant_overview` access only to themselves; overlapping active grants for the same operator and tenant are rejected.
+- `GET /v1/platform/support-access/{grantId}/overview` accepts only an active, unrevoked grant owned by the current operator. It returns aggregate operational counts and tenant locations, excludes customer and record-level data, and appends a tenant audit event on every successful view.
+- `PATCH /v1/platform/support-access/{grantId}/revoke` requires an `Idempotency-Key` and reason. Operators may revoke their own grant; Super Admin may also terminate another operator's grant. Grant history is preserved and cannot be deleted.
+- `GET /v1/platform/subscriptions` returns the dynamic plan catalog, included modules and optional numeric limits, tenant subscription history/current assignment, temporary overrides, and the caller's management capability.
+- `POST /v1/platform/subscription-plans` requires an `Idempotency-Key`, unique code/name, default trial days, and selected modules with optional numeric limits. Catalog, sales, and basic reports are always included as core modules.
+- `POST /v1/platform/tenants/{tenantId}/subscription` requires an `Idempotency-Key`, plan, assignment state, optional expiry, and a human reason. It closes the prior current assignment, appends the new subscription history, and materializes effective tenant entitlements atomically.
+- `POST /v1/platform/tenants/{tenantId}/feature-overrides` requires an `Idempotency-Key`, module, future expiry, and reason. Overrides are temporary grants only, cannot overlap, and cannot duplicate a module already included by the current plan.
+- Super Admin and Operations may manage plans, assignments, and temporary overrides after AAL2 verification. Support receives the same subscription context read-only. Automated recurring billing, payment-provider integration, support impersonation, and production provisioning remain deferred.
+- Platform commands use a separate actor-scoped idempotency ledger and append `platform_admin` audit events. The restricted Worker database role may execute the platform functions but cannot read the allowlist or idempotency tables directly.
+
 ## Command safety
+
+### Advanced Wholesale AW1
+
+- `GET /v1/wholesale/orders` returns server-authorized reseller customers, branches, sellable variants, shared inventory availability, eligible price lists, and tenant sales orders. It requires the effective `advanced_wholesale` entitlement plus `wholesale_orders.read` or owner access.
+- `POST /v1/wholesale/orders` creates or replaces an editable draft. The request contains customer, branch, price-list, pricing type, notes, variant IDs, and integer-thousandth quantities. PostgreSQL resolves every product and current unit price. Drafts do not reserve or deduct inventory.
+- `POST /v1/wholesale/orders/{id}/confirm` accepts no commercial values. The atomic command revalidates reseller eligibility, assigned/default price-list access, current item prices, current pricing-group thresholds, and shared branch availability; it then snapshots customer/catalog values, increments `inventory_balances.reserved`, and appends positive reservation-ledger rows.
+- `POST /v1/wholesale/orders/{id}/cancel` requires a reason. For confirmed or partially fulfilled orders it releases only `ordered - fulfilled - already cancelled`, appends negative reservation-ledger rows, and preserves the order and line history.
+- Every write requires an `Idempotency-Key`. Identical retries replay the stored result; changed reuse returns 409. Confirm and cancel append one tenant audit event and outbox event on the first committed execution only.
+- Direct browser and general API-role reads or writes to sales-order and reservation tables are denied. Hyperdrive may execute only the narrow security-definer functions, while RLS remains enabled as defense in depth.
+
+### Advanced Wholesale AW2
+
+- `POST /v1/wholesale/orders/{id}/fulfill` requires an `Idempotency-Key` and one or more order-line IDs with integer-thousandth fulfillment quantities. It accepts only confirmed or partially fulfilled orders and rejects quantities above the unfulfilled remainder.
+- The atomic command locks the order, lines, and shared branch-variant balances; decrements `on_hand` and `reserved` by the same fulfilled quantity; appends sale inventory and reservation-ledger movements; and advances the order to `partially_fulfilled` or `fulfilled`.
+- Each committed fulfillment creates exactly one wholesale-channel sale snapshot and one immutable invoice. The server generates a tenant-unique invoice number and snapshots the order, customer, branch, product, SKU, quantity, and unit price used at issue time.
+- `GET /v1/wholesale/orders` includes issued invoices linked to their order and Sales archive record. `GET /v1/sales` combines POS receipts and wholesale invoices, while `GET /v1/sales/{id}` returns the appropriate printable record.
+- Dashboard and sales reports accept `all`, `pos`, or `wholesale`. Wholesale fulfillment has no POS register session; the Wholesale Shift view therefore returns a valid empty register-session report.
+- AW2 records no payment, receivable, or credit balance. Those controls remain AW3 scope. Wholesale returns and credit notes remain AW4 scope, so AW2 invoices cannot be reversed through the POS refund command.
+- Fulfillment retries with the same key and request hash replay the stored invoice result. The first committed execution appends one audit event and one outbox event; browser roles retain no direct table access.
 
 - The API derives tenant, actor, employee, location, and device context from trusted authentication/device state.
 - Clients never submit authoritative cost, COGS, tax outcome, available stock, entitlement, permission, expected cash, or ledger balances.

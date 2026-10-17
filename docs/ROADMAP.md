@@ -31,7 +31,9 @@ Estimated: 2-3 weeks
 - Products, variants, SKU/barcodes, prices
 - Opening stock and inventory ledger
 - Balance projection and stock search
-- Imports, adjustments, and inventory UI
+- Branch-variant reorder levels, low-stock projection, and alerts
+- Previewed product/opening-stock imports, atomic posting, reconciliation, and cutover gate
+- Adjustments and inventory UI
 
 ## Phase 3 - Register and sales
 

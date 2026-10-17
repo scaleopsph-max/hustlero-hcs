@@ -77,3 +77,4 @@ feature branch
 - Use expand/migrate/contract changes for incompatible schema transitions.
 - Record database restore procedures and execute scheduled restore drills.
 - Queue consumers must tolerate retries and replay without duplicate business effects.
+- Follow `docs/operations/RECOVERY_RUNBOOK.md` and retain a dated recovery report for every drill or incident.

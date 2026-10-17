@@ -1,0 +1,63 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "hustlero-hcs-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-21",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "ENVIRONMENT": "development",
+  },
+  "observability": {
+    "enabled": true,
+  },
+  "env": {
+    "development": {
+      "name": "hustlero-hcs-api-development",
+      "vars": {
+        "ENVIRONMENT": "development",
+        "SUPABASE_URL": "https://nlrzdgcxydmcvhushzwv.supabase.co",
+        "BACKOFFICE_ORIGIN": "http://localhost:3001",
+        "POS_ORIGIN": "http://localhost:3002",
+        "ADMIN_ORIGIN": "http://localhost:3003",
+      },
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "0a57f9065dea4b159b7ef2cad9ca3e80",
+        },
+      ],
+    },
+    "staging": {
+      "name": "hustlero-hcs-api-staging",
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "SUPABASE_URL": "https://sdfwdhbryjyfufgtfqmf.supabase.co",
+        "BACKOFFICE_ORIGIN": "https://hustlero-hcs-backoffice-staging.scaleopsph.workers.dev",
+        "POS_ORIGIN": "https://hustlero-hcs-pos-staging.scaleopsph.workers.dev",
+        "ADMIN_ORIGIN": "https://hustlero-hcs-admin-staging.scaleopsph.workers.dev",
+      },
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "008f24430d3e433eb478caaa52787fea",
+        },
+      ],
+    },
+    "production": {
+      "name": "hustlero-hcs-api",
+      "vars": {
+        "ENVIRONMENT": "production",
+        "SUPABASE_URL": "https://gmprhuzbisfylidjpfob.supabase.co",
+        "BACKOFFICE_ORIGIN": "https://hustlero-hcs-backoffice.scaleopsph.workers.dev",
+        "POS_ORIGIN": "https://hustlero-hcs-pos.scaleopsph.workers.dev",
+        "ADMIN_ORIGIN": "https://hustlero-hcs-admin.scaleopsph.workers.dev",
+      },
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "a611fc9b39974b59a887529621440b6c",
+        },
+      ],
+    },
+  },
+}
