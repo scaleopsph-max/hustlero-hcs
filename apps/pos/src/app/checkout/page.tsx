@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   posSaleCompleteResponseSchema,
   posSalesContextSchema,
+  requiresPaymentReference,
   type PosCustomer,
   type PosSaleCompleteResponse,
   type PosSalesContext,
@@ -34,6 +35,7 @@ type PaymentAllocation = {
   methodType: PaymentMethod['type']
   amountCentavos: number
   tenderedCentavos: number
+  referenceLastFour?: string
 }
 
 function PaymentIcon({ type }: { type: PaymentMethod['type'] }) {
@@ -53,6 +55,7 @@ export default function Checkout() {
   const [selectedMethodId, setSelectedMethodId] = useState('')
   const [amount, setAmount] = useState('')
   const [received, setReceived] = useState('')
+  const [referenceLastFour, setReferenceLastFour] = useState('')
   const [payments, setPayments] = useState<PaymentAllocation[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -97,6 +100,7 @@ export default function Checkout() {
     amountCentavos > 0 &&
     amountCentavos <= remaining &&
     tenderedCentavos >= amountCentavos &&
+    (!selectedMethod || !requiresPaymentReference(selectedMethod.type) || /^[0-9]{4}$/.test(referenceLastFour)) &&
     !payments.some((payment) => payment.paymentMethodId === selectedMethodId)
 
   useEffect(() => {
@@ -107,6 +111,7 @@ export default function Checkout() {
   }, [amount, context, selectedMethodId, total])
 
   function selectMethod(method: PaymentMethod) {
+    setReferenceLastFour('')
     setSelectedMethodId(method.id)
     setAmount((remaining / 100).toFixed(2))
     setReceived(method.type === 'cash' ? (remaining / 100).toFixed(2) : '')
@@ -134,17 +139,20 @@ export default function Checkout() {
         methodType: selectedMethod.type,
         amountCentavos,
         tenderedCentavos,
+        ...(requiresPaymentReference(selectedMethod.type) ? { referenceLastFour } : {}),
       },
     ])
     const nextMethod = context?.paymentMethods.find(
       (method) => method.id !== selectedMethod.id && !payments.some((payment) => payment.paymentMethodId === method.id),
     )
     setSelectedMethodId(nextMethod?.id ?? '')
+    setReferenceLastFour('')
     setAmount(nextRemaining > 0 ? (nextRemaining / 100).toFixed(2) : '')
     setReceived(nextMethod?.type === 'cash' && nextRemaining > 0 ? (nextRemaining / 100).toFixed(2) : '')
   }
 
   function removePayment(payment: PaymentAllocation) {
+    setReferenceLastFour(payment.referenceLastFour ?? '')
     setPayments((current) => current.filter((candidate) => candidate.paymentMethodId !== payment.paymentMethodId))
     setSelectedMethodId(payment.paymentMethodId)
     setAmount((payment.amountCentavos / 100).toFixed(2))
@@ -161,10 +169,11 @@ export default function Checkout() {
           headers: { 'Idempotency-Key': idempotencyKey },
           body: JSON.stringify({
             lines,
-            payments: payments.map(({ paymentMethodId, amountCentavos, tenderedCentavos }) => ({
+            payments: payments.map(({ paymentMethodId, amountCentavos, tenderedCentavos, referenceLastFour }) => ({
               paymentMethodId,
               amountCentavos,
               tenderedCentavos,
+              ...(referenceLastFour ? { referenceLastFour } : {}),
             })),
             customerId: customer?.id ?? null,
             pricingType,
@@ -302,7 +311,10 @@ export default function Checkout() {
                   className="flex min-h-11 items-center gap-3 border-t border-white/10 py-2 text-sm"
                 >
                   <PaymentIcon type={payment.methodType} />
-                  <span className="flex-1 text-white">{payment.methodName}</span>
+                  <span className="flex-1 text-white">
+                    {payment.methodName}
+                    {payment.referenceLastFour ? ` · Ref ${payment.referenceLastFour}` : ''}
+                  </span>
                   <strong className="text-white">{formatPeso(payment.amountCentavos)}</strong>
                   <button
                     type="button"
@@ -355,6 +367,20 @@ export default function Checkout() {
           {selectedMethod && remaining > 0 ? (
             <div className="flex flex-col gap-5 xl:flex-row">
               <div className="flex min-w-0 flex-1 flex-col gap-4">
+                {requiresPaymentReference(selectedMethod.type) ? (
+                  <label className="grid gap-2 text-sm font-semibold text-white">
+                    Transaction reference (last 4 digits)
+                    <input
+                      inputMode="numeric"
+                      autoComplete="off"
+                      maxLength={4}
+                      pattern="[0-9]{4}"
+                      value={referenceLastFour}
+                      onChange={(event) => setReferenceLastFour(event.target.value)}
+                      className="h-12 border border-white/20 bg-white/[0.08] px-4 text-lg text-white"
+                    />
+                  </label>
+                ) : null}
                 <label className="grid gap-2 text-sm font-semibold text-white">
                   Amount to apply
                   <input
