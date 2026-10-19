@@ -63,6 +63,10 @@ select is((select count(*) from app.refunds where tenant_id='2b000000-0000-4000-
 select is((select on_hand from app.inventory_balances where tenant_id='2b000000-0000-4000-8000-000000000001'),17::numeric,'two units return to shared stock once');
 select is((select count(*) from app.cash_movements where tenant_id='2b000000-0000-4000-8000-000000000001'),0::bigint,'credit note creates no cash movement');
 select is((select count(*) from app.payment_reversals where tenant_id='2b000000-0000-4000-8000-000000000001'),0::bigint,'credit note does not rewrite collection');
+select throws_ok($$select app.command_wholesale_credit('1b000000-0000-4000-8000-000000000001','2b000000-0000-4000-8000-000000000001','refund',
+ jsonb_build_object('creditNoteId',note_id,'paymentMethodId','ffffffff-ffff-4fff-8fff-ffffffffffff','registerSessionId',null,'referenceLastFour','0047','payoutConfirmed',true,'amountMinor',100,'reason','Unavailable method regression'),
+ 'aw4-pgtap-method-unavailable','fixture','fixture') from aw4_fixture$$,'HCWR6',null,'post-replay unavailable method is a definitive no-effect rejection');
+select is((select count(*) from app.wholesale_credit_payouts where tenant_id='2b000000-0000-4000-8000-000000000001'),0::bigint,'unavailable method posts no payout');
 select throws_ok($$select pg_temp.aw4_return(9000,'aw4-pgtap-excess-001')$$,'HCWR4',null,'cannot exceed remaining fulfilled quantity');
 select throws_ok($$select pg_temp.aw4_return(1000)$$,'HCS08',null,'same key with changed body is rejected');
 select throws_ok($$delete from app.wholesale_credit_notes where tenant_id='2b000000-0000-4000-8000-000000000001'$$,null,'issued invoices are immutable','credit notes cannot be deleted');

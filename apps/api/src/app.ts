@@ -2536,19 +2536,21 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
     const code = postgresErrorCode(error)
     if (!code?.startsWith('HCWR')) return wholesaleError(context, error)
     const status =
-      code === 'HCWR0' ? 403 : code === 'HCWR2' ? 404 : ['HCWR3', 'HCWR4', 'HCWR5'].includes(code) ? 409 : 400
+      code === 'HCWR0' ? 403 : code === 'HCWR2' ? 404 : ['HCWR3', 'HCWR4', 'HCWR5', 'HCWR6'].includes(code) ? 409 : 400
     const message =
       code === 'HCWR0'
         ? 'Return or credit permission is required.'
         : code === 'HCWR2'
           ? 'Authorized return or credit scope was not found.'
-          : code === 'HCWR5'
-            ? 'Funded receipt requires a separate audited reconciliation before payout.'
-            : code === 'HCWR4'
-              ? 'Quantity, credit, original collection or register cash limit exceeded.'
-              : code === 'HCWR3'
-                ? 'Original snapshots or inventory require reconciliation; this valuation may be unsupported.'
-                : 'Check the return, credit or confirmed payout details.'
+          : code === 'HCWR6'
+            ? 'The payout method or authorized open cash session is unavailable. Refresh and select an eligible payout option.'
+            : code === 'HCWR5'
+              ? 'Funded receipt requires a separate audited reconciliation before payout.'
+              : code === 'HCWR4'
+                ? 'Quantity, credit, original collection or register cash limit exceeded.'
+                : code === 'HCWR3'
+                  ? 'Original snapshots or inventory require reconciliation; this valuation may be unsupported.'
+                  : 'Check the return, credit or confirmed payout details.'
     return context.json(
       { error: { code: `WHOLESALE_RETURN_${code}`, message, requestId: context.get('requestId') } },
       status,

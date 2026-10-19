@@ -179,6 +179,7 @@ describe('AW4 routes', () => {
       ['HCWR2', 404],
       ['HCWR4', 409],
       ['HCWR5', 409],
+      ['HCWR6', 409],
     ] as const)('sanitizes server denial %s', async (code, status) => {
       const { app } = creditSetup(code)
       const response = await submit(app)
@@ -317,6 +318,7 @@ describe('AW4 routes', () => {
     ['HCWR3', 409],
     ['HCWR4', 409],
     ['HCWR5', 409],
+    ['HCWR6', 409],
   ] as const)('maps %s without leaking private database details', async (code, status) => {
     const { app } = setup(code)
     const response = await app.request(

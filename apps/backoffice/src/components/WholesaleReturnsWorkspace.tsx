@@ -210,7 +210,7 @@ export function WholesaleReturnsWorkspace() {
       )
     } catch (cause) {
       const rejection = cause as { code?: string; commandRejected?: boolean }
-      setCanDismiss(!!rejection.commandRejected && /^WHOLESALE_RETURN_HCWR[1345]$/.test(rejection.code ?? ''))
+      setCanDismiss(!!rejection.commandRejected && /^WHOLESALE_RETURN_HCWR[13456]$/.test(rejection.code ?? ''))
       setError(cause instanceof Error ? cause.message : 'Outcome unknown. Retry the original command.')
     } finally {
       lock.current = false

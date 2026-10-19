@@ -1097,7 +1097,7 @@ try {
   )
   await waitForLock()
   await first.query('commit')
-  assert.equal(await payoutAfterClose, 'HCWR2')
+  assert.equal(await payoutAfterClose, 'HCWR6')
   const payoutState = (
     await observer.query(
       `select

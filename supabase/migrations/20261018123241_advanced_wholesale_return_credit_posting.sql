@@ -297,7 +297,8 @@ begin
    if exists(select 1 from app.wholesale_payment_allocations a join app.wholesale_fund_allocations f on f.tenant_id=a.tenant_id and f.payment_id=a.payment_id where a.tenant_id=p_tenant and a.invoice_id=v_source.id)
    then raise exception using errcode='HCWR5',message='Funded receipt requires audited reversal before payout'; end if;
    select * into v_method from app.payment_methods where tenant_id=p_tenant and id=v_method_id and is_active for share;
-   if not found or v_method.method_type not in ('cash','e_wallet','bank_transfer') then raise exception using errcode='HCWR2',message='Refund method unavailable'; end if;
+   -- These availability denials happen only after the original-key replay check.
+   if not found or v_method.method_type not in ('cash','e_wallet','bank_transfer') then raise exception using errcode='HCWR6',message='Refund method unavailable'; end if;
    if v_amount+coalesce((select sum(p.amount) from app.wholesale_credit_payouts p join app.wholesale_credit_notes n on n.tenant_id=p.tenant_id and n.id=p.credit_note_id where p.tenant_id=p_tenant and n.invoice_id=v_source.id and p.payment_method_id=v_method.id),0)
      >coalesce((select sum(a.amount) from app.wholesale_payment_allocations a join app.wholesale_payments p on p.tenant_id=a.tenant_id and p.id=a.payment_id where a.tenant_id=p_tenant and a.invoice_id=v_source.id and p.payment_method_id=v_method.id),0)
    then raise exception using errcode='HCWR4',message='Refund exceeds original method collection'; end if;
@@ -307,7 +308,7 @@ begin
      if not found or not exists(select 1 from app.tenant_memberships m where m.tenant_id=p_tenant and m.user_id=p_actor and m.status='active' and(m.is_owner or (
        exists(select 1 from app.membership_roles mr join app.role_permissions rp on rp.tenant_id=mr.tenant_id and rp.role_id=mr.role_id where mr.tenant_id=p_tenant and mr.user_id=p_actor and rp.permission_code='registers.operate')
        and exists(select 1 from app.employees e where e.tenant_id=p_tenant and e.id=v_session.employee_id and e.user_id=p_actor and e.status='active'))))
-     then raise exception using errcode='HCWR2',message='Authorized open cash session required'; end if;
+     then raise exception using errcode='HCWR6',message='Authorized open cash session required'; end if;
      if coalesce((select sum(amount) from app.cash_movements where tenant_id=p_tenant and register_session_id=v_session.id),0)<v_amount
      then raise exception using errcode='HCWR4',message='Register cash is insufficient'; end if;
    else
