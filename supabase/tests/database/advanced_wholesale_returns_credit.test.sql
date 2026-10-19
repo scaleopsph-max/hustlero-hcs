@@ -117,6 +117,8 @@ insert into app.locations(id,tenant_id,code,name) values('3b000000-0000-4000-800
 insert into app.employees(id,tenant_id,user_id,employee_code,display_name) values('7b000000-0000-4000-8000-000000000002','2b000000-0000-4000-8000-000000000001','1b000000-0000-4000-8000-000000000002','AW4-READ','AW4 detail reader');
 insert into app.employee_locations(tenant_id,employee_id,location_id) values('2b000000-0000-4000-8000-000000000001','7b000000-0000-4000-8000-000000000002','3b000000-0000-4000-8000-000000000002');
 select is(app.load_wholesale_returns('1b000000-0000-4000-8000-000000000002','2b000000-0000-4000-8000-000000000001')->'notes','[]'::jsonb,'other-branch reader cannot see note details');
+insert into app.tenants(id,slug,name) values('2b000000-0000-4000-8000-000000000002','aw4-detail-foreign','AW4 Foreign Detail Tenant');
+update app.tenant_entitlements set entitled=true,enabled=true where tenant_id='2b000000-0000-4000-8000-000000000002' and feature_code='advanced_wholesale';
 select throws_ok($$select app.load_wholesale_returns('1b000000-0000-4000-8000-000000000002','2b000000-0000-4000-8000-000000000002')$$,'HCAR1',null,'foreign tenant note reads are denied');
 insert into app.employee_locations(tenant_id,employee_id,location_id) values('2b000000-0000-4000-8000-000000000001','7b000000-0000-4000-8000-000000000002','3b000000-0000-4000-8000-000000000001');
 select is(app.load_wholesale_returns('1b000000-0000-4000-8000-000000000002','2b000000-0000-4000-8000-000000000001')->'notes'->0->>'reason','Synthetic return','assigned read-only reader can inspect note details');
