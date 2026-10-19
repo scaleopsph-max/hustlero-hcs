@@ -1134,6 +1134,187 @@ try {
   console.log(
     'AW4 payout concurrency passed: competing payout overdraw denied; same-key replay pays once; refund-first close counts committed cash; close-first refund denied; closed-session historical replay creates no second payout; credit/cash/audit/outbox/funds reconcile.',
   )
+
+  // Application and payout must compete for the same credit, not separate balances.
+  const mixedSession = await openPayoutSession(100000, 'aw4-mixed-session-open')
+  const mixedApply = (client, amountMinor, key) =>
+    client.query('select app.command_wholesale_credit($1,$2,$3,$4::jsonb,$5,$5,$5) response', [
+      actor,
+      tenant,
+      'apply',
+      JSON.stringify({
+        creditNoteId: closedFirstNote.creditNoteId,
+        invoiceId: targetInvoice,
+        amountMinor,
+        reason: 'Disposable credit application versus payout',
+      }),
+      key,
+    ])
+  await first.query('begin')
+  await mixedApply(first, 30000, 'aw4-mixed-apply-first')
+  const payoutAfterApplication = payout(
+    second,
+    closedFirstNote.creditNoteId,
+    mixedSession,
+    30000,
+    'aw4-mixed-payout-denied',
+  ).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await payoutAfterApplication, 'HCWR4')
+
+  await first.query('begin')
+  await payout(first, closedFirstNote.creditNoteId, mixedSession, 10000, 'aw4-mixed-payout-first')
+  const applicationAfterPayout = mixedApply(second, 10000, 'aw4-mixed-apply-denied').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await applicationAfterPayout, 'HCWR4')
+  await mixedApply(observer, 5000, 'aw4-mixed-credit-remainder')
+  assert.deepEqual(
+    (await closePayoutSession(observer, mixedSession, 90000, 'aw4-mixed-session-close')).rows[0].response,
+    {
+      registerSessionId: mixedSession,
+      status: 'closed',
+      expectedCashCentavos: 90000,
+      countedCashCentavos: 90000,
+      varianceCentavos: 0,
+    },
+  )
+  assert.deepEqual(
+    (
+      await observer.query(
+        `select
+    app.wholesale_credit_available($1,$2)::text credit,
+    app.wholesale_invoice_open_balance($1,$3)::text debt,
+    (select sum(amount)::text from app.wholesale_credit_applications where tenant_id=$1 and credit_note_id=$2) applied,
+    (select sum(amount)::text from app.wholesale_credit_payouts where tenant_id=$1 and credit_note_id=$2) paid,
+    (select count(*)::int from app.idempotency_records where tenant_id=$1
+      and idempotency_key in ('aw4-mixed-payout-denied','aw4-mixed-apply-denied')) denied_keys`,
+        [tenant, closedFirstNote.creditNoteId, targetInvoice],
+      )
+    ).rows[0],
+    {
+      credit: '0.00',
+      debt: '2800.00',
+      applied: '350.00',
+      paid: '100.00',
+      denied_keys: 0,
+    },
+  )
+
+  const targetInvoiceLine = (
+    await observer.query('select id from app.invoice_lines where tenant_id=$1 and invoice_id=$2', [
+      tenant,
+      targetInvoice,
+    ])
+  ).rows[0].id
+  const returnTarget = (client, key) =>
+    client.query('select app.post_wholesale_return($1,$2,$3::jsonb,$4,$4,$4) response', [
+      actor,
+      tenant,
+      JSON.stringify({
+        invoiceId: targetInvoice,
+        reason: 'Disposable payment versus return',
+        lines: [{ invoiceLineId: targetInvoiceLine, quantityMilli: 1000, returnToStock: true }],
+      }),
+      key,
+    ])
+  const payTarget = (client, amountMinor, key) =>
+    client.query('select app.record_wholesale_payment($1,$2,$3::jsonb,$4,$4,$4) response', [
+      actor,
+      tenant,
+      JSON.stringify({
+        customerId: receiptFirst.customerId,
+        paymentMethodId: method,
+        amountMinor,
+        reference: 'Synthetic payment versus return',
+        allocations: [{ invoiceId: targetInvoice, amountMinor }],
+      }),
+      key,
+    ])
+  // Both transaction orderings must re-read the locked invoice's current balance.
+  await first.query('begin')
+  await payTarget(first, 90000, 'aw4-payment-before-return')
+  const returnAfterPayment = returnTarget(second, 'aw4-return-after-payment')
+  await waitForLock()
+  await first.query('commit')
+  const afterPayment = (await returnAfterPayment).rows[0].response
+  assert.equal(afterPayment.debtReductionMinor, 45000)
+  assert.equal(afterPayment.newCustomerCreditMinor, 0)
+  assert.equal(afterPayment.openDebtMinor, 145000)
+
+  await first.query('begin')
+  const beforePayment = (await returnTarget(first, 'aw4-return-before-payment')).rows[0].response
+  assert.equal(beforePayment.openDebtMinor, 100000)
+  const stalePayment = payTarget(second, 145000, 'aw4-stale-payment-denied').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await stalePayment, 'HCAP5')
+  await payTarget(observer, 100000, 'aw4-corrected-payment')
+  const mixedState = (
+    await observer.query(
+      `select
+    app.wholesale_invoice_open_balance($1,$2)::text debt,
+    (select sum(amount)::text from app.wholesale_payment_allocations where tenant_id=$1 and invoice_id=$2) receipts,
+    (select sum(amount)::text from app.wholesale_credit_applications where tenant_id=$1 and invoice_id=$2) applications,
+    (select sum(amount)::text from app.wholesale_credit_notes where tenant_id=$1 and invoice_id=$2) returns,
+    (select sum(customer_credit)::text from app.wholesale_credit_notes where tenant_id=$1 and invoice_id=$2) new_credit,
+    (select count(*)::int from app.wholesale_credit_notes where tenant_id=$1 and invoice_id=$2) return_count,
+    (select count(*)::int from app.wholesale_payment_allocations where tenant_id=$1 and invoice_id=$2) receipt_count,
+    (select count(*)::int from app.idempotency_records where tenant_id=$1 and idempotency_key='aw4-stale-payment-denied') denied_keys,
+    (select on_hand::text from app.inventory_balances where tenant_id=$1) stock,
+    (select count(*)::int from app.register_sessions where tenant_id=$1 and status='open') open_sessions,
+    (select count(*)::int from app.cash_movements where tenant_id=$1 and source_type='wholesale_credit_payout') cash_rows,
+    (select sum(amount)::text from app.cash_movements where tenant_id=$1 and source_type='wholesale_credit_payout') cash_total,
+    (select count(*)::int from audit.audit_events where tenant_id=$1 and request_id=any($3::text[])) audits,
+    (select count(*)::int from integration.event_outbox e join audit.audit_events a
+      on a.tenant_id=e.tenant_id and a.entity_id=e.aggregate_id and a.action=e.topic
+      where a.tenant_id=$1 and a.request_id=any($3::text[])) events,
+    (select coalesce(sum(amount),0)::text from app.fund_ledger_entries where tenant_id=$1) funds`,
+      [
+        tenant,
+        targetInvoice,
+        [
+          'aw4-mixed-apply-first',
+          'aw4-mixed-payout-first',
+          'aw4-mixed-credit-remainder',
+          'aw4-payment-before-return',
+          'aw4-return-after-payment',
+          'aw4-return-before-payment',
+          'aw4-corrected-payment',
+        ],
+      ],
+    )
+  ).rows[0]
+  assert.deepEqual(mixedState, {
+    debt: '0.00',
+    receipts: '1900.00',
+    applications: '1700.00',
+    returns: '900.00',
+    new_credit: '0.00',
+    return_count: 2,
+    receipt_count: 2,
+    denied_keys: 0,
+    stock: '12.000',
+    open_sessions: 0,
+    cash_rows: 3,
+    cash_total: '-1900.00',
+    audits: 7,
+    events: 7,
+    funds: fundsBeforePayout,
+  })
+  console.log(
+    'AW4 cross-command concurrency passed: application-first/payout-first credit overdraw denied; payment-first return reconciles; return-first stale overpayment rejected; corrected payment settles exactly; stock, credit, cash and funds reconcile.',
+  )
 } finally {
   // Release any held fixture transaction before closing another session waiting on it.
   await first.query('rollback').catch(() => {})
