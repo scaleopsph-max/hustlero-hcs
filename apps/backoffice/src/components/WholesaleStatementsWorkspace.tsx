@@ -223,13 +223,23 @@ export function WholesaleStatementsWorkspace() {
               <table className="w-full min-w-[850px] text-left text-sm">
                 <thead>
                   <tr>
-                    {['Invoice', 'Customer / location', 'Due', 'Days overdue', 'Band', 'Charge', 'Paid', 'Balance'].map(
-                      (name) => (
-                        <th key={name} className="p-3 font-medium">
-                          {name}
-                        </th>
-                      ),
-                    )}
+                    {[
+                      'Invoice',
+                      'Customer / location',
+                      'Due',
+                      'Days overdue',
+                      'Band',
+                      'Charge',
+                      'Paid',
+                      'Credit notes',
+                      'Credit issued',
+                      'Credit applied',
+                      'Balance',
+                    ].map((name) => (
+                      <th key={name} className="p-3 font-medium">
+                        {name}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -250,6 +260,9 @@ export function WholesaleStatementsWorkspace() {
                       <td className="p-3">{row.band}</td>
                       <td className="p-3">{row.chargedMinor === null ? 'Unknown' : formatPeso(row.chargedMinor)}</td>
                       <td className="p-3">{formatPeso(row.paidMinor)}</td>
+                      <td className="p-3">{formatPeso(row.creditedMinor)}</td>
+                      <td className="p-3">{formatPeso(row.creditIssuedMinor)}</td>
+                      <td className="p-3">{formatPeso(row.appliedCreditMinor)}</td>
                       <td className="p-3">{row.balanceMinor === null ? 'Unknown' : formatPeso(row.balanceMinor)}</td>
                     </tr>
                   ))}

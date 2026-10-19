@@ -8,3 +8,9 @@ export {
   type WholesalePaymentTerm,
   type ReceivableAgingBucket,
 } from './wholesale-receivables'
+export {
+  quoteWholesaleReturn,
+  wholesaleReturnSettlement,
+  type WholesaleReturnLineSnapshot,
+  type WholesaleReturnLineSelection,
+} from './wholesale-returns'

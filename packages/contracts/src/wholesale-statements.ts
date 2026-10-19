@@ -40,6 +40,9 @@ export const wholesaleStatementSchema = z
         classification: z.enum(['opening', 'invoice', 'unclassified']),
         chargedMinor: money.nullable(),
         paidMinor: money,
+        creditedMinor: money.default(0),
+        creditIssuedMinor: money.default(0),
+        appliedCreditMinor: money.default(0),
         balanceMinor: money.nullable(),
         dueDate: z.iso.date().nullable(),
         daysOverdue: z.number().int().nonnegative().nullable(),
@@ -53,7 +56,7 @@ export const wholesaleStatementSchema = z
         invoiceId: z.uuid(),
         invoiceNumber: z.string(),
         customerName: z.string(),
-        kind: z.enum(['opening', 'invoice', 'payment']),
+        kind: z.enum(['opening', 'invoice', 'payment', 'credit_note', 'customer_credit_issued', 'credit_application']),
         reference: z.string(),
         debitMinor: money,
         creditMinor: money,
@@ -108,7 +111,12 @@ export const wholesaleStatementSchema = z
             row.dueDate === null ||
             row.daysOverdue === null ||
             row.band === 'unclassified' ||
-            BigInt(row.chargedMinor) - BigInt(row.paidMinor) !== BigInt(row.balanceMinor)
+            BigInt(row.chargedMinor) -
+              BigInt(row.paidMinor) -
+              BigInt(row.creditedMinor) +
+              BigInt(row.creditIssuedMinor) -
+              BigInt(row.appliedCreditMinor) !==
+              BigInt(row.balanceMinor)
       )
         context.addIssue({ code: 'custom', message: 'Invoice classification and balance disagree.' })
     }

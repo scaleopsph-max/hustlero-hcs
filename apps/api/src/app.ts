@@ -1,4 +1,25 @@
 import {
+  wholesaleReturnRequestSchema,
+  wholesaleReturnPreviewSchema,
+  wholesaleReturnResponseSchema,
+  wholesaleCreditApplyRequestSchema,
+  wholesaleCreditApplyResponseSchema,
+  wholesaleCreditRefundRequestSchema,
+  wholesaleCreditRefundResponseSchema,
+  wholesaleReturnsContextSchema,
+} from '@hcs/contracts'
+import { quoteWholesaleReturn, wholesaleReturnSettlement } from '@hcs/domain'
+import {
+  loadWholesaleReturnsFromPostgres,
+  postWholesaleReturnInPostgres,
+  applyWholesaleCreditInPostgres,
+  refundWholesaleCreditInPostgres,
+  type WholesaleReturnsLoader,
+  type WholesaleReturnPoster,
+  type WholesaleCreditApplier,
+  type WholesaleCreditRefunder,
+} from './wholesale-returns-repository'
+import {
   wholesaleFundAllocationRequestSchema,
   wholesaleFundAllocationResponseSchema,
   wholesaleFundsContextSchema,
@@ -422,6 +443,10 @@ interface AppDependencies {
   recordWholesalePayment: WholesalePaymentRecorder
   allocateWholesaleFunds: WholesaleFundsAllocator
   loadWholesaleFunds: WholesaleFundsLoader
+  loadWholesaleReturns: WholesaleReturnsLoader
+  postWholesaleReturn: WholesaleReturnPoster
+  applyWholesaleCredit: WholesaleCreditApplier
+  refundWholesaleCredit: WholesaleCreditRefunder
   saveWholesaleOrderDraft: WholesaleOrderDraftSaver
   confirmWholesaleOrder: WholesaleOrderConfirmer
   cancelWholesaleOrder: WholesaleOrderCanceller
@@ -527,6 +552,10 @@ const defaultDependencies: AppDependencies = {
   recordWholesalePayment: recordWholesalePaymentInPostgres,
   allocateWholesaleFunds: allocateWholesaleFundsInPostgres,
   loadWholesaleFunds: loadWholesaleFundsFromPostgres,
+  loadWholesaleReturns: loadWholesaleReturnsFromPostgres,
+  postWholesaleReturn: postWholesaleReturnInPostgres,
+  applyWholesaleCredit: applyWholesaleCreditInPostgres,
+  refundWholesaleCredit: refundWholesaleCreditInPostgres,
   saveWholesaleOrderDraft: saveWholesaleOrderDraftInPostgres,
   confirmWholesaleOrder: confirmWholesaleOrderInPostgres,
   cancelWholesaleOrder: cancelWholesaleOrderInPostgres,
@@ -2503,6 +2532,236 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
     return { ...resolved, idempotencyKey }
   }
 
+  const returnError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
+    const code = postgresErrorCode(error)
+    if (!code?.startsWith('HCWR')) return wholesaleError(context, error)
+    const status =
+      code === 'HCWR0' ? 403 : code === 'HCWR2' ? 404 : ['HCWR3', 'HCWR4', 'HCWR5'].includes(code) ? 409 : 400
+    const message =
+      code === 'HCWR0'
+        ? 'Return or credit permission is required.'
+        : code === 'HCWR2'
+          ? 'Authorized return or credit scope was not found.'
+          : code === 'HCWR5'
+            ? 'Funded receipt requires a separate audited reconciliation before payout.'
+            : code === 'HCWR4'
+              ? 'Quantity, credit, original collection or register cash limit exceeded.'
+              : code === 'HCWR3'
+                ? 'Original snapshots or inventory require reconciliation; this valuation may be unsupported.'
+                : 'Check the return, credit or confirmed payout details.'
+    return context.json(
+      { error: { code: `WHOLESALE_RETURN_${code}`, message, requestId: context.get('requestId') } },
+      status,
+    )
+  }
+  app.get('/v1/wholesale/returns', async (context) => {
+    context.header('Cache-Control', 'private, no-store')
+    const scope = await resolveWholesaleTenant(context)
+    if (!scope)
+      return context.json(
+        {
+          error: {
+            code: 'RETURN_ACCESS_DENIED',
+            message: 'Sign in and select an authorized business.',
+            requestId: context.get('requestId'),
+          },
+        },
+        403,
+      )
+    try {
+      return context.json(
+        wholesaleReturnsContextSchema.parse(
+          await dependencies.loadWholesaleReturns(scope.userId, scope.tenantId, context.env),
+        ),
+      )
+    } catch (error) {
+      const response = returnError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+  app.post('/v1/wholesale/returns', async (context) => {
+    context.header('Cache-Control', 'private, no-store')
+    const command = await readWholesaleCommand(context)
+    const parsed = wholesaleReturnRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!command || !parsed.success)
+      return context.json(
+        {
+          error: {
+            code: 'INVALID_WHOLESALE_RETURN',
+            message: 'Provide original invoice lines, quantities, disposition, reason and Idempotency-Key.',
+            requestId: context.get('requestId'),
+          },
+        },
+        400,
+      )
+    try {
+      return context.json(
+        wholesaleReturnResponseSchema.parse(
+          await dependencies.postWholesaleReturn(
+            command.userId,
+            command.tenantId,
+            parsed.data,
+            command.idempotencyKey,
+            await requestHash({ userId: command.userId, ...parsed.data }),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+        201,
+      )
+    } catch (error) {
+      const response = returnError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+  app.post('/v1/wholesale/returns/preview', async (context) => {
+    context.header('Cache-Control', 'private, no-store')
+    const scope = await resolveWholesaleTenant(context)
+    if (!scope)
+      return context.json(
+        {
+          error: {
+            code: 'RETURN_ACCESS_DENIED',
+            message: 'Sign in and select an authorized business.',
+            requestId: context.get('requestId'),
+          },
+        },
+        403,
+      )
+    const parsed = wholesaleReturnRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success)
+      return context.json(
+        {
+          error: {
+            code: 'INVALID_WHOLESALE_RETURN',
+            message: 'Choose valid original invoice lines and quantities.',
+            requestId: context.get('requestId'),
+          },
+        },
+        400,
+      )
+    try {
+      const current = wholesaleReturnsContextSchema.parse(
+        await dependencies.loadWholesaleReturns(scope.userId, scope.tenantId, context.env),
+      )
+      if (!current.canPost) throw Object.assign(new Error('Return access denied'), { code: 'HCWR0' })
+      const invoice = current.invoices.find((row) => row.invoiceId === parsed.data.invoiceId)
+      if (!invoice) throw Object.assign(new Error('Return scope unavailable'), { code: 'HCWR2' })
+      if (!invoice.valuationSupported || invoice.openDebtMinor === null)
+        throw Object.assign(new Error('Return valuation unavailable'), { code: 'HCWR3' })
+      try {
+        const quote = quoteWholesaleReturn(
+          invoice.lines.map((line) => ({
+            invoiceLineId: line.invoiceLineId,
+            fulfilledQuantityMilli: line.quantityMilli,
+            returnedQuantityMilli: line.returnedQuantityMilli,
+            unitPriceMinor: line.unitPriceMinor,
+            originalTotalMinor: line.originalTotalMinor,
+            priorCreditMinor: line.priorCreditMinor,
+            discountMinor: 0,
+            taxMinor: 0,
+          })),
+          parsed.data.lines,
+        )
+        const settlement = wholesaleReturnSettlement({
+          invoiceTotalMinor: invoice.totalMinor,
+          priorReturnCreditMinor: invoice.creditedMinor,
+          allocatedPaymentMinor: invoice.settledMinor,
+          newReturnCreditMinor: quote.totalCreditMinor,
+        })
+        return context.json(
+          wholesaleReturnPreviewSchema.parse({
+            totalCreditMinor: quote.totalCreditMinor,
+            debtReductionMinor: settlement.debtReductionMinor,
+            newCustomerCreditMinor: settlement.newlyIssuedCustomerCreditMinor,
+            openDebtMinor: settlement.openDebtMinor,
+            cashPayoutMinor: 0,
+          }),
+        )
+      } catch {
+        throw Object.assign(new Error('Return valuation requires reconciliation'), { code: 'HCWR3' })
+      }
+    } catch (error) {
+      const response = returnError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+  app.post('/v1/wholesale/credits/apply', async (context) => {
+    context.header('Cache-Control', 'private, no-store')
+    const command = await readWholesaleCommand(context)
+    const parsed = wholesaleCreditApplyRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!command || !parsed.success)
+      return context.json(
+        {
+          error: {
+            code: 'INVALID_CREDIT_APPLICATION',
+            message: 'Provide an eligible invoice, credit note, exact amount and Idempotency-Key.',
+            requestId: context.get('requestId'),
+          },
+        },
+        400,
+      )
+    try {
+      return context.json(
+        wholesaleCreditApplyResponseSchema.parse(
+          await dependencies.applyWholesaleCredit(
+            command.userId,
+            command.tenantId,
+            parsed.data,
+            command.idempotencyKey,
+            await requestHash({ userId: command.userId, ...parsed.data }),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+        201,
+      )
+    } catch (error) {
+      const response = returnError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+  app.post('/v1/wholesale/credits/refund', async (context) => {
+    context.header('Cache-Control', 'private, no-store')
+    const command = await readWholesaleCommand(context)
+    const parsed = wholesaleCreditRefundRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!command || !parsed.success)
+      return context.json(
+        {
+          error: {
+            code: 'INVALID_CREDIT_REFUND',
+            message: 'Provide a confirmed payout, method, credit note, exact amount and Idempotency-Key.',
+            requestId: context.get('requestId'),
+          },
+        },
+        400,
+      )
+    try {
+      return context.json(
+        wholesaleCreditRefundResponseSchema.parse(
+          await dependencies.refundWholesaleCredit(
+            command.userId,
+            command.tenantId,
+            parsed.data,
+            command.idempotencyKey,
+            await requestHash({ userId: command.userId, ...parsed.data }),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+        201,
+      )
+    } catch (error) {
+      const response = returnError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
   const receivableError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
     const code = postgresErrorCode(error)
     if (!code?.startsWith('HCAR')) return wholesaleError(context, error)
@@ -2765,6 +3024,7 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
 
   const fundError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
     const code = postgresErrorCode(error)
+    if (code === 'HCWR5') return returnError(context, error)
     if (code === 'HCAR1')
       return context.json(
         apiErrorResponseSchema.parse({

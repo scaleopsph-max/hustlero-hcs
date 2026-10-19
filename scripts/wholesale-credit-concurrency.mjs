@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
+import console from 'node:console'
 import { randomUUID } from 'node:crypto'
+import process from 'node:process'
 import { setTimeout as delay } from 'node:timers/promises'
 import pg from 'pg'
 
@@ -852,6 +854,115 @@ try {
   )
   console.log(
     'AW3 cross-command concurrency passed: payment-first/confirmation-first, opening-first/unclassified-payment-first, cancellation-first/payment-first; exact balances, released reservations, immutable charges, one receipt/allocation/audit/outbox per command, and reconciled shared stock.',
+  )
+
+  // Reuse a fully paid four-unit invoice; all fixtures stay in this disposable CI database.
+  const returnLine = (
+    await observer.query('select id from app.invoice_lines where tenant_id=$1 and invoice_id=$2', [
+      tenant,
+      receiptFirst.invoiceId,
+    ])
+  ).rows[0].id
+  const returnBody = {
+    invoiceId: receiptFirst.invoiceId,
+    reason: 'Disposable concurrent return',
+    lines: [{ invoiceLineId: returnLine, quantityMilli: 3000, returnToStock: true }],
+  }
+  const postReturn = (client, key) =>
+    client.query('select app.post_wholesale_return($1,$2,$3::jsonb,$4,$4,$4) response', [
+      actor,
+      tenant,
+      JSON.stringify(returnBody),
+      key,
+    ])
+  await first.query('begin')
+  const returned = (await postReturn(first, 'aw4-race-return-winner')).rows[0].response
+  const excessReturn = postReturn(second, 'aw4-race-return-loser').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await excessReturn, 'HCWR4')
+  assert.equal(returned.newCustomerCreditMinor, 135000)
+  assert.equal(
+    (await observer.query('select on_hand::text from app.inventory_balances where tenant_id=$1', [tenant])).rows[0]
+      .on_hand,
+    '15.000',
+  )
+
+  await first.query('begin')
+  await postReturn(first, 'aw4-race-return-winner')
+  const returnReplay = postReturn(second, 'aw4-race-return-winner')
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await returnReplay).rows[0].response, returned)
+  assert.equal(
+    (await observer.query('select count(*)::int count from app.wholesale_credit_notes where tenant_id=$1', [tenant]))
+      .rows[0].count,
+    1,
+  )
+
+  const targetOrder = await receiptFirst.create('aw4-target')
+  await confirm(observer, targetOrder, 'aw4-race-target-confirm')
+  const targetLine = (
+    await observer.query('select id from app.sales_order_lines where tenant_id=$1 and sales_order_id=$2', [
+      tenant,
+      targetOrder,
+    ])
+  ).rows[0].id
+  const targetInvoice = (
+    await observer.query('select app.fulfill_wholesale_order($1,$2,$3,$4::jsonb,$5,$5,$5) response', [
+      actor,
+      tenant,
+      targetOrder,
+      JSON.stringify([{ salesOrderLineId: targetLine, quantityMilli: 10000 }]),
+      'aw4-race-target-issue',
+    ])
+  ).rows[0].response.invoiceId
+  const applyCredit = (client, key, amountMinor) =>
+    client.query('select app.command_wholesale_credit($1,$2,$3,$4::jsonb,$5,$5,$5) response', [
+      actor,
+      tenant,
+      'apply',
+      JSON.stringify({
+        creditNoteId: returned.creditNoteId,
+        invoiceId: targetInvoice,
+        amountMinor,
+        reason: 'Disposable concurrent credit application',
+      }),
+      key,
+    ])
+  await first.query('begin')
+  await applyCredit(first, 'aw4-race-apply-winner', 90000)
+  const excessApplication = applyCredit(second, 'aw4-race-apply-loser', 90000).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await excessApplication, 'HCWR4')
+
+  await first.query('begin')
+  const application = (await applyCredit(first, 'aw4-race-apply-replay', 45000)).rows[0].response
+  const applicationReplay = applyCredit(second, 'aw4-race-apply-replay', 45000)
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await applicationReplay).rows[0].response, application)
+  const reconciled = (
+    await observer.query(
+      `select
+    app.wholesale_credit_available($1,$2)::text available,
+    app.wholesale_invoice_open_balance($1,$3)::text debt,
+    (select count(*)::int from app.wholesale_credit_applications where tenant_id=$1) applications,
+    (select count(*)::int from app.wholesale_credit_payouts where tenant_id=$1) payouts,
+    (select on_hand::text from app.inventory_balances where tenant_id=$1) stock`,
+      [tenant, returned.creditNoteId, targetInvoice],
+    )
+  ).rows[0]
+  assert.deepEqual(reconciled, { available: '0.00', debt: '3150.00', applications: 2, payouts: 0, stock: '5.000' })
+  console.log(
+    'AW4 concurrency passed: competing over-return and credit overdraw denied; original-key return/application replays post once; exact stock, credit and target debt reconciled.',
   )
 } finally {
   // Release any held fixture transaction before closing another session waiting on it.

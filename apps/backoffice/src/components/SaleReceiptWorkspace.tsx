@@ -175,13 +175,21 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
           <ArrowLeft size={17} /> Sales
         </Link>
         <div className="flex flex-wrap gap-2">
+          {receipt.channel === 'wholesale' && (
+            <Link
+              href="/wholesale/returns"
+              className="inline-flex items-center gap-2 text-sm font-semibold text-ink-700 hover:text-ink-950"
+            >
+              <RotateCcw size={16} /> Returns and credits
+            </Link>
+          )}
           <Button variant="secondary" size="sm" onClick={() => window.print()}>
             <Printer size={16} /> Reprint
           </Button>
           <Button
             variant="secondary"
             size="sm"
-            disabled={!receipt.canReverse}
+            disabled={!receipt.canReverse || receipt.channel === 'wholesale'}
             onClick={() => {
               setMode('refund')
               setError(null)
@@ -192,7 +200,7 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
           <Button
             variant="danger"
             size="sm"
-            disabled={!receipt.canReverse || receipt.status !== 'completed'}
+            disabled={!receipt.canReverse || receipt.channel === 'wholesale' || receipt.status !== 'completed'}
             onClick={() => {
               setMode('void')
               setError(null)
@@ -227,7 +235,12 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
             <div className="mt-2">
               <div className="flex flex-wrap gap-2">
                 <Chip tone={receipt.channel === 'wholesale' ? 'warning' : 'neutral'}>{receipt.channel}</Chip>
-                <Chip tone={statusTone(receipt.status)}>{receipt.status.replace('_', ' ')}</Chip>
+                <Chip tone={statusTone(receipt.status)}>
+                  {(receipt.channel === 'wholesale'
+                    ? receipt.status.replace('refunded', 'credited')
+                    : receipt.status
+                  ).replace('_', ' ')}
+                </Chip>
               </div>
               {receipt.orderNumber ? (
                 <div className="mt-2 text-sm text-ink-500">Order {receipt.orderNumber}</div>
@@ -316,7 +329,7 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
             </dd>
             {receipt.refundedCentavos ? (
               <>
-                <dt className="text-red-700">Refunded</dt>
+                <dt className="text-red-700">{receipt.channel === 'wholesale' ? 'Credited' : 'Refunded'}</dt>
                 <dd className="text-right text-red-700">-{formatPeso(receipt.refundedCentavos)}</dd>
               </>
             ) : null}
