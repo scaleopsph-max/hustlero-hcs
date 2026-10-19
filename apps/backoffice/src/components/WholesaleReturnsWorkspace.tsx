@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Calculator, Check, RotateCcw, Download } from 'lucide-react'
+import { ArrowLeft, Calculator, Check, ChevronDown, RotateCcw, Download } from 'lucide-react'
 import {
   sessionContextResponseSchema,
   wholesaleReturnsContextSchema,
@@ -545,29 +545,86 @@ export function WholesaleReturnsWorkspace() {
           </form>
           <section className="space-y-3 border-t border-ink-900/15 pt-5">
             <h2 className="text-lg font-semibold">Credit notes</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr>
-                    <th className="py-3">Invoice</th>
-                    <th>Return</th>
-                    <th>Credit issued</th>
-                    <th>Credit available</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.notes.map((row) => (
-                    <tr key={row.creditNoteId} className="border-t">
-                      <td className="py-3">
+            <div>
+              {data.notes.map((row) => (
+                <details key={row.creditNoteId} className="group min-w-0 border-t py-3">
+                  <summary
+                    className="flex cursor-pointer list-none items-start gap-3 py-1 [&::-webkit-details-marker]:hidden"
+                    aria-label={`Credit note ${row.creditNoteId}`}
+                  >
+                    <ChevronDown
+                      size={16}
+                      className="mt-1 shrink-0 transition-transform group-open:rotate-180"
+                      aria-hidden="true"
+                    />
+                    <span className="grid min-w-0 flex-1 grid-cols-3 gap-3 text-sm sm:grid-cols-[minmax(0,1fr)_repeat(3,minmax(7rem,auto))]">
+                      <span className="col-span-3 break-all font-medium sm:col-span-1">
                         {data.invoices.find((i) => i.invoiceId === row.invoiceId)?.invoiceNumber ?? row.invoiceId}
-                      </td>
-                      <td>{formatPeso(row.amountMinor)}</td>
-                      <td>{formatPeso(row.issuedCreditMinor)}</td>
-                      <td>{formatPeso(row.availableCreditMinor)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </span>
+                      <span>
+                        <span className="block text-xs text-ink-900/60">Return</span>
+                        <span className="block break-words font-semibold">{formatPeso(row.amountMinor)}</span>
+                      </span>
+                      <span>
+                        <span className="block text-xs text-ink-900/60">Credit issued</span>
+                        <span className="block break-words">{formatPeso(row.issuedCreditMinor)}</span>
+                      </span>
+                      <span>
+                        <span className="block text-xs text-ink-900/60">Credit available</span>
+                        <span className="block break-words">{formatPeso(row.availableCreditMinor)}</span>
+                      </span>
+                    </span>
+                  </summary>
+                  <div className="min-w-0 space-y-3 py-3 sm:pl-7">
+                    <dl className="grid gap-3 break-words text-sm sm:grid-cols-2">
+                      <div>
+                        <dt className="text-ink-900/60">Credit note ID</dt>
+                        <dd className="break-all">{row.creditNoteId}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-ink-900/60">Commercial reversal ID</dt>
+                        <dd className="break-all">{row.refundId}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-ink-900/60">Recorded at</dt>
+                        <dd>
+                          <time dateTime={row.recordedAt}>{row.recordedAt}</time>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-ink-900/60">Reason</dt>
+                        <dd className="whitespace-pre-wrap break-words">{row.reason}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-ink-900/60">Debt reduction</dt>
+                        <dd>{formatPeso(row.debtReductionMinor)}</dd>
+                      </div>
+                    </dl>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm" aria-label={`Returned items ${row.creditNoteId}`}>
+                        <thead>
+                          <tr>
+                            <th className="py-2">Item</th>
+                            <th className="px-2">Quantity</th>
+                            <th className="px-2">Credit</th>
+                            <th>Stock disposition</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {row.lines.map((line) => (
+                            <tr key={line.invoiceLineId} className="border-t">
+                              <td className="min-w-32 break-words py-2">{line.name}</td>
+                              <td className="px-2">{line.quantityMilli / 1000}</td>
+                              <td className="whitespace-nowrap px-2">{formatPeso(line.amountMinor)}</td>
+                              <td>{line.returnToStock ? 'Restocked' : 'Not restocked'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </details>
+              ))}
               {!data.notes.length && <p className="py-4 text-ink-900/60">No credit notes</p>}
             </div>
           </section>

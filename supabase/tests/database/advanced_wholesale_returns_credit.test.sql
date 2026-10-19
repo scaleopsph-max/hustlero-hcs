@@ -71,6 +71,19 @@ select throws_ok($$select pg_temp.aw4_return(9000,'aw4-pgtap-excess-001')$$,'HCW
 select throws_ok($$select pg_temp.aw4_return(1000)$$,'HCS08',null,'same key with changed body is rejected');
 select throws_ok($$delete from app.wholesale_credit_notes where tenant_id='2b000000-0000-4000-8000-000000000001'$$,null,'issued invoices are immutable','credit notes cannot be deleted');
 
+create temporary table aw4_note_detail as
+select app.load_wholesale_returns('1b000000-0000-4000-8000-000000000001','2b000000-0000-4000-8000-000000000001')->'notes'->0 detail;
+select is((select detail->>'reason' from aw4_note_detail),'Synthetic return','authorized note detail preserves original reason');
+select is((select detail->>'refundId' from aw4_note_detail),(select refund_id::text from app.wholesale_credit_notes where id=(select note_id from aw4_fixture)),'detail links exact immutable commercial reversal');
+select is((select (detail->>'debtReductionMinor')::bigint from aw4_note_detail),0::bigint,'paid return detail has no invented debt reduction');
+select is((select (detail->'lines'->0->>'quantityMilli')::bigint from aw4_note_detail),2000::bigint,'detail contains original returned quantity');
+select is((select (detail->'lines'->0->>'amountMinor')::bigint from aw4_note_detail),90000::bigint,'detail contains exact original-price credit');
+select is((select (detail->'lines'->0->>'returnToStock')::boolean from aw4_note_detail),true,'detail contains recorded stock disposition');
+update app.products set name='Changed current catalog' where tenant_id='2b000000-0000-4000-8000-000000000001';
+update app.product_variants set name='Changed size',retail_price=999 where tenant_id='2b000000-0000-4000-8000-000000000001';
+select is(app.load_wholesale_returns('1b000000-0000-4000-8000-000000000001','2b000000-0000-4000-8000-000000000001')->'notes'->0->'lines'->0->>'name','AW4 Shoes / Size 9','note uses immutable invoice names after current catalog changes');
+select is((app.load_wholesale_returns('1b000000-0000-4000-8000-000000000001','2b000000-0000-4000-8000-000000000001')->'notes'->0->'lines'->0->>'amountMinor')::bigint,90000::bigint,'catalog repricing does not revalue note');
+
 do $$
 declare a uuid:='1b000000-0000-4000-8000-000000000001';t uuid:='2b000000-0000-4000-8000-000000000001';o uuid;line uuid;price uuid;c uuid;target uuid;result jsonb;
 begin
@@ -95,5 +108,18 @@ select is((select count(*) from app.wholesale_payments where tenant_id='2b000000
 select is((select count(*) from app.fund_ledger_entries where tenant_id='2b000000-0000-4000-8000-000000000001'),0::bigint,'credit application is not a fund contribution');
 select throws_ok($$select app.command_wholesale_credit('1b000000-0000-4000-8000-000000000001','2b000000-0000-4000-8000-000000000001','apply',jsonb_build_object('creditNoteId',note_id,'invoiceId',target_id,'amountMinor',60001,'reason','Synthetic overdraw'),'aw4-pgtap-overdraw-001','fixture','fixture') from aw4_fixture$$,'HCWR4',null,'credit cannot be overdrawn');
 select throws_ok($$select app.allocate_wholesale_payment_funds('1b000000-0000-4000-8000-000000000001','2b000000-0000-4000-8000-000000000001',jsonb_build_object('paymentId',(select id from app.wholesale_payments where tenant_id='2b000000-0000-4000-8000-000000000001'),'capitalMinor',300000,'operatingMinor',150000,'settledConfirmed',true,'settlementReference','Synthetic','reason','Synthetic allocation'),'aw4-pgtap-fund-block-001','fixture','fixture')$$,'HCWR5',null,'return-backed cash is not allocated without reconciliation');
+insert into auth.users(id,email) values('1b000000-0000-4000-8000-000000000002','aw4-detail-reader@example.invalid');
+insert into app.tenant_memberships(tenant_id,user_id,status,is_owner) values('2b000000-0000-4000-8000-000000000001','1b000000-0000-4000-8000-000000000002','active',false);
+insert into app.roles(id,tenant_id,code,name) values('6b000000-0000-4000-8000-000000000002','2b000000-0000-4000-8000-000000000001','AW4-READ','AW4 read-only');
+insert into app.role_permissions(tenant_id,role_id,permission_code) values('2b000000-0000-4000-8000-000000000001','6b000000-0000-4000-8000-000000000002','wholesale_orders.read');
+insert into app.membership_roles(tenant_id,user_id,role_id) values('2b000000-0000-4000-8000-000000000001','1b000000-0000-4000-8000-000000000002','6b000000-0000-4000-8000-000000000002');
+insert into app.locations(id,tenant_id,code,name) values('3b000000-0000-4000-8000-000000000002','2b000000-0000-4000-8000-000000000001','OTHER','Other branch');
+insert into app.employees(id,tenant_id,user_id,employee_code,display_name) values('7b000000-0000-4000-8000-000000000002','2b000000-0000-4000-8000-000000000001','1b000000-0000-4000-8000-000000000002','AW4-READ','AW4 detail reader');
+insert into app.employee_locations(tenant_id,employee_id,location_id) values('2b000000-0000-4000-8000-000000000001','7b000000-0000-4000-8000-000000000002','3b000000-0000-4000-8000-000000000002');
+select is(app.load_wholesale_returns('1b000000-0000-4000-8000-000000000002','2b000000-0000-4000-8000-000000000001')->'notes','[]'::jsonb,'other-branch reader cannot see note details');
+select throws_ok($$select app.load_wholesale_returns('1b000000-0000-4000-8000-000000000002','2b000000-0000-4000-8000-000000000002')$$,'HCAR1',null,'foreign tenant note reads are denied');
+insert into app.employee_locations(tenant_id,employee_id,location_id) values('2b000000-0000-4000-8000-000000000001','7b000000-0000-4000-8000-000000000002','3b000000-0000-4000-8000-000000000001');
+select is(app.load_wholesale_returns('1b000000-0000-4000-8000-000000000002','2b000000-0000-4000-8000-000000000001')->'notes'->0->>'reason','Synthetic return','assigned read-only reader can inspect note details');
+select is(app.load_wholesale_returns('1b000000-0000-4000-8000-000000000002','2b000000-0000-4000-8000-000000000001')->>'canPost','false','detail access does not grant posting authority');
 select * from finish();
 rollback;

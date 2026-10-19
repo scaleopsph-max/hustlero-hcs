@@ -31,14 +31,20 @@ const history = wholesaleReturnsContextSchema.parse({
     {
       creditNoteId: id,
       invoiceId: id,
+      refundId: id,
       customerId: id,
       locationId: id,
+      reason: 'Synthetic return',
       amountMinor: 45000,
+      debtReductionMinor: 45000,
       issuedCreditMinor: 0,
       availableCreditMinor: 0,
       commandKey: key,
       payoutBlocked: false,
       recordedAt: '2026-10-18T00:00:00Z',
+      lines: [
+        { invoiceLineId: id, name: 'Synthetic shoes', quantityMilli: 1000, amountMinor: 45000, returnToStock: true },
+      ],
     },
   ],
   applications: [],
@@ -118,6 +124,17 @@ describe('AW4 pending-command recovery', () => {
   it('accepts only a matching response and independently authorized command history', () => {
     expect(() => reconcileWholesaleReturn(command, response, history)).not.toThrow()
     expect(() => reconcileWholesaleReturn(command, response, { ...history, notes: [] })).toThrow()
+  })
+  it.each([
+    { refundId: key },
+    { debtReductionMinor: 44999, issuedCreditMinor: 1 },
+    { debtReductionMinor: 0, issuedCreditMinor: 45000 },
+  ])('retains a return whose immutable reversal or settlement split disagrees with the response %j', (changes) => {
+    const changed = wholesaleReturnsContextSchema.parse({
+      ...history,
+      notes: history.notes.map((row) => ({ ...row, ...changes })),
+    })
+    expect(() => reconcileWholesaleReturn(command, response, changed)).toThrow()
   })
   it('rejects another command with the same invoice and amount', () => {
     expect(() =>

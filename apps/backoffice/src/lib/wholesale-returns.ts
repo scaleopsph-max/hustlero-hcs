@@ -35,6 +35,9 @@ export function reconcileWholesaleReturn(
       !note ||
       note.commandKey !== command.key ||
       note.invoiceId !== response.invoiceId ||
+      note.refundId !== response.refundId ||
+      note.debtReductionMinor !== response.debtReductionMinor ||
+      note.issuedCreditMinor !== response.newCustomerCreditMinor ||
       note.amountMinor !== response.amountMinor
     )
       throw new Error('Credit-note result could not be reconciled. Retry the original command.')

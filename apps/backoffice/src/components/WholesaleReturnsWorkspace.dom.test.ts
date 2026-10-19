@@ -1,5 +1,5 @@
 import { createElement } from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   wholesaleCreditApplyResponseSchema,
@@ -85,14 +85,26 @@ const fixture = (): WholesaleReturnsContext => ({
     {
       creditNoteId: note,
       invoiceId: invoice,
+      refundId: note,
       customerId: customer,
       locationId: location,
+      reason: 'Synthetic unused shoes return',
       amountMinor: 45000,
+      debtReductionMinor: 0,
       issuedCreditMinor: 45000,
       availableCreditMinor: 45000,
       commandKey: null,
       payoutBlocked: false,
       recordedAt: '2026-10-19T00:00:00Z',
+      lines: [
+        {
+          invoiceLineId: line,
+          name: 'Original shoes / Size 9',
+          quantityMilli: 1000,
+          amountMinor: 45000,
+          returnToStock: true,
+        },
+      ],
     },
   ],
   applications: [],
@@ -179,12 +191,46 @@ async function prepareReturn() {
   )
 }
 function committedReturn(key: string) {
-  current.notes.push({ ...current.notes[0]!, creditNoteId: postedNote, commandKey: key })
+  current.notes.push({ ...current.notes[0]!, creditNoteId: postedNote, refundId: postedNote, commandKey: key })
   current.invoices[0]!.creditedMinor = 90000
   current.invoices[0]!.lines[0]!.returnedQuantityMilli = 2000
   current.invoices[0]!.lines[0]!.priorCreditMinor = 90000
 }
 describe('actual AW4 component with isolated synthetic Auth/API', () => {
+  it('opens immutable note details for a read-only user without a mutation', async () => {
+    current.canPost = false
+    current.canApply = false
+    current.canRefund = false
+    await mount()
+    const summary = screen.getByLabelText(`Credit note ${note}`)
+    fireEvent.click(summary)
+    expect((summary.parentElement as HTMLDetailsElement).open).toBe(true)
+    const detail = within(summary.parentElement!)
+    expect(detail.getByText('Synthetic unused shoes return')).toBeDefined()
+    expect(detail.getByText('Original shoes / Size 9')).toBeDefined()
+    expect(detail.getByText('Restocked')).toBeDefined()
+    expect(detail.getByText('Commercial reversal ID')).toBeDefined()
+    expect(posts).toHaveLength(0)
+  })
+  it('renders non-restock disposition and reason as text rather than executable markup', async () => {
+    current.notes[0]!.reason = '<img src=x onerror=alert(1)>'
+    current.notes[0]!.lines[0]!.returnToStock = false
+    await mount()
+    const summary = screen.getByLabelText(`Credit note ${note}`)
+    fireEvent.click(summary)
+    const detail = within(summary.parentElement!)
+    expect(detail.getByText('<img src=x onerror=alert(1)>')).toBeDefined()
+    expect(detail.getByText('Not restocked')).toBeDefined()
+    expect(summary.parentElement!.querySelector('img')).toBeNull()
+    expect(posts).toHaveLength(0)
+  })
+  it('does not display a note whose original-line total disagrees with its credit amount', async () => {
+    current.notes[0]!.lines[0]!.amountMinor = 44999
+    render(createElement(Workspace))
+    await screen.findByRole('alert')
+    expect(screen.queryByLabelText(`Credit note ${note}`)).toBeNull()
+    expect(posts).toHaveLength(0)
+  })
   it.each(['apply', 'refund'] as const)(
     'recovers a lost %s response after reload using the exact original command',
     async (operation) => {
@@ -343,6 +389,23 @@ describe('actual AW4 component with isolated synthetic Auth/API', () => {
   })
   it('retains the original command when a successful response lacks matching authorized history', async () => {
     commit = async () => Response.json(result)
+    await mount()
+    await prepareReturn()
+    fireEvent.click(screen.getByRole('button', { name: 'Post credit note' }))
+    await screen.findByRole('alert')
+    expect(sessionStorage.getItem(storage)).not.toBeNull()
+    expect(screen.queryByText('Credit note posted.')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Dismiss rejected request' })).toBeNull()
+  })
+  it('retains pending storage when the authorized note has a different immutable settlement split', async () => {
+    commit = async (_path, _body, key) => {
+      committedReturn(key)
+      const recorded = current.notes.at(-1)!
+      recorded.debtReductionMinor = 1
+      recorded.issuedCreditMinor = 44999
+      recorded.availableCreditMinor = 44999
+      return Response.json(result)
+    }
     await mount()
     await prepareReturn()
     fireEvent.click(screen.getByRole('button', { name: 'Post credit note' }))

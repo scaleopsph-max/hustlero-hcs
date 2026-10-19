@@ -91,6 +91,42 @@ export const wholesaleCreditRefundResponseSchema = z.object({
     .nullable(),
   amountMinor: positiveMoney,
 })
+export const wholesaleCreditNoteSchema = z
+  .object({
+    creditNoteId: z.uuid(),
+    invoiceId: z.uuid(),
+    refundId: z.uuid(),
+    customerId: z.uuid(),
+    locationId: z.uuid(),
+    reason: z.string().min(3).max(240),
+    amountMinor: positiveMoney,
+    debtReductionMinor: money,
+    issuedCreditMinor: money,
+    availableCreditMinor: money,
+    commandKey: z.string().nullable(),
+    payoutBlocked: z.boolean(),
+    recordedAt: z.iso.datetime({ offset: true }),
+    lines: z
+      .array(
+        z.object({
+          invoiceLineId: z.uuid(),
+          name: z.string(),
+          quantityMilli: z.number().int().min(1000).max(Number.MAX_SAFE_INTEGER).multipleOf(1000),
+          amountMinor: positiveMoney,
+          returnToStock: z.boolean(),
+        }),
+      )
+      .min(1)
+      .max(200),
+  })
+  .refine(
+    (row) =>
+      row.availableCreditMinor <= row.issuedCreditMinor &&
+      BigInt(row.debtReductionMinor) + BigInt(row.issuedCreditMinor) === BigInt(row.amountMinor) &&
+      row.lines.reduce((sum, line) => sum + BigInt(line.amountMinor), 0n) === BigInt(row.amountMinor) &&
+      new Set(row.lines.map((line) => line.invoiceLineId)).size === row.lines.length,
+    'Credit note detail is inconsistent.',
+  )
 export const wholesaleReturnsContextSchema = z.object({
   canPost: z.boolean(),
   canApply: z.boolean(),
@@ -121,25 +157,7 @@ export const wholesaleReturnsContextSchema = z.object({
       ),
     }),
   ),
-  notes: z.array(
-    z
-      .object({
-        creditNoteId: z.uuid(),
-        invoiceId: z.uuid(),
-        customerId: z.uuid(),
-        locationId: z.uuid(),
-        amountMinor: positiveMoney,
-        issuedCreditMinor: money,
-        availableCreditMinor: money,
-        commandKey: z.string().nullable(),
-        payoutBlocked: z.boolean(),
-        recordedAt: z.iso.datetime({ offset: true }),
-      })
-      .refine(
-        (row) => row.availableCreditMinor <= row.issuedCreditMinor && row.issuedCreditMinor <= row.amountMinor,
-        'Credit note balance is inconsistent.',
-      ),
-  ),
+  notes: z.array(wholesaleCreditNoteSchema),
   applications: z.array(wholesaleCreditApplyResponseSchema.extend({ commandKey: z.string().nullable() })),
   payouts: z.array(wholesaleCreditRefundResponseSchema.extend({ commandKey: z.string().nullable() })),
   methods: z.array(z.object({ id: z.uuid(), name: z.string(), type: z.enum(['cash', 'e_wallet', 'bank_transfer']) })),
