@@ -964,6 +964,176 @@ try {
   console.log(
     'AW4 concurrency passed: competing over-return and credit overdraw denied; original-key return/application replays post once; exact stock, credit and target debt reconciled.',
   )
+
+  const fundsBeforePayout = (
+    await observer.query('select coalesce(sum(amount),0)::text total from app.fund_ledger_entries where tenant_id=$1', [
+      tenant,
+    ])
+  ).rows[0].total
+  const paidReturn = async (invoiceId, quantityMilli, key) => {
+    const invoiceLineId = (
+      await observer.query('select id from app.invoice_lines where tenant_id=$1 and invoice_id=$2', [tenant, invoiceId])
+    ).rows[0].id
+    return (
+      await observer.query('select app.post_wholesale_return($1,$2,$3::jsonb,$4,$4,$4) response', [
+        actor,
+        tenant,
+        JSON.stringify({
+          invoiceId,
+          reason: 'Disposable payout race return',
+          lines: [{ invoiceLineId, quantityMilli, returnToStock: true }],
+        }),
+        key,
+      ])
+    ).rows[0].response
+  }
+  const payoutNote = await paidReturn(cancelFirst.invoiceId, 4000, 'aw4-payout-source-return')
+  assert.equal(payoutNote.newCustomerCreditMinor, 180000)
+  const payoutEmployee = (
+    await observer.query(
+      "insert into app.employees(tenant_id,user_id,employee_code,display_name) values($1,$2,'AW4-RACE','AW4 Race Owner') returning id",
+      [tenant, actor],
+    )
+  ).rows[0].id
+  await observer.query('insert into app.employee_locations(tenant_id,employee_id,location_id) values($1,$2,$3)', [
+    tenant,
+    payoutEmployee,
+    location,
+  ])
+  const payoutRegister = (
+    await observer.query(
+      "insert into app.registers(tenant_id,location_id,code,name) values($1,$2,'AW4-RACE','AW4 Race Register') returning id",
+      [tenant, location],
+    )
+  ).rows[0].id
+  const openPayoutSession = async (opening, key) =>
+    (
+      await observer.query('select app.open_register_session($1,$2,$3,$4,$5,$6,$6,$6) response', [
+        actor,
+        tenant,
+        payoutRegister,
+        payoutEmployee,
+        opening,
+        key,
+      ])
+    ).rows[0].response.registerSessionId
+  const payoutSession = await openPayoutSession(250000, 'aw4-payout-session-open')
+  const payout = (client, noteId, sessionId, amountMinor, key) =>
+    client.query('select app.command_wholesale_credit($1,$2,$3,$4::jsonb,$5,$5,$5) response', [
+      actor,
+      tenant,
+      'refund',
+      JSON.stringify({
+        creditNoteId: noteId,
+        paymentMethodId: method,
+        registerSessionId: sessionId,
+        referenceLastFour: null,
+        payoutConfirmed: true,
+        amountMinor,
+        reason: 'Disposable separately authorized payout',
+      }),
+      key,
+    ])
+  const closePayoutSession = (client, sessionId, counted, key) =>
+    client.query('select app.close_register_session($1,$2,$3,$4,$5,$5,$5) response', [
+      actor,
+      tenant,
+      sessionId,
+      counted,
+      key,
+    ])
+
+  await first.query('begin')
+  const payoutResult = (await payout(first, payoutNote.creditNoteId, payoutSession, 120000, 'aw4-payout-race-winner'))
+    .rows[0].response
+  const excessPayout = payout(second, payoutNote.creditNoteId, payoutSession, 120000, 'aw4-payout-race-loser').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await excessPayout, 'HCWR4')
+
+  await first.query('begin')
+  await payout(first, payoutNote.creditNoteId, payoutSession, 120000, 'aw4-payout-race-winner')
+  const payoutReplay = payout(second, payoutNote.creditNoteId, payoutSession, 120000, 'aw4-payout-race-winner')
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await payoutReplay).rows[0].response, payoutResult)
+
+  // Close must wait for the refund's session lock and count the committed payout.
+  await first.query('begin')
+  await payout(first, payoutNote.creditNoteId, payoutSession, 60000, 'aw4-payout-before-close')
+  const closeAfterPayout = closePayoutSession(second, payoutSession, 70000, 'aw4-close-after-payout')
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await closeAfterPayout).rows[0].response, {
+    registerSessionId: payoutSession,
+    status: 'closed',
+    expectedCashCentavos: 70000,
+    countedCashCentavos: 70000,
+    varianceCentavos: 0,
+  })
+  // A historical retry may return its original result even after close, never pay again.
+  assert.deepEqual(
+    (await payout(observer, payoutNote.creditNoteId, payoutSession, 120000, 'aw4-payout-race-winner')).rows[0].response,
+    payoutResult,
+  )
+
+  const closedFirstNote = await paidReturn(receiptFirst.invoiceId, 1000, 'aw4-close-first-source-return')
+  assert.equal(closedFirstNote.newCustomerCreditMinor, 45000)
+  const closedFirstSession = await openPayoutSession(100000, 'aw4-close-first-session-open')
+  await first.query('begin')
+  await closePayoutSession(first, closedFirstSession, 100000, 'aw4-close-before-payout')
+  const payoutAfterClose = payout(
+    second,
+    closedFirstNote.creditNoteId,
+    closedFirstSession,
+    45000,
+    'aw4-payout-after-close-denied',
+  ).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await payoutAfterClose, 'HCWR2')
+  const payoutState = (
+    await observer.query(
+      `select
+    (select count(*)::int from app.wholesale_credit_payouts where tenant_id=$1) payouts,
+    (select sum(amount)::text from app.wholesale_credit_payouts where tenant_id=$1) payout_total,
+    (select count(*)::int from app.cash_movements where tenant_id=$1 and source_type='wholesale_credit_payout') cash_rows,
+    (select sum(amount)::text from app.cash_movements where tenant_id=$1 and source_type='wholesale_credit_payout') cash_total,
+    app.wholesale_credit_available($1,$2)::text paid_note_credit,
+    app.wholesale_credit_available($1,$3)::text blocked_note_credit,
+    (select count(*)::int from app.register_sessions where tenant_id=$1 and status='open') open_sessions,
+    (select count(*)::int from app.register_sessions where tenant_id=$1 and variance<>0) variances,
+    (select count(*)::int from audit.audit_events where tenant_id=$1 and action='wholesale_credit.refund') audits,
+    (select count(*)::int from integration.event_outbox where tenant_id=$1 and topic='wholesale_credit.refund') events,
+    (select count(*)::int from app.idempotency_records where tenant_id=$1 and operation='wholesale_credit.refund'
+      and idempotency_key in ('aw4-payout-race-loser','aw4-payout-after-close-denied')) denied_keys,
+    (select coalesce(sum(amount),0)::text from app.fund_ledger_entries where tenant_id=$1) funds`,
+      [tenant, payoutNote.creditNoteId, closedFirstNote.creditNoteId],
+    )
+  ).rows[0]
+  assert.deepEqual(payoutState, {
+    payouts: 2,
+    payout_total: '1800.00',
+    cash_rows: 2,
+    cash_total: '-1800.00',
+    paid_note_credit: '0.00',
+    blocked_note_credit: '450.00',
+    open_sessions: 0,
+    variances: 0,
+    audits: 2,
+    events: 2,
+    denied_keys: 0,
+    funds: fundsBeforePayout,
+  })
+  console.log(
+    'AW4 payout concurrency passed: competing payout overdraw denied; same-key replay pays once; refund-first close counts committed cash; close-first refund denied; closed-session historical replay creates no second payout; credit/cash/audit/outbox/funds reconcile.',
+  )
 } finally {
   // Release any held fixture transaction before closing another session waiting on it.
   await first.query('rollback').catch(() => {})
