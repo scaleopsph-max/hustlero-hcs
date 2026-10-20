@@ -1315,6 +1315,100 @@ try {
   console.log(
     'AW4 cross-command concurrency passed: application-first/payout-first credit overdraw denied; payment-first return reconciles; return-first stale overpayment rejected; corrected payment settles exactly; stock, credit, cash and funds reconcile.',
   )
+
+  const guardedNote = await paidReturn(targetInvoice, 1000, 'aw4-security-source-return')
+  const guardedOrder = await receiptFirst.create('aw4-security-target')
+  await confirm(observer, guardedOrder, 'aw4-security-target-confirm')
+  const guardedLine = (
+    await observer.query('select id from app.sales_order_lines where tenant_id=$1 and sales_order_id=$2', [
+      tenant,
+      guardedOrder,
+    ])
+  ).rows[0].id
+  const guardedInvoice = (
+    await observer.query('select app.fulfill_wholesale_order($1,$2,$3,$4::jsonb,$5,$5,$5) response', [
+      actor,
+      tenant,
+      guardedOrder,
+      JSON.stringify([{ salesOrderLineId: guardedLine, quantityMilli: 10000 }]),
+      'aw4-security-target-issue',
+    ])
+  ).rows[0].response.invoiceId
+  const guardedSession = await openPayoutSession(100000, 'aw4-security-session-open')
+  const guardedApply = (client, key) =>
+    client.query("select app.command_wholesale_credit($1,$2,'apply',$3::jsonb,$4,$4,$4) response", [
+      actor,
+      tenant,
+      JSON.stringify({
+        creditNoteId: guardedNote.creditNoteId,
+        invoiceId: guardedInvoice,
+        amountMinor: 10000,
+        reason: 'Disposable queued authorization regression',
+      }),
+      key,
+    ])
+  const guardedCommands = {
+    apply: guardedApply,
+    refund: (client, key) => payout(client, guardedNote.creditNoteId, guardedSession, 10000, key),
+    return: returnTarget,
+  }
+  const securitySnapshot = async () =>
+    (
+      await observer.query(
+        `select jsonb_build_object(
+    'notes',(select count(*) from app.wholesale_credit_notes where tenant_id=$1),
+    'applications',(select count(*) from app.wholesale_credit_applications where tenant_id=$1),
+    'payouts',(select count(*) from app.wholesale_credit_payouts where tenant_id=$1),
+    'refunds',(select count(*) from app.refunds where tenant_id=$1),
+    'movements',(select count(*) from app.inventory_movements where tenant_id=$1),
+    'cash',(select count(*) from app.cash_movements where tenant_id=$1),
+    'funds',(select coalesce(sum(amount),0) from app.fund_ledger_entries where tenant_id=$1),
+    'keys',(select count(*) from app.idempotency_records where tenant_id=$1),
+    'audits',(select count(*) from audit.audit_events where tenant_id=$1),
+    'events',(select count(*) from integration.event_outbox where tenant_id=$1),
+    'stock',(select on_hand from app.inventory_balances where tenant_id=$1)
+  ) state`,
+        [tenant],
+      )
+    ).rows[0].state
+  for (const [change, revoke, restore, expected] of [
+    [
+      'suspend',
+      "update app.tenants set status='suspended' where id=$1",
+      "update app.tenants set status='active' where id=$1",
+      'HCWR0',
+    ],
+    [
+      'disable',
+      "update app.tenant_entitlements set enabled=false where tenant_id=$1 and feature_code='advanced_wholesale'",
+      "update app.tenant_entitlements set enabled=true where tenant_id=$1 and feature_code='advanced_wholesale'",
+      'HCSQ0',
+    ],
+  ]) {
+    for (const [operation, command] of Object.entries(guardedCommands)) {
+      const before = await securitySnapshot()
+      await first.query('begin')
+      // Revoke before admission, but leave it uncommitted so the old guard sees stale active state.
+      await first.query(revoke, [tenant])
+      await first.query('select 1 from app.customers where tenant_id=$1 and id=$2 for update', [
+        tenant,
+        receiptFirst.customerId,
+      ])
+      const queued = command(second, `aw4-security-${change}-${operation}`).then(
+        () => 'unexpected-success',
+        (error) => error.code,
+      )
+      await waitForLock()
+      await first.query('commit')
+      assert.equal(await queued, expected, `${operation} must deny committed ${change} after its lock wait`)
+      assert.deepEqual(await securitySnapshot(), before, `${operation} denial must leave all ledgers unchanged`)
+      await observer.query(restore, [tenant])
+    }
+  }
+  await closePayoutSession(observer, guardedSession, 100000, 'aw4-security-session-close')
+  console.log(
+    'AW4 queued authorization passed: tenant suspension and entitlement disable win before admission for return/application/payout; no business, key, audit or outbox writes.',
+  )
 } finally {
   // Release any held fixture transaction before closing another session waiting on it.
   await first.query('rollback').catch(() => {})
