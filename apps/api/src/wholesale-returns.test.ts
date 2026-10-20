@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { wholesaleCreditApplyResponseSchema, wholesaleCreditRefundResponseSchema } from '@hcs/contracts'
+import {
+  wholesaleCreditApplyResponseSchema,
+  wholesaleCreditRefundResponseSchema,
+  wholesaleReturnsContextSchema,
+} from '@hcs/contracts'
 import { createApp } from './app'
 const userId = '10000000-0000-4000-8000-000000000001',
   tenantId = '20000000-0000-4000-8000-000000000001'
@@ -52,6 +56,76 @@ function setup(code?: string, overrides: Parameters<typeof createApp>[0] = {}) {
   return { app, command }
 }
 describe('AW4 routes', () => {
+  const noteHistory = wholesaleReturnsContextSchema.parse({
+    canPost: false,
+    canApply: false,
+    canRefund: false,
+    invoices: [],
+    notes: [
+      {
+        creditNoteId,
+        invoiceId,
+        refundId: lineId,
+        customerId: userId,
+        locationId: invoiceId,
+        reason: 'Private synthetic note reason',
+        amountMinor: 45000,
+        debtReductionMinor: 20000,
+        issuedCreditMinor: 25000,
+        availableCreditMinor: 25000,
+        commandKey: null,
+        payoutBlocked: false,
+        recordedAt: '2026-10-19T00:00:00Z',
+        lines: [
+          {
+            invoiceLineId: lineId,
+            name: 'Original synthetic shoes',
+            quantityMilli: 1000,
+            amountMinor: 45000,
+            returnToStock: false,
+          },
+        ],
+      },
+    ],
+    applications: [],
+    payouts: [],
+    methods: [],
+    sessions: [],
+  })
+  it('returns complete immutable note detail under authenticated scope without write authority', async () => {
+    const loader = vi.fn(async (..._args: unknown[]) => structuredClone(noteHistory))
+    const { app, command } = setup(undefined, { loadWholesaleReturns: loader })
+    const response = await app.request('/v1/wholesale/returns', { headers }, { ENVIRONMENT: 'test' })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store')
+    expect(await response.json()).toEqual(noteHistory)
+    expect(loader.mock.calls[0]?.slice(0, 2)).toEqual([userId, tenantId])
+    expect(command).not.toHaveBeenCalled()
+  })
+  it.each([
+    [{ ...headers, authorization: 'Bearer wrong-account' }, 403],
+    [{ ...headers, 'x-tenant-id': creditNoteId }, 403],
+  ])('rejects an unauthorized note read before loading private detail', async (requestHeaders, status) => {
+    const loader = vi.fn(async () => structuredClone(noteHistory))
+    const { app, command } = setup(undefined, { loadWholesaleReturns: loader })
+    const response = await app.request('/v1/wholesale/returns', { headers: requestHeaders }, { ENVIRONMENT: 'test' })
+    expect(response.status).toBe(status)
+    expect(loader).not.toHaveBeenCalled()
+    expect(command).not.toHaveBeenCalled()
+  })
+  it('fails closed without exposing private note data when line totals do not reconcile', async () => {
+    const invalid = structuredClone(noteHistory)
+    invalid.notes[0]!.lines[0]!.amountMinor = 44999
+    const { app, command } = setup(undefined, { loadWholesaleReturns: async () => invalid })
+    const response = await app.request('/v1/wholesale/returns', { headers }, { ENVIRONMENT: 'test' })
+    expect(response.status).toBe(500)
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store')
+    const body = await response.text()
+    expect(body).not.toContain(noteHistory.notes[0]!.reason)
+    expect(body).not.toContain(noteHistory.notes[0]!.lines[0]!.name)
+    expect(body).not.toContain(creditNoteId)
+    expect(command).not.toHaveBeenCalled()
+  })
   const creditCases = [
     {
       operation: 'apply',
