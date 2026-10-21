@@ -61,7 +61,7 @@ insert into app.employee_locations(tenant_id,employee_id,location_id) values
 insert into app.registers(id,tenant_id,location_id,name,code) values
 ('5d000000-0000-4000-8000-000000000003','2d000000-0000-4000-8000-000000000001','3d000000-0000-4000-8000-000000000003','Branch Register','REG-B');
 insert into app.register_sessions(id,tenant_id,register_id,location_id,employee_id,status,opening_cash,opened_at) values
-('6d000000-0000-4000-8000-000000000003','2d000000-0000-4000-8000-000000000001','5d000000-0000-4000-8000-000000000003','3d000000-0000-4000-8000-000000000003','4d000000-0000-4000-8000-000000000003','open',2000,'2026-09-25 00:00:00+00');
+('6d000000-0000-4000-8000-000000000003','2d000000-0000-4000-8000-000000000001','5d000000-0000-4000-8000-000000000003','3d000000-0000-4000-8000-000000000003','4d000000-0000-4000-8000-000000000003','open',2000,'2026-09-25 00:00:00.777001+00');
 insert into app.inventory_balances(tenant_id,location_id,variant_id,on_hand,average_unit_cost) values
 ('2d000000-0000-4000-8000-000000000001','3d000000-0000-4000-8000-000000000003','ad000000-0000-4000-8000-000000000001',5,300);
 insert into app.inventory_reorder_policies(tenant_id,location_id,variant_id,reorder_level,updated_by) values
@@ -84,12 +84,23 @@ insert into app.register_sessions(id,tenant_id,register_id,location_id,employee_
 create function pg_temp.registers() returns jsonb language sql as $$
  select app.list_register_operations('1d000000-0000-4000-8000-000000000003','2d000000-0000-4000-8000-000000000001');
 $$;
+-- Inspect money fields, not unrelated UUID/timestamp substrings in the response.
+create function pg_temp.cash_scope_safe(p_result jsonb) returns boolean language sql as $$
+ select not exists(select 1 from jsonb_array_elements(p_result->'recentSessions') s where (s->>'openingCashCentavos')::bigint=77700)
+ and not exists(select 1 from jsonb_array_elements(p_result->'registers') r where (r->'currentSession'->>'openingCashCentavos')::bigint=77700);
+$$;
 select is(jsonb_array_length(pg_temp.registers()->'registers'),1,'own-read shows only own current register');
 select is(jsonb_array_length(pg_temp.registers()->'recentSessions'),1,'own-read hides other employees same-branch cash history');
 select is(pg_temp.registers()->'registers'->0->>'id','5d000000-0000-4000-8000-000000000003','own current register identity preserved');
 select is((pg_temp.registers()->'recentSessions'->0->>'openingCashCentavos')::bigint,200000::bigint,'own opening cash exact');
 select is(jsonb_array_length(pg_temp.registers()->'employees'),1,'own reader sees only linked employee');
-select ok(pg_temp.registers()::text not like '%77700%','other employee cash not projected');
+select ok((pg_temp.registers()->'recentSessions'->0->>'openedAt') like '%77700%','authorized timestamp deliberately contains the foreign-cash digits');
+select is(pg_temp.registers()->'recentSessions'->0->>'id','6d000000-0000-4000-8000-000000000003','own historical session identity preserved');
+select is(pg_temp.registers()->'registers'->0->'currentSession'->>'employeeId','4d000000-0000-4000-8000-000000000003','current session belongs to the linked employee');
+select is((pg_temp.registers()->'registers'->0->'currentSession'->>'openingCashCentavos')::bigint,200000::bigint,'own current opening cash exact');
+select ok(pg_temp.cash_scope_safe(pg_temp.registers()),'other employee cash not projected in current or historical money fields');
+select ok(not pg_temp.cash_scope_safe(jsonb_set(pg_temp.registers(),'{recentSessions,0,openingCashCentavos}','77700'::jsonb)),'cash-scope check rejects a historical cash leak');
+select ok(not pg_temp.cash_scope_safe(jsonb_set(pg_temp.registers(),'{registers,0,currentSession,openingCashCentavos}','77700'::jsonb)),'cash-scope check rejects a current-session cash leak');
 select is((select count(*) from app.role_permissions rp join app.roles r on r.tenant_id=rp.tenant_id and r.id=rp.role_id
  where r.tenant_id='2d000000-0000-4000-8000-000000000001' and r.code='cashier' and rp.permission_code='registers.read'),0::bigint,'new system cashier template has no branch-wide read');
 select is((select count(*) from app.role_permissions rp join app.roles r on r.tenant_id=rp.tenant_id and r.id=rp.role_id
