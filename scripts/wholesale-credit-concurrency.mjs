@@ -1521,6 +1521,61 @@ try {
       await observer.query(restore, parameters)
     }
   }
+  // Once branch admission wins, later deactivation cannot commit during an inventory wait.
+  const observerPid = (await observer.query('select pg_backend_pid() pid')).rows[0].pid
+  for (const [scope, revoke, restore, parameters] of [
+    [
+      'location',
+      'update app.locations set is_active=false where tenant_id=$1 and id=$2',
+      'update app.locations set is_active=true where tenant_id=$1 and id=$2',
+      [tenant, location],
+    ],
+    [
+      'assignment',
+      'delete from app.employee_locations where tenant_id=$1 and employee_id=$2 and location_id=$3',
+      'insert into app.employee_locations(tenant_id,employee_id,location_id) values($1,$2,$3)',
+      [tenant, staffEmployee, location],
+    ],
+  ]) {
+    await first.query('begin')
+    await first.query(
+      'select 1 from app.inventory_balances where tenant_id=$1 and location_id=$2 and variant_id=$3 for update',
+      [tenant, location, variant],
+    )
+    const branchAdmittedReturn = second.query('select app.post_wholesale_return($1,$2,$3::jsonb,$4,$4,$4)', [
+      staff,
+      tenant,
+      JSON.stringify({
+        invoiceId: targetInvoice,
+        reason: 'Disposable admitted branch return',
+        lines: [{ invoiceLineId: targetInvoiceLine, quantityMilli: 1000, returnToStock: true }],
+      }),
+      `aw4-branch-${scope}-admission-first`,
+    ])
+    await waitForLock()
+    const deactivation = observer.query(revoke, parameters)
+    let deactivationBlocked = false
+    const branchDeadline = Date.now() + 10000
+    while (Date.now() < branchDeadline) {
+      if (
+        (await first.query('select exists(select 1 from pg_locks where pid=$1 and not granted) blocked', [observerPid]))
+          .rows[0].blocked
+      ) {
+        deactivationBlocked = true
+        break
+      }
+      await delay(25)
+    }
+    assert.equal(
+      deactivationBlocked,
+      true,
+      `${scope} revocation must wait behind the admitted return, even during inventory wait`,
+    )
+    await first.query('commit')
+    await branchAdmittedReturn
+    await deactivation
+    await observer.query(restore, parameters)
+  }
   // Expiry can advance while authorization rows remain locked; recheck even on replay.
   for (const [operation, command] of Object.entries({
     ...guardedCommands,
