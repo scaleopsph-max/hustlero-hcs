@@ -123,5 +123,34 @@ select throws_ok($$select app.load_wholesale_returns('1b000000-0000-4000-8000-00
 insert into app.employee_locations(tenant_id,employee_id,location_id) values('2b000000-0000-4000-8000-000000000001','7b000000-0000-4000-8000-000000000002','3b000000-0000-4000-8000-000000000001');
 select is(app.load_wholesale_returns('1b000000-0000-4000-8000-000000000002','2b000000-0000-4000-8000-000000000001')->'notes'->0->>'reason','Synthetic return','assigned read-only reader can inspect note details');
 select is(app.load_wholesale_returns('1b000000-0000-4000-8000-000000000002','2b000000-0000-4000-8000-000000000001')->>'canPost','false','detail access does not grant posting authority');
+select ok((select bool_and(n.recorded_at=r.completed_at and n.recorded_at=r.created_at
+  and n.recorded_at>transaction_timestamp())
+  from app.wholesale_credit_notes n join app.refunds r on r.tenant_id=n.tenant_id and r.id=n.refund_id
+  where n.tenant_id='2b000000-0000-4000-8000-000000000001'),'commercial reversal and note share post-start effective time');
+select ok((select bool_and(n.recorded_at=i.recorded_at) from app.wholesale_credit_notes n
+  join app.wholesale_customer_credit_issues i on i.tenant_id=n.tenant_id and i.credit_note_id=n.id
+  where n.tenant_id='2b000000-0000-4000-8000-000000000001'),'customer credit issue uses note effective time');
+select ok((select bool_and(n.recorded_at=m.occurred_at and n.recorded_at=m.created_at)
+  from app.wholesale_credit_notes n join app.inventory_movements m
+  on m.tenant_id=n.tenant_id and m.source_type='wholesale_credit_note' and m.source_reference=n.id::text
+  where n.tenant_id='2b000000-0000-4000-8000-000000000001'),'stock reversal uses the same business event time');
+select ok((select bool_and(n.recorded_at=i.created_at) from app.wholesale_credit_notes n
+  join app.refund_items i on i.tenant_id=n.tenant_id and i.refund_id=n.refund_id
+  where n.tenant_id='2b000000-0000-4000-8000-000000000001'),'refund items share note effective time');
+select ok((select bool_and(n.recorded_at=a.occurred_at and n.recorded_at=e.created_at and n.recorded_at=e.available_at)
+  from app.wholesale_credit_notes n join audit.audit_events a on a.tenant_id=n.tenant_id and a.entity_id=n.id and a.action='wholesale_return.posted'
+  join integration.event_outbox e on e.tenant_id=n.tenant_id and e.aggregate_id=n.id and e.topic='wholesale_return.posted'
+  where n.tenant_id='2b000000-0000-4000-8000-000000000001'),'return audit and outbox agree with note effective time');
+select ok((select bool_and(a.recorded_at=e.created_at and a.recorded_at=h.occurred_at)
+  from app.wholesale_credit_applications a join audit.audit_events h on h.tenant_id=a.tenant_id and h.entity_id=a.id and h.action='wholesale_credit.apply'
+  join integration.event_outbox e on e.tenant_id=a.tenant_id and e.aggregate_id=a.id and e.topic='wholesale_credit.apply'
+  where a.tenant_id='2b000000-0000-4000-8000-000000000001'),'credit application audit and outbox share effective time');
+select ok((select bool_and((n.recorded_at at time zone 'Asia/Manila')::date=(r.completed_at at time zone 'Asia/Manila')::date)
+  from app.wholesale_credit_notes n join app.refunds r on r.tenant_id=n.tenant_id and r.id=n.refund_id
+  where n.tenant_id='2b000000-0000-4000-8000-000000000001'),'linked reversal and note belong to the same Manila business day');
+select ok((select bool_and((r.completed_at<n.recorded_at)=(n.recorded_at<n.recorded_at)
+  and (r.completed_at<n.recorded_at+interval '1 microsecond')=(n.recorded_at<n.recorded_at+interval '1 microsecond'))
+  from app.wholesale_credit_notes n join app.refunds r on r.tenant_id=n.tenant_id and r.id=n.refund_id
+  where n.tenant_id='2b000000-0000-4000-8000-000000000001'),'strict as-of cutoff includes or excludes both sides of reversal together');
 select * from finish();
 rollback;

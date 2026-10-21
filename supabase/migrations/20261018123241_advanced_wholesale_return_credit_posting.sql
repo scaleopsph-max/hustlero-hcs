@@ -41,6 +41,55 @@ create trigger wholesale_credit_notes_immutable before update or delete on app.w
 create trigger wholesale_credit_note_lines_immutable before update or delete on app.wholesale_credit_note_lines for each row execute function app.reject_invoice_mutation();
 create trigger wholesale_customer_credit_issues_immutable before update or delete on app.wholesale_customer_credit_issues for each row execute function app.reject_invoice_mutation();
 
+-- Hold authorization rows through posting; revocation and commands have a defined admission order.
+create function app.lock_wholesale_return_access(p_actor uuid,p_tenant uuid,p_permission text)
+returns void language plpgsql security definer set search_path='' as $$
+declare v_owner boolean; v_permission text; v_entitlement app.tenant_entitlements%rowtype;
+ v_denial text:=case when p_permission='wholesale_returns.post' then 'Return access denied' else 'Credit action access denied' end;
+begin
+ perform 1 from app.tenants where id=p_tenant and status='active' for share;
+ if not found then raise exception using errcode='HCWR0',message=v_denial; end if;
+ perform 1 from app.features where code='advanced_wholesale' and platform_available for share;
+ if not found then raise exception using errcode='HCSQ0',message='Advanced wholesale is not enabled'; end if;
+ select * into v_entitlement from app.tenant_entitlements where tenant_id=p_tenant and feature_code='advanced_wholesale' for share;
+ if not found or not v_entitlement.entitled or not v_entitlement.enabled
+ or (v_entitlement.starts_at is not null and v_entitlement.starts_at>clock_timestamp())
+ or (v_entitlement.ends_at is not null and v_entitlement.ends_at<=clock_timestamp())
+ then raise exception using errcode='HCSQ0',message='Advanced wholesale is not enabled'; end if;
+ select is_owner into v_owner from app.tenant_memberships where tenant_id=p_tenant and user_id=p_actor and status='active' for share;
+ if not found then raise exception using errcode='HCAR1',message='Wholesale receivable access denied'; end if;
+ if p_permission is null or p_permission not in ('wholesale_returns.post','wholesale_credits.apply','wholesale_credits.refund')
+ then raise exception using errcode='HCWR0',message=v_denial; end if;
+ if not v_owner then
+   for v_permission in select unnest(array['wholesale_orders.read',p_permission]) order by 1 loop
+     perform 1 from app.membership_roles mr join app.role_permissions rp on rp.tenant_id=mr.tenant_id and rp.role_id=mr.role_id
+     where mr.tenant_id=p_tenant and mr.user_id=p_actor and rp.permission_code=v_permission
+     order by mr.role_id for share of mr,rp;
+     if not found then
+       if v_permission='wholesale_orders.read' then raise exception using errcode='HCAR1',message='Wholesale receivable access denied'; end if;
+       raise exception using errcode='HCWR0',message=v_denial;
+     end if;
+   end loop;
+ end if;
+end;
+$$;
+revoke all on function app.lock_wholesale_return_access(uuid,uuid,text) from public,anon,authenticated,hcs_hyperdrive;
+
+create function app.lock_wholesale_return_location(p_actor uuid,p_tenant uuid,p_location uuid)
+returns void language plpgsql security definer set search_path='' as $$
+begin
+ perform 1 from app.locations where tenant_id=p_tenant and id=p_location and is_active for share;
+ if not found then raise exception using errcode='HCWR2',message='Return or credit scope unavailable'; end if;
+ if not exists(select 1 from app.tenant_memberships where tenant_id=p_tenant and user_id=p_actor and status='active' and is_owner) then
+   perform 1 from app.employees e join app.employee_locations el on el.tenant_id=e.tenant_id and el.employee_id=e.id
+   where e.tenant_id=p_tenant and e.user_id=p_actor and e.status='active' and el.location_id=p_location
+   order by e.id for share of e,el;
+   if not found then raise exception using errcode='HCWR2',message='Return or credit scope unavailable'; end if;
+ end if;
+end;
+$$;
+revoke all on function app.lock_wholesale_return_location(uuid,uuid,uuid) from public,anon,authenticated,hcs_hyperdrive;
+
 create function app.post_wholesale_return(p_actor uuid,p_tenant uuid,p_payload jsonb,p_key text,p_hash text,p_request_id text)
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare
@@ -50,15 +99,10 @@ declare
  v_prior_quantity numeric; v_prior_credit numeric; v_total numeric:=0; v_prior_total numeric;
  v_paid numeric; v_charge numeric; v_debt_before numeric; v_debt_after numeric; v_new_credit numeric;
  v_refund uuid:=gen_random_uuid(); v_note uuid:=gen_random_uuid(); v_response jsonb;
- v_returned_total numeric; v_cost numeric; v_whole numeric;
+ v_returned_total numeric; v_cost numeric; v_whole numeric; v_effective_at timestamptz;
 begin
  perform app.assert_wholesale_receivable_access(p_actor,p_tenant,false);
- perform 1 from app.tenants where id=p_tenant and status='active' for share;
- if not found then raise exception using errcode='HCWR0',message='Return access denied'; end if;
- perform 1 from app.tenant_memberships m where m.tenant_id=p_tenant and m.user_id=p_actor and m.status='active'
- and(m.is_owner or exists(select 1 from app.membership_roles mr join app.role_permissions rp on rp.tenant_id=mr.tenant_id and rp.role_id=mr.role_id
- where mr.tenant_id=p_tenant and mr.user_id=p_actor and rp.permission_code='wholesale_returns.post')) for share;
- if not found then raise exception using errcode='HCWR0',message='Return access denied'; end if;
+ perform app.lock_wholesale_return_access(p_actor,p_tenant,'wholesale_returns.post');
  if jsonb_typeof(p_payload) is distinct from 'object' then raise exception using errcode='HCWR1',message='Invalid return'; end if;
  if not(p_payload ?& array['invoiceId','reason','lines'])
  or exists(select 1 from jsonb_object_keys(p_payload) k where k not in ('invoiceId','reason','lines'))
@@ -91,7 +135,9 @@ begin
  select * into v_invoice from app.invoices where tenant_id=p_tenant and id=v_invoice_id for update;
  if not app.can_record_wholesale_payment_at_location(p_actor,p_tenant,v_invoice.location_id)
  then raise exception using errcode='HCWR2',message='Return scope unavailable'; end if;
+ perform app.lock_wholesale_return_location(p_actor,p_tenant,v_invoice.location_id);
  perform pg_advisory_xact_lock(hashtextextended(p_tenant::text||':wholesale-return:'||p_key,0));
+ perform app.lock_wholesale_return_access(p_actor,p_tenant,'wholesale_returns.post');
  select * into v_existing from app.idempotency_records where tenant_id=p_tenant and operation='wholesale_return.post' and idempotency_key=p_key;
  if found then
    if v_existing.request_hash<>p_hash or v_existing.completed_at is null or not exists(
@@ -134,10 +180,18 @@ begin
  then raise exception using errcode='HCWR4',message='Credit exceeds remaining original invoice'; end if;
  v_debt_before:=greatest(v_charge-v_prior_total-v_paid,0); v_debt_after:=greatest(v_charge-v_prior_total-v_total-v_paid,0);
  v_new_credit:=greatest(v_paid-(v_charge-v_prior_total-v_total),0)-greatest(v_paid-(v_charge-v_prior_total),0);
- insert into app.refunds(id,tenant_id,sale_id,reversal_type,amount,reason,completed_by)
- values(v_refund,p_tenant,v_sale.id,'refund',v_total,btrim(p_payload->>'reason'),p_actor);
- insert into app.wholesale_credit_notes(id,tenant_id,invoice_id,customer_id,refund_id,amount,debt_reduction,customer_credit,reason,request_body,recorded_by)
- values(v_note,p_tenant,v_invoice.id,v_customer,v_refund,v_total,v_debt_before-v_debt_after,v_new_credit,btrim(p_payload->>'reason'),p_payload,p_actor);
+ -- Acquire all stock locks before choosing the single effective time for this business event.
+ perform 1 from app.inventory_balances b join app.invoice_lines l
+ on l.tenant_id=b.tenant_id and l.variant_id=b.variant_id and l.invoice_id=v_invoice.id
+ join jsonb_array_elements(p_payload->'lines') item on l.id=(item.value->>'invoiceLineId')::uuid
+ where b.tenant_id=p_tenant and b.location_id=v_invoice.location_id and (item.value->>'returnToStock')::boolean
+ order by b.variant_id,l.id for update of b;
+ perform app.lock_wholesale_return_access(p_actor,p_tenant,'wholesale_returns.post');
+ v_effective_at:=clock_timestamp();
+ insert into app.refunds(id,tenant_id,sale_id,reversal_type,amount,reason,completed_by,completed_at,created_at)
+ values(v_refund,p_tenant,v_sale.id,'refund',v_total,btrim(p_payload->>'reason'),p_actor,v_effective_at,v_effective_at);
+ insert into app.wholesale_credit_notes(id,tenant_id,invoice_id,customer_id,refund_id,amount,debt_reduction,customer_credit,reason,request_body,recorded_by,recorded_at)
+ values(v_note,p_tenant,v_invoice.id,v_customer,v_refund,v_total,v_debt_before-v_debt_after,v_new_credit,btrim(p_payload->>'reason'),p_payload,p_actor,v_effective_at);
  -- Stable variant ordering also serializes different invoices returning the same branch stock.
  for v_item in select item.value from jsonb_array_elements(p_payload->'lines') item
  join app.invoice_lines line on line.tenant_id=p_tenant and line.invoice_id=v_invoice.id and line.id=(item.value->>'invoiceLineId')::uuid
@@ -145,8 +199,8 @@ begin
    select * into v_line from app.invoice_lines where tenant_id=p_tenant and id=(v_item->>'invoiceLineId')::uuid;
    v_quantity:=(v_item->>'quantityMilli')::numeric/1000;
    insert into app.wholesale_credit_note_lines values(p_tenant,v_note,v_line.id,v_quantity,v_quantity*v_line.unit_price,(v_item->>'returnToStock')::boolean);
-   insert into app.refund_items(tenant_id,refund_id,sale_line_id,quantity,amount,returned_to_stock)
-   values(p_tenant,v_refund,v_line.sale_line_id,v_quantity,v_quantity*v_line.unit_price,(v_item->>'returnToStock')::boolean);
+   insert into app.refund_items(tenant_id,refund_id,sale_line_id,quantity,amount,returned_to_stock,created_at)
+   values(p_tenant,v_refund,v_line.sale_line_id,v_quantity,v_quantity*v_line.unit_price,(v_item->>'returnToStock')::boolean,v_effective_at);
    if (v_item->>'returnToStock')::boolean then
      select unit_cost into v_cost from app.sale_lines where tenant_id=p_tenant and id=v_line.sale_line_id;
      select * into v_balance from app.inventory_balances where tenant_id=p_tenant and location_id=v_invoice.location_id and variant_id=v_line.variant_id for update;
@@ -154,23 +208,23 @@ begin
      then raise exception using errcode='HCWR3',message='Return inventory requires reconciliation'; end if;
      update app.inventory_balances set on_hand=on_hand+v_quantity,
        average_unit_cost=round((v_balance.on_hand*coalesce(v_balance.average_unit_cost,v_cost)+v_quantity*v_cost)/(v_balance.on_hand+v_quantity),2),
-       version=version+1,updated_at=now()
+       version=version+1,updated_at=v_effective_at
      where tenant_id=p_tenant and location_id=v_invoice.location_id and variant_id=v_line.variant_id;
-     insert into app.inventory_movements(tenant_id,location_id,variant_id,movement_type,quantity,unit_cost,source_type,source_reference,actor_user_id)
-     values(p_tenant,v_invoice.location_id,v_line.variant_id,'REFUND',v_quantity,v_cost,'wholesale_credit_note',v_note::text,p_actor);
+     insert into app.inventory_movements(tenant_id,location_id,variant_id,movement_type,quantity,unit_cost,source_type,source_reference,actor_user_id,occurred_at,created_at)
+     values(p_tenant,v_invoice.location_id,v_line.variant_id,'REFUND',v_quantity,v_cost,'wholesale_credit_note',v_note::text,p_actor,v_effective_at,v_effective_at);
    end if;
  end loop;
- if v_new_credit>0 then insert into app.wholesale_customer_credit_issues(tenant_id,credit_note_id,customer_id,amount)
- values(p_tenant,v_note,v_customer,v_new_credit); end if;
+ if v_new_credit>0 then insert into app.wholesale_customer_credit_issues(tenant_id,credit_note_id,customer_id,amount,recorded_at)
+ values(p_tenant,v_note,v_customer,v_new_credit,v_effective_at); end if;
  v_returned_total:=v_prior_total+v_total;
  update app.sales set status=case when v_returned_total=total then 'refunded' else 'partially_refunded' end where tenant_id=p_tenant and id=v_sale.id;
  v_response:=jsonb_build_object('creditNoteId',v_note,'invoiceId',v_invoice.id,'refundId',v_refund,'amountMinor',(v_total*100)::bigint,
  'debtReductionMinor',((v_debt_before-v_debt_after)*100)::bigint,'newCustomerCreditMinor',(v_new_credit*100)::bigint,
  'openDebtMinor',(v_debt_after*100)::bigint,'cashPayoutMinor',0);
- insert into audit.audit_events(tenant_id,request_id,actor_type,actor_id,action,entity_type,entity_id,location_id,reason,metadata)
- values(p_tenant,p_request_id,'tenant_user',p_actor,'wholesale_return.posted','wholesale_credit_note',v_note,v_invoice.location_id,btrim(p_payload->>'reason'),v_response);
- insert into integration.event_outbox(tenant_id,topic,aggregate_type,aggregate_id,payload)
- values(p_tenant,'wholesale_return.posted','wholesale_credit_note',v_note,v_response);
+ insert into audit.audit_events(tenant_id,request_id,actor_type,actor_id,action,entity_type,entity_id,location_id,reason,metadata,occurred_at)
+ values(p_tenant,p_request_id,'tenant_user',p_actor,'wholesale_return.posted','wholesale_credit_note',v_note,v_invoice.location_id,btrim(p_payload->>'reason'),v_response,v_effective_at);
+ insert into integration.event_outbox(tenant_id,topic,aggregate_type,aggregate_id,payload,created_at,available_at)
+ values(p_tenant,'wholesale_return.posted','wholesale_credit_note',v_note,v_response,v_effective_at,v_effective_at);
  insert into app.idempotency_records(tenant_id,operation,idempotency_key,request_hash,response_status,response_body,completed_at,expires_at)
  values(p_tenant,'wholesale_return.post',p_key,p_hash,201,v_response,now(),now()+interval '24 hours');
  return v_response;
@@ -237,15 +291,13 @@ returns jsonb language plpgsql security definer set search_path='' as $$
 declare v_note app.wholesale_credit_notes%rowtype; v_source app.invoices%rowtype; v_target app.invoices%rowtype;
  v_existing app.idempotency_records%rowtype; v_method app.payment_methods%rowtype; v_session app.register_sessions%rowtype;
  v_amount numeric; v_id uuid:=gen_random_uuid(); v_response jsonb; v_operation text; v_customer uuid; v_note_id uuid; v_target_id uuid; v_method_id uuid; v_session_id uuid;
+ v_permission text; v_effective_at timestamptz;
 begin
  perform app.assert_wholesale_receivable_access(p_actor,p_tenant,false);
  if p_operation is null or p_operation not in ('apply','refund') then raise exception using errcode='HCWR1',message='Invalid credit action'; end if;
  v_operation:='wholesale_credit.'||p_operation;
- if not exists(select 1 from app.tenants where id=p_tenant and status='active') or not exists(
- select 1 from app.tenant_memberships m where m.tenant_id=p_tenant and m.user_id=p_actor and m.status='active' and(m.is_owner or exists(
- select 1 from app.membership_roles mr join app.role_permissions rp on rp.tenant_id=mr.tenant_id and rp.role_id=mr.role_id
- where mr.tenant_id=p_tenant and mr.user_id=p_actor and rp.permission_code=case when p_operation='apply' then 'wholesale_credits.apply' else 'wholesale_credits.refund' end)))
- then raise exception using errcode='HCWR0',message='Credit action access denied'; end if;
+ v_permission:=case when p_operation='apply' then 'wholesale_credits.apply' else 'wholesale_credits.refund' end;
+ perform app.lock_wholesale_return_access(p_actor,p_tenant,v_permission);
  if jsonb_typeof(p_payload) is distinct from 'object' then raise exception using errcode='HCWR1',message='Invalid credit action'; end if;
  if not(p_payload ?& array['creditNoteId','amountMinor','reason'])
  or jsonb_typeof(p_payload->'creditNoteId') is distinct from 'string' or jsonb_typeof(p_payload->'amountMinor') is distinct from 'number'
@@ -271,11 +323,13 @@ begin
  select * into v_note from app.wholesale_credit_notes where tenant_id=p_tenant and id=v_note_id;
  select * into v_source from app.invoices where tenant_id=p_tenant and id=v_note.invoice_id;
  if not app.can_record_wholesale_payment_at_location(p_actor,p_tenant,v_source.location_id) then raise exception using errcode='HCWR2',message='Credit scope unavailable'; end if;
+ perform app.lock_wholesale_return_location(p_actor,p_tenant,v_source.location_id);
  if p_operation='apply' then
    select * into v_target from app.invoices where tenant_id=p_tenant and id=v_target_id and customer_id=v_customer and location_id=v_source.location_id for update;
    if not found or not app.can_record_wholesale_payment_at_location(p_actor,p_tenant,v_target.location_id) then raise exception using errcode='HCWR2',message='Credit scope unavailable'; end if;
  end if;
  perform pg_advisory_xact_lock(hashtextextended(p_tenant::text||':'||v_operation||':'||p_key,0));
+ perform app.lock_wholesale_return_access(p_actor,p_tenant,v_permission);
  select * into v_existing from app.idempotency_records where tenant_id=p_tenant and operation=v_operation and idempotency_key=p_key;
  if found then
    if v_existing.request_hash<>p_hash or v_existing.completed_at is null then raise exception using errcode='HCS08',message='Idempotency conflict'; end if;
@@ -289,8 +343,10 @@ begin
  if p_operation='apply' then
    if app.wholesale_invoice_open_balance(p_tenant,v_target.id) is null or v_amount>app.wholesale_invoice_open_balance(p_tenant,v_target.id)
    then raise exception using errcode='HCWR4',message='Credit exceeds open invoice balance'; end if;
-   insert into app.wholesale_credit_applications(id,tenant_id,credit_note_id,invoice_id,amount,request_body,recorded_by)
-   values(v_id,p_tenant,v_note.id,v_target.id,v_amount,p_payload,p_actor);
+   perform app.lock_wholesale_return_access(p_actor,p_tenant,v_permission);
+   v_effective_at:=clock_timestamp();
+   insert into app.wholesale_credit_applications(id,tenant_id,credit_note_id,invoice_id,amount,request_body,recorded_by,recorded_at)
+   values(v_id,p_tenant,v_note.id,v_target.id,v_amount,p_payload,p_actor,v_effective_at);
    v_response:=jsonb_build_object('applicationId',v_id,'creditNoteId',v_note.id,'invoiceId',v_target.id,'amountMinor',(v_amount*100)::bigint);
  else
    -- Allocated receipts require a separate approved, audited fund-reversal workflow.
@@ -315,17 +371,19 @@ begin
      if p_payload->'registerSessionId' is distinct from 'null'::jsonb or jsonb_typeof(p_payload->'referenceLastFour') is distinct from 'string' or (p_payload->>'referenceLastFour') !~ '^[0-9]{4}$'
      then raise exception using errcode='HCWR1',message='External refund requires exactly four reference digits'; end if;
    end if;
-   insert into app.wholesale_credit_payouts(id,tenant_id,credit_note_id,payment_method_id,register_session_id,amount,reference_last_four,request_body,recorded_by)
-   values(v_id,p_tenant,v_note.id,v_method.id,v_session_id,v_amount,p_payload->>'referenceLastFour',p_payload,p_actor);
+   perform app.lock_wholesale_return_access(p_actor,p_tenant,v_permission);
+   v_effective_at:=clock_timestamp();
+   insert into app.wholesale_credit_payouts(id,tenant_id,credit_note_id,payment_method_id,register_session_id,amount,reference_last_four,request_body,recorded_by,recorded_at)
+   values(v_id,p_tenant,v_note.id,v_method.id,v_session_id,v_amount,p_payload->>'referenceLastFour',p_payload,p_actor,v_effective_at);
    if v_method.method_type='cash' then
-     insert into app.cash_movements(tenant_id,register_session_id,location_id,movement_type,amount,source_type,source_id,reason,actor_user_id)
-     values(p_tenant,v_session.id,v_source.location_id,'cash_refund',-v_amount,'wholesale_credit_payout',v_id,btrim(p_payload->>'reason'),p_actor);
+     insert into app.cash_movements(tenant_id,register_session_id,location_id,movement_type,amount,source_type,source_id,reason,actor_user_id,occurred_at)
+     values(p_tenant,v_session.id,v_source.location_id,'cash_refund',-v_amount,'wholesale_credit_payout',v_id,btrim(p_payload->>'reason'),p_actor,v_effective_at);
    end if;
    v_response:=jsonb_build_object('payoutId',v_id,'creditNoteId',v_note.id,'paymentMethodId',v_method.id,'registerSessionId',v_session_id,'amountMinor',(v_amount*100)::bigint,'referenceLastFour',p_payload->>'referenceLastFour');
  end if;
- insert into audit.audit_events(tenant_id,request_id,actor_type,actor_id,action,entity_type,entity_id,location_id,reason,metadata)
- values(p_tenant,p_request_id,'tenant_user',p_actor,v_operation,'wholesale_credit',v_id,v_source.location_id,btrim(p_payload->>'reason'),v_response);
- insert into integration.event_outbox(tenant_id,topic,aggregate_type,aggregate_id,payload) values(p_tenant,v_operation,'wholesale_credit',v_id,v_response);
+ insert into audit.audit_events(tenant_id,request_id,actor_type,actor_id,action,entity_type,entity_id,location_id,reason,metadata,occurred_at)
+ values(p_tenant,p_request_id,'tenant_user',p_actor,v_operation,'wholesale_credit',v_id,v_source.location_id,btrim(p_payload->>'reason'),v_response,v_effective_at);
+ insert into integration.event_outbox(tenant_id,topic,aggregate_type,aggregate_id,payload,created_at,available_at) values(p_tenant,v_operation,'wholesale_credit',v_id,v_response,v_effective_at,v_effective_at);
  insert into app.idempotency_records(tenant_id,operation,idempotency_key,request_hash,response_status,response_body,completed_at,expires_at)
  values(p_tenant,v_operation,p_key,p_hash,201,v_response,now(),now()+interval '24 hours');
  return v_response;

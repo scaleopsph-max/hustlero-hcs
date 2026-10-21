@@ -1384,6 +1384,12 @@ try {
       "update app.tenant_entitlements set enabled=true where tenant_id=$1 and feature_code='advanced_wholesale'",
       'HCSQ0',
     ],
+    [
+      'membership',
+      `update app.tenant_memberships set status='deactivated' where tenant_id=$1 and user_id='${actor}'`,
+      `update app.tenant_memberships set status='active' where tenant_id=$1 and user_id='${actor}'`,
+      'HCAR1',
+    ],
   ]) {
     for (const [operation, command] of Object.entries(guardedCommands)) {
       const before = await securitySnapshot()
@@ -1405,9 +1411,217 @@ try {
       await observer.query(restore, [tenant])
     }
   }
+  const [staff, staffRole, staffEmployee] = [randomUUID(), randomUUID(), randomUUID()]
+  await observer.query('insert into auth.users(id,email) values($1,$2)', [staff, `${staff}@example.invalid`])
+  await observer.query(
+    "insert into app.tenant_memberships(tenant_id,user_id,status,is_owner) values($1,$2,'active',false)",
+    [tenant, staff],
+  )
+  await observer.query("insert into app.roles(id,tenant_id,code,name) values($1,$2,'AW4-GUARD','AW4 guard tester')", [
+    staffRole,
+    tenant,
+  ])
+  for (const permission of [
+    'wholesale_orders.read',
+    'wholesale_returns.post',
+    'wholesale_credits.apply',
+    'wholesale_credits.refund',
+  ]) {
+    await observer.query('insert into app.role_permissions(tenant_id,role_id,permission_code) values($1,$2,$3)', [
+      tenant,
+      staffRole,
+      permission,
+    ])
+  }
+  await observer.query('insert into app.membership_roles(tenant_id,user_id,role_id) values($1,$2,$3)', [
+    tenant,
+    staff,
+    staffRole,
+  ])
+  await observer.query(
+    "insert into app.employees(id,tenant_id,user_id,employee_code,display_name) values($1,$2,$3,'AW4-GUARD','AW4 guard tester')",
+    [staffEmployee, tenant, staff],
+  )
+  await observer.query('insert into app.employee_locations(tenant_id,employee_id,location_id) values($1,$2,$3)', [
+    tenant,
+    staffEmployee,
+    location,
+  ])
+  // Use credit application and return for branch/permission races; payout cash operation has its own employee/session rules.
+  for (const operation of ['apply', 'return']) {
+    const permission = operation === 'return' ? 'wholesale_returns.post' : 'wholesale_credits.apply'
+    const staffCommand = (key) =>
+      operation === 'return'
+        ? second.query('select app.post_wholesale_return($1,$2,$3::jsonb,$4,$4,$4)', [
+            staff,
+            tenant,
+            JSON.stringify({
+              invoiceId: targetInvoice,
+              reason: 'Disposable branch authorization regression',
+              lines: [{ invoiceLineId: targetInvoiceLine, quantityMilli: 1000, returnToStock: true }],
+            }),
+            key,
+          ])
+        : second.query("select app.command_wholesale_credit($1,$2,'apply',$3::jsonb,$4,$4,$4)", [
+            staff,
+            tenant,
+            JSON.stringify({
+              creditNoteId: guardedNote.creditNoteId,
+              invoiceId: guardedInvoice,
+              amountMinor: 10000,
+              reason: 'Disposable branch authorization regression',
+            }),
+            key,
+          ])
+    for (const [change, revoke, restore, parameters, expected] of [
+      [
+        'permission',
+        'delete from app.role_permissions where tenant_id=$1 and role_id=$2 and permission_code=$3',
+        'insert into app.role_permissions(tenant_id,role_id,permission_code) values($1,$2,$3)',
+        [tenant, staffRole, permission],
+        'HCWR0',
+      ],
+      [
+        'assignment',
+        'delete from app.employee_locations where tenant_id=$1 and employee_id=$2 and location_id=$3',
+        'insert into app.employee_locations(tenant_id,employee_id,location_id) values($1,$2,$3)',
+        [tenant, staffEmployee, location],
+        'HCWR2',
+      ],
+      [
+        'employee',
+        "update app.employees set status='deactivated' where tenant_id=$1 and id=$2",
+        "update app.employees set status='active' where tenant_id=$1 and id=$2",
+        [tenant, staffEmployee],
+        'HCWR2',
+      ],
+      [
+        'location',
+        'update app.locations set is_active=false where tenant_id=$1 and id=$2',
+        'update app.locations set is_active=true where tenant_id=$1 and id=$2',
+        [tenant, location],
+        'HCWR2',
+      ],
+    ]) {
+      const before = await securitySnapshot()
+      await first.query('begin')
+      await first.query(revoke, parameters)
+      await first.query('select 1 from app.customers where tenant_id=$1 and id=$2 for update', [
+        tenant,
+        receiptFirst.customerId,
+      ])
+      const queued = staffCommand(`aw4-security-${change}-${operation}`).then(
+        () => 'unexpected-success',
+        (error) => error.code,
+      )
+      await waitForLock()
+      await first.query('commit')
+      assert.equal(await queued, expected, `${operation} must deny committed ${change}`)
+      assert.deepEqual(await securitySnapshot(), before)
+      await observer.query(restore, parameters)
+    }
+  }
+  // Expiry can advance while authorization rows remain locked; recheck even on replay.
+  for (const [operation, command] of Object.entries({
+    ...guardedCommands,
+    replay: (client) => postReturn(client, 'aw4-race-return-winner'),
+  })) {
+    await observer.query(
+      "update app.tenant_entitlements set ends_at=clock_timestamp()+interval '1 second' where tenant_id=$1 and feature_code='advanced_wholesale'",
+      [tenant],
+    )
+    const before = await securitySnapshot()
+    await first.query('begin')
+    await first.query('select 1 from app.customers where tenant_id=$1 and id=$2 for update', [
+      tenant,
+      receiptFirst.customerId,
+    ])
+    const queued = command(second, `aw4-security-expiry-${operation}`).then(
+      () => 'unexpected-success',
+      (error) => error.code,
+    )
+    await waitForLock()
+    while (
+      !(
+        await observer.query(
+          "select ends_at<=clock_timestamp() expired from app.tenant_entitlements where tenant_id=$1 and feature_code='advanced_wholesale'",
+          [tenant],
+        )
+      ).rows[0].expired
+    )
+      await delay(25)
+    await first.query('commit')
+    assert.equal(await queued, 'HCSQ0', `${operation} must deny expiry during customer-lock wait`)
+    assert.deepEqual(await securitySnapshot(), before)
+    await observer.query(
+      "update app.tenant_entitlements set ends_at=null where tenant_id=$1 and feature_code='advanced_wholesale'",
+      [tenant],
+    )
+  }
+  // When posting wins admission, suspension waits until the atomic command commits.
+  await first.query('begin')
+  await guardedApply(first, 'aw4-security-command-first')
+  const suspension = second.query("update app.tenants set status='suspended' where id=$1", [tenant])
+  await waitForLock()
+  assert.equal((await observer.query('select status from app.tenants where id=$1', [tenant])).rows[0].status, 'active')
+  await first.query('commit')
+  await suspension
+  await observer.query("update app.tenants set status='active' where id=$1", [tenant])
+  await first.query('begin')
+  await first.query(
+    'select 1 from app.inventory_balances where tenant_id=$1 and location_id=$2 and variant_id=$3 for update',
+    [tenant, location, variant],
+  )
+  const waitedReturn = returnTarget(second, 'aw4-effective-after-stock-wait')
+  await waitForLock()
+  const cutoff = (await observer.query('select clock_timestamp()::text cutoff')).rows[0].cutoff
+  await first.query('commit')
+  const waitedNote = (await waitedReturn).rows[0].response.creditNoteId
+  assert.deepEqual(
+    (
+      await observer.query(
+        `select
+    n.recorded_at>=$3::timestamptz after_wait,
+    n.recorded_at=r.completed_at and n.recorded_at=r.created_at and n.recorded_at=i.recorded_at
+      and n.recorded_at=m.occurred_at and n.recorded_at=m.created_at
+      and n.recorded_at=a.occurred_at and n.recorded_at=e.created_at and n.recorded_at=e.available_at same_event,
+    (r.completed_at at time zone 'Asia/Manila')::date=(n.recorded_at at time zone 'Asia/Manila')::date same_day,
+    (r.completed_at<$3::timestamptz)=(n.recorded_at<$3::timestamptz) same_cutoff
+    from app.wholesale_credit_notes n join app.refunds r on r.tenant_id=n.tenant_id and r.id=n.refund_id
+    join app.wholesale_customer_credit_issues i on i.tenant_id=n.tenant_id and i.credit_note_id=n.id
+    join app.inventory_movements m on m.tenant_id=n.tenant_id and m.source_type='wholesale_credit_note' and m.source_reference=n.id::text
+    join audit.audit_events a on a.tenant_id=n.tenant_id and a.entity_id=n.id and a.action='wholesale_return.posted'
+    join integration.event_outbox e on e.tenant_id=n.tenant_id and e.aggregate_id=n.id and e.topic='wholesale_return.posted'
+    where n.tenant_id=$1 and n.id=$2`,
+        [tenant, waitedNote, cutoff],
+      )
+    ).rows[0],
+    {
+      after_wait: true,
+      same_event: true,
+      same_day: true,
+      same_cutoff: true,
+    },
+  )
+  assert.equal(
+    (
+      await observer.query(
+        `select bool_and(p.recorded_at=c.occurred_at and p.recorded_at=a.occurred_at and p.recorded_at=e.created_at) aligned
+    from app.wholesale_credit_payouts p join app.cash_movements c on c.tenant_id=p.tenant_id and c.source_type='wholesale_credit_payout' and c.source_id=p.id
+    join audit.audit_events a on a.tenant_id=p.tenant_id and a.entity_id=p.id and a.action='wholesale_credit.refund'
+    join integration.event_outbox e on e.tenant_id=p.tenant_id and e.aggregate_id=p.id and e.topic='wholesale_credit.refund'
+    where p.tenant_id=$1`,
+        [tenant],
+      )
+    ).rows[0].aligned,
+    true,
+  )
   await closePayoutSession(observer, guardedSession, 100000, 'aw4-security-session-close')
   console.log(
-    'AW4 queued authorization passed: tenant suspension and entitlement disable win before admission for return/application/payout; no business, key, audit or outbox writes.',
+    'AW4 queued authorization passed: suspension/entitlement/membership revocation deny queued return/application/payout without writes; wallclock expiry denies commands/replay after wait; command-first suspension serializes after posting.',
+  )
+  console.log(
+    'AW4 effective time passed: real inventory-lock wait finishes before linked reversal/note/credit/stock/audit/outbox effective time; Manila dates and strict cutoffs agree; payout/cash/audit/outbox timestamps align.',
   )
 } finally {
   // Release any held fixture transaction before closing another session waiting on it.
