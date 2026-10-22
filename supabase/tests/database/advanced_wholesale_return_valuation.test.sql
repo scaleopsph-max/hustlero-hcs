@@ -94,7 +94,6 @@ select is((select count(*) from app.inventory_movements where tenant_id='2d00000
 select ok((select bool_and((row->>'netSalesCentavos')::bigint=0)
  from jsonb_array_elements(app.load_reporting_by_channel('1d000000-0000-4000-8000-000000000001','2d000000-0000-4000-8000-000000000001',current_date,current_date,null,'wholesale')->'byItem') row
  where row->>'sku' like 'HIST-%'),'item report reconciles fully returned taxed/discounted invoices to zero');
-savepoint orphan_wholesale_report;
 do $$
 declare s uuid;
 begin
@@ -108,6 +107,5 @@ $$;
 select throws_ok($$select app.load_reporting_by_channel('1d000000-0000-4000-8000-000000000001','2d000000-0000-4000-8000-000000000001',current_date,current_date,null,'wholesale')$$,'HCSD3',null,'wholesale orphan does not silently become gross-valued');
 select throws_ok($$select app.load_reporting_by_channel('1d000000-0000-4000-8000-000000000001','2d000000-0000-4000-8000-000000000001',current_date,current_date,null,'all')$$,'HCSD3',null,'all-channel report also fails closed on included unsupported wholesale data');
 select lives_ok($$select app.load_reporting_by_channel('1d000000-0000-4000-8000-000000000001','2d000000-0000-4000-8000-000000000001',current_date,current_date,null,'pos')$$,'POS-only scope excludes invalid wholesale valuation before calculation');
-rollback to savepoint orphan_wholesale_report;
 select * from finish();
 rollback;
