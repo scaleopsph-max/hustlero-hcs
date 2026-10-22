@@ -1678,6 +1678,72 @@ try {
   console.log(
     'AW4 effective time passed: real inventory-lock wait finishes before linked reversal/note/credit/stock/audit/outbox effective time; Manila dates and strict cutoffs agree; payout/cash/audit/outbox timestamps align.',
   )
+  // Run reversal races last so earlier fund invariants retain their original baseline.
+  const reverseFunds = (client, receiptId, key) =>
+    client.query('select app.reverse_wholesale_payment_funds($1,$2,$3::jsonb,$4,$4,$4) response', [
+      actor,
+      tenant,
+      JSON.stringify({
+        paymentId: receiptId,
+        reason: 'Disposable exact original split reversal',
+        reversalConfirmed: true,
+      }),
+      key,
+    ])
+  await first.query('begin')
+  const reversalWinner = (await reverseFunds(first, paymentId, 'aw4-fund-reversal-race')).rows[0].response
+  const reversalReplay = reverseFunds(second, paymentId, 'aw4-fund-reversal-race')
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await reversalReplay).rows[0].response, reversalWinner)
+  await assert.rejects(
+    reverseFunds(observer, paymentId, 'aw4-fund-reversal-other-key'),
+    (error) => error.code === 'HCFD6',
+  )
+  assert.equal(
+    (await observer.query('select count(*)::int count from app.wholesale_fund_reversals where tenant_id=$1', [tenant]))
+      .rows[0].count,
+    1,
+  )
+  assert.equal(
+    (await observer.query('select sum(amount)::text amount from app.fund_ledger_entries where tenant_id=$1', [tenant]))
+      .rows[0].amount,
+    '3000.00',
+  )
+
+  await first.query('begin')
+  await first.query('select 1 from app.fund_accounts where tenant_id=$1 order by id for update', [tenant])
+  const waitedReversal = reverseFunds(second, secondReceipt, 'aw4-fund-reversal-after-wait')
+  await waitForLock()
+  const reversalCutoff = (await observer.query('select clock_timestamp()::text cutoff')).rows[0].cutoff
+  await first.query('commit')
+  const waitedReversalId = (await waitedReversal).rows[0].response.reversalId
+  assert.equal(
+    (
+      await observer.query(
+        'select recorded_at>=$3::timestamptz after_wait from app.wholesale_fund_reversals where tenant_id=$1 and id=$2',
+        [tenant, waitedReversalId, reversalCutoff],
+      )
+    ).rows[0].after_wait,
+    true,
+  )
+  assert.equal(
+    (await observer.query('select sum(amount)::text amount from app.fund_ledger_entries where tenant_id=$1', [tenant]))
+      .rows[0].amount,
+    '0.00',
+  )
+  assert.equal(
+    (
+      await observer.query(
+        "select count(*)::int count from app.fund_ledger_entries where tenant_id=$1 and source_type='wholesale_fund_reversal'",
+        [tenant],
+      )
+    ).rows[0].count,
+    3,
+  )
+  console.log(
+    'AW4 fund reversal concurrency passed: overlapping same-key replay and different-key duplicate denial; fund-account wait precedes common event time; original splits net to zero exactly once.',
+  )
 } finally {
   // Release any held fixture transaction before closing another session waiting on it.
   await first.query('rollback').catch(() => {})

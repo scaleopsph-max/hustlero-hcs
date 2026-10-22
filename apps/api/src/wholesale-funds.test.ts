@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { wholesaleFundAllocationRequestSchema } from '@hcs/contracts'
+import { wholesaleFundAllocationRequestSchema, wholesaleFundReversalRequestSchema } from '@hcs/contracts'
 import { createApp } from './app'
 const user = '10000000-0000-4000-8000-000000000001',
   tenant = '20000000-0000-4000-8000-000000000001',
@@ -23,7 +23,17 @@ function setup(code?: string) {
     if (code) throw Object.assign(new Error('Private fund database details'), { code })
     return { paymentId: payment, capitalMinor: 6000, operatingMinor: 4000, recordedAt: '2026-10-11T03:00:00Z' }
   })
-  const load = vi.fn(async () => ({ canManage: false, funds: [], payments: [] }))
+  const load = vi.fn(async () => ({ canManage: false, canReverse: false, funds: [], payments: [] }))
+  const reverse = vi.fn(async () => {
+    if (code) throw Object.assign(new Error('Private fund database details'), { code })
+    return {
+      reversalId: payment,
+      paymentId: payment,
+      capitalMinor: 6000,
+      operatingMinor: 4000,
+      recordedAt: '2026-10-21T03:00:00Z',
+    }
+  })
   const app = createApp({
     verifyAccessToken: async (token) => (token === 'valid' ? { userId: user } : null),
     loadSessionAccess: async () => [
@@ -40,11 +50,46 @@ function setup(code?: string) {
       },
     ],
     allocateWholesaleFunds: allocate,
+    reverseWholesaleFunds: reverse,
     loadWholesaleFunds: load,
   })
-  return { app, allocate, load }
+  return { app, allocate, load, reverse }
 }
 describe('wholesale fund allocation', () => {
+  const reversal = { paymentId: payment, reason: 'Approved full allocation reversal', reversalConfirmed: true }
+  it('reverses only with server-derived actor/tenant and rejects client amounts', async () => {
+    const { app, reverse } = setup()
+    const response = await app.request(
+      '/v1/wholesale/funds/reverse',
+      { method: 'POST', headers, body: JSON.stringify(reversal) },
+      { ENVIRONMENT: 'test' },
+    )
+    expect(response.status).toBe(201)
+    expect(reverse.mock.calls[0]?.slice(0, 3)).toEqual([user, tenant, reversal])
+    for (const change of [{ capitalMinor: 1 }, { tenantId: tenant }, { reversalConfirmed: false }, { reason: 'x' }]) {
+      expect(wholesaleFundReversalRequestSchema.safeParse({ ...reversal, ...change }).success).toBe(false)
+    }
+  })
+  it('denies a foreign tenant before invoking the reversal repository', async () => {
+    const { app, reverse } = setup()
+    const response = await app.request(
+      '/v1/wholesale/funds/reverse',
+      { method: 'POST', headers: { ...headers, 'x-tenant-id': payment }, body: JSON.stringify(reversal) },
+      { ENVIRONMENT: 'test' },
+    )
+    expect(response.status).toBe(400)
+    expect(reverse).not.toHaveBeenCalled()
+  })
+  it.each(['HCFD6', 'HCFD7', 'HCFD8'])('sanitizes reversal conflict %s', async (code) => {
+    const { app } = setup(code)
+    const response = await app.request(
+      '/v1/wholesale/funds/reverse',
+      { method: 'POST', headers, body: JSON.stringify(reversal) },
+      { ENVIRONMENT: 'test' },
+    )
+    expect(response.status).toBe(409)
+    expect(await response.text()).not.toContain('Private')
+  })
   it('passes authenticated actor and tenant, never payload scope', async () => {
     const { app, allocate } = setup()
     expect(

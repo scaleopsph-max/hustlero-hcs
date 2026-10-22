@@ -123,9 +123,12 @@ export function WholesaleReturnsWorkspace() {
         .filter((line) => quantities[line.invoiceLineId] && quantities[line.invoiceLineId] !== '0')
         .map((line) => {
           const text = quantities[line.invoiceLineId] ?? ''
-          if (!/^[1-9][0-9]*$/.test(text)) throw new Error('Enter positive whole-unit quantities.')
-          const milli = BigInt(text) * 1000n
-          if (milli > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('Quantity is too large.')
+          if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,3})?$/.test(text))
+            throw new Error('Enter a positive quantity with up to three decimal places.')
+          const [whole, fraction = ''] = text.split('.')
+          const milli = BigInt(whole!) * 1000n + BigInt(fraction.padEnd(3, '0'))
+          if (milli === 0n || milli > BigInt(Number.MAX_SAFE_INTEGER))
+            throw new Error('Quantity is outside the supported range.')
           return {
             invoiceLineId: line.invoiceLineId,
             quantityMilli: Number(milli),
@@ -387,7 +390,7 @@ export function WholesaleReturnsWorkspace() {
                               aria-label={`Return quantity ${line.name}`}
                               type="number"
                               min="0"
-                              step="1"
+                              step="0.001"
                               max={(line.quantityMilli - line.returnedQuantityMilli) / 1000}
                               className="w-24 rounded border p-2"
                               value={quantities[line.invoiceLineId] ?? ''}
@@ -607,6 +610,7 @@ export function WholesaleReturnsWorkspace() {
                             <th className="py-2">Item</th>
                             <th className="px-2">Quantity</th>
                             <th className="px-2">Credit</th>
+                            <th className="px-2">Original gross / discount / tax</th>
                             <th>Stock disposition</th>
                           </tr>
                         </thead>
@@ -616,6 +620,11 @@ export function WholesaleReturnsWorkspace() {
                               <td className="min-w-32 break-words py-2">{line.name}</td>
                               <td className="px-2">{line.quantityMilli / 1000}</td>
                               <td className="whitespace-nowrap px-2">{formatPeso(line.amountMinor)}</td>
+                              <td className="min-w-44 px-2">
+                                {line.valuation
+                                  ? `${formatPeso(line.valuation.grossMinor)} / ${formatPeso(line.valuation.discountMinor)} / ${formatPeso(line.valuation.taxMinor)}`
+                                  : 'Legacy snapshot'}
+                              </td>
                               <td>{line.returnToStock ? 'Restocked' : 'Not restocked'}</td>
                             </tr>
                           ))}

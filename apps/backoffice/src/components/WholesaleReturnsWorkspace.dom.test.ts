@@ -197,6 +197,19 @@ function committedReturn(key: string) {
   current.invoices[0]!.lines[0]!.priorCreditMinor = 90000
 }
 describe('actual AW4 component with isolated synthetic Auth/API', () => {
+  it('submits a fractional quantity as exact integer milli-units in the preview body', async () => {
+    await mount()
+    fireEvent.change(screen.getByLabelText('Invoice'), { target: { value: invoice } })
+    fireEvent.change(screen.getByLabelText('Return quantity Synthetic Shoes'), { target: { value: '0.333' } })
+    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'Synthetic fractional return' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Post credit note' }) as HTMLButtonElement).disabled).toBe(false),
+    )
+    const request = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/v1/wholesale/returns/preview'))
+    expect(JSON.parse(String(request?.[1]?.body)).lines[0].quantityMilli).toBe(333)
+    expect(posts).toHaveLength(0)
+  })
   it('opens immutable note details for a read-only user without a mutation', async () => {
     current.canPost = false
     current.canApply = false
@@ -223,6 +236,22 @@ describe('actual AW4 component with isolated synthetic Auth/API', () => {
     expect(detail.getByText('Not restocked')).toBeDefined()
     expect(summary.parentElement!.querySelector('img')).toBeNull()
     expect(posts).toHaveLength(0)
+  })
+  it('shows the preserved derived original allocation on a credit note', async () => {
+    current.notes[0]!.lines[0]!.valuation = {
+      policy: 'header_gross_proportional_v1',
+      grossMinor: 90000,
+      discountMinor: 1000,
+      taxMinor: 2000,
+      payableMinor: 91000,
+      originalQuantityMilli: 2000,
+    }
+    await mount()
+    const summary = screen.getByLabelText(`Credit note ${note}`)
+    fireEvent.click(summary)
+    const detail = within(summary.parentElement!)
+    expect(detail.getByText('Original gross / discount / tax')).toBeTruthy()
+    expect(detail.getByText(/900\.00.*10\.00.*20\.00/)).toBeTruthy()
   })
   it('does not display a note whose original-line total disagrees with its credit amount', async () => {
     current.notes[0]!.lines[0]!.amountMinor = 44999

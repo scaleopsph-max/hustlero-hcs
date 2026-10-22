@@ -22,6 +22,8 @@ import {
 import {
   wholesaleFundAllocationRequestSchema,
   wholesaleFundAllocationResponseSchema,
+  wholesaleFundReversalRequestSchema,
+  wholesaleFundReversalResponseSchema,
   wholesaleFundsContextSchema,
   approvalCenterSchema,
   approvalDecisionRequestSchema,
@@ -251,6 +253,8 @@ import {
   recordWholesaleOpeningReceivableInPostgres,
   recordWholesalePaymentInPostgres,
   allocateWholesaleFundsInPostgres,
+  reverseWholesaleFundsInPostgres,
+  type WholesaleFundsReverser,
   loadWholesaleFundsFromPostgres,
   type WholesaleFundsAllocator,
   type WholesaleFundsLoader,
@@ -442,6 +446,7 @@ interface AppDependencies {
   recordWholesaleOpeningReceivable: WholesaleOpeningReceivableRecorder
   recordWholesalePayment: WholesalePaymentRecorder
   allocateWholesaleFunds: WholesaleFundsAllocator
+  reverseWholesaleFunds: WholesaleFundsReverser
   loadWholesaleFunds: WholesaleFundsLoader
   loadWholesaleReturns: WholesaleReturnsLoader
   postWholesaleReturn: WholesaleReturnPoster
@@ -551,6 +556,7 @@ const defaultDependencies: AppDependencies = {
   recordWholesaleOpeningReceivable: recordWholesaleOpeningReceivableInPostgres,
   recordWholesalePayment: recordWholesalePaymentInPostgres,
   allocateWholesaleFunds: allocateWholesaleFundsInPostgres,
+  reverseWholesaleFunds: reverseWholesaleFundsInPostgres,
   loadWholesaleFunds: loadWholesaleFundsFromPostgres,
   loadWholesaleReturns: loadWholesaleReturnsFromPostgres,
   postWholesaleReturn: postWholesaleReturnInPostgres,
@@ -2662,8 +2668,8 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
             unitPriceMinor: line.unitPriceMinor,
             originalTotalMinor: line.originalTotalMinor,
             priorCreditMinor: line.priorCreditMinor,
-            discountMinor: 0,
-            taxMinor: 0,
+            discountMinor: line.discountMinor ?? 0,
+            taxMinor: line.taxMinor ?? 0,
           })),
           parsed.data.lines,
         )
@@ -3026,7 +3032,7 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
 
   const fundError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
     const code = postgresErrorCode(error)
-    if (code === 'HCWR5') return returnError(context, error)
+    if (code?.startsWith('HCWR')) return returnError(context, error)
     if (code === 'HCAR1')
       return context.json(
         apiErrorResponseSchema.parse({
@@ -3039,17 +3045,30 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
         403,
       )
     if (!code?.startsWith('HCFD')) return receivableError(context, error)
-    const status = code === 'HCFD1' ? 403 : code === 'HCFD3' ? 404 : code === 'HCFD4' || code === 'HCFD5' ? 409 : 400
-    const message =
+    const status =
       code === 'HCFD1'
-        ? 'Fund access is required.'
+        ? 403
         : code === 'HCFD3'
-          ? 'Receipt was not found.'
-          : code === 'HCFD4'
-            ? 'This receipt is already allocated.'
-            : code === 'HCFD5'
-              ? 'Complete basic fund setup first.'
-              : 'Confirm settled money and an exact receipt split.'
+          ? 404
+          : ['HCFD4', 'HCFD5', 'HCFD6', 'HCFD7', 'HCFD8'].includes(code)
+            ? 409
+            : 400
+    const message =
+      code === 'HCFD6'
+        ? 'This allocation has already been reversed.'
+        : code === 'HCFD7'
+          ? 'A fund cannot cover its original allocation reversal.'
+          : code === 'HCFD8'
+            ? 'Original fund ledger requires reconciliation.'
+            : code === 'HCFD1'
+              ? 'Fund access is required.'
+              : code === 'HCFD3'
+                ? 'Receipt was not found.'
+                : code === 'HCFD4'
+                  ? 'This receipt is already allocated.'
+                  : code === 'HCFD5'
+                    ? 'Complete basic fund setup first.'
+                    : 'Confirm settled money and an exact receipt split.'
     return context.json(
       apiErrorResponseSchema.parse({
         error: { code: `WHOLESALE_FUNDS_${code}`, message, requestId: context.get('requestId') },
@@ -3075,6 +3094,41 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
         wholesaleFundsContextSchema.parse(
           await dependencies.loadWholesaleFunds(scope.userId, scope.tenantId, context.env),
         ),
+      )
+    } catch (error) {
+      const response = fundError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+  app.post('/v1/wholesale/funds/reverse', async (context) => {
+    const command = await readWholesaleCommand(context)
+    const parsed = wholesaleFundReversalRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!command || !parsed.success)
+      return context.json(
+        {
+          error: {
+            code: 'INVALID_FUND_REVERSAL',
+            message: 'Provide the original receipt, reason, confirmation and Idempotency-Key.',
+            requestId: context.get('requestId'),
+          },
+        },
+        400,
+      )
+    try {
+      return context.json(
+        wholesaleFundReversalResponseSchema.parse(
+          await dependencies.reverseWholesaleFunds(
+            command.userId,
+            command.tenantId,
+            parsed.data,
+            command.idempotencyKey,
+            await requestHash({ userId: command.userId, ...parsed.data }),
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+        201,
       )
     } catch (error) {
       const response = fundError(context, error)
@@ -5134,6 +5188,17 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
   const reportingError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
     const code = postgresErrorCode(error)
     const requestId = context.get('requestId')
+    if (code === 'HCSD3')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'REPORT_VALUATION_RECONCILIATION_REQUIRED',
+            message: 'An original wholesale invoice requires valuation reconciliation.',
+            requestId,
+          },
+        }),
+        409,
+      )
     if (code === 'HCSD0')
       return context.json(
         apiErrorResponseSchema.parse({

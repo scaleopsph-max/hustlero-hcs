@@ -43,7 +43,7 @@ describe('immutable wholesale credit-note detail', () => {
     { reason: '' },
     { refundId: 'unknown' },
     { lines: [] },
-    { lines: [{ ...note.lines[0]!, quantityMilli: 1500 }] },
+    { lines: [{ ...note.lines[0]!, quantityMilli: 1.5 }] },
     { lines: [{ ...note.lines[0]!, amountMinor: 89999 }] },
     { lines: [note.lines[0]!, note.lines[0]!] },
   ])('fails closed for inconsistent or incomplete note detail %j', (changes) => {
@@ -74,10 +74,21 @@ describe('wholesale return request foundation', () => {
     expect(wholesaleReturnRequestSchema.safeParse({ ...request, reason: '  ' }).success).toBe(false)
   })
 
-  it.each([0, -1000, 500, 1500, Number.MAX_SAFE_INTEGER + 1])('rejects unsupported quantity %s', (quantityMilli) => {
+  it.each([0, -1000, 0.5, 1.5, Number.MAX_SAFE_INTEGER + 1])('rejects unsupported quantity %s', (quantityMilli) => {
     expect(
       wholesaleReturnRequestSchema.safeParse({ ...request, lines: [{ ...request.lines[0], quantityMilli }] }).success,
     ).toBe(false)
+  })
+
+  it.each([1, 500, 1500])('accepts exact integer milli-quantity %s without client valuation', (quantityMilli) => {
+    expect(
+      wholesaleReturnRequestSchema.parse({ ...request, lines: [{ ...request.lines[0], quantityMilli }] }).lines[0]
+        ?.quantityMilli,
+    ).toBe(quantityMilli)
+    expect(
+      wholesaleCreditNoteSchema.parse({ ...note, lines: [{ ...note.lines[0], quantityMilli }] }).lines[0]
+        ?.quantityMilli,
+    ).toBe(quantityMilli)
   })
 
   it('requires UUID identities and an explicit boolean disposition', () => {

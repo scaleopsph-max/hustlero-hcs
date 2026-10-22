@@ -334,6 +334,69 @@ describe('AW4 routes', () => {
       expect(command).not.toHaveBeenCalled()
     },
   )
+  it('previews discounted/taxed fractional returns from the authorized original allocation', async () => {
+    const { app, command } = setup(undefined, {
+      loadWholesaleReturns: async () => ({
+        canPost: true,
+        canApply: false,
+        canRefund: false,
+        invoices: [
+          {
+            ...invoice,
+            totalMinor: 328,
+            openDebtMinor: 328,
+            lines: [
+              {
+                ...invoice.lines[0]!,
+                quantityMilli: 3000,
+                unitPriceMinor: 101,
+                originalTotalMinor: 303,
+                discountMinor: 10,
+                taxMinor: 35,
+              },
+            ],
+          },
+        ],
+        notes: [],
+        applications: [],
+        payouts: [],
+        methods: [],
+        sessions: [],
+      }),
+    })
+    const response = await app.request(
+      '/v1/wholesale/returns/preview',
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ...payload, lines: [{ ...payload.lines[0], quantityMilli: 333 }] }),
+      },
+      { ENVIRONMENT: 'test' },
+    )
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      totalCreditMinor: 36,
+      debtReductionMinor: 36,
+      newCustomerCreditMinor: 0,
+      openDebtMinor: 292,
+      cashPayoutMinor: 0,
+    })
+    expect(command).not.toHaveBeenCalled()
+  })
+  it('reports a sanitized reconciliation conflict instead of fabricating original wholesale amounts', async () => {
+    const { app } = setup(undefined, {
+      loadSalesReport: async () => {
+        throw Object.assign(new Error('Private original invoice details'), { code: 'HCSD3' })
+      },
+    })
+    const response = await app.request(
+      '/v1/reports/sales?from=2026-10-21&to=2026-10-22&channel=wholesale',
+      { headers },
+      { ENVIRONMENT: 'test' },
+    )
+    expect(response.status).toBe(409)
+    expect(await response.text()).not.toContain('Private')
+  })
   it.each([
     [{ canPost: false }, 403],
     [{ invoices: [] }, 404],
@@ -375,7 +438,7 @@ describe('AW4 routes', () => {
   it.each([
     { ...payload, tenantId },
     { ...payload, amountMinor: 1 },
-    { ...payload, lines: [{ ...payload.lines[0], quantityMilli: 500 }] },
+    { ...payload, lines: [{ ...payload.lines[0], quantityMilli: 0.5 }] },
   ])('rejects invalid/client-authoritative fields before database', async (body) => {
     const { app, command } = setup()
     const response = await app.request(

@@ -1,5 +1,26 @@
 # Decision Register
 
+## October 21-22, 2026: AW4 Reversal And Original Valuation Extension
+
+Owner approved local build of full original Capital/Operating allocation reversal,
+with original split, independent per-fund liquidity checks, explicit authorization,
+append-only original-entry links, and separate customer payout. A reversed receipt
+must not become available for fresh allocation. Online Store remains last.
+
+Owner also approved original invoice-based discounted/taxed/fractional returns:
+0.001 quantity precision; header-only discount/tax allocated proportionally to
+original gross lines, in stable UUID order, conserving each header with cumulative
+half-up cent rounding. Returned money is the difference between cumulative rounded
+original payable amounts. Preserve the derived original breakdown on credit-note
+lines; do not rewrite historical invoices or recompute current prices/tax rates.
+Zero-cent selections and zero-payable/free lines remain fail-closed, with no stock
+or financial effect. Item/category reporting uses original wholesale payable
+amounts so full credits reconcile with the same reporting basis.
+
+Local changes stay on AW4 PR #5. No live deployment, new credential, financial UAT,
+AW3 frozen-manifest change or workaround of the unresolved execution rejection is
+authorized by these development decisions.
+
 ## Accepted foundation decisions
 
 | ID      | Decision                                                                                                                                                                                                                                                                                                                       | Rationale                                                                                                                                                                                                                                                                        |

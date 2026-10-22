@@ -1,8 +1,24 @@
 # Project State
 
-Last updated: 2026-10-11
+Last updated: 2026-10-22
 
-## Current increment: cross-command concurrency verification
+## Current Increment: AW4 Fund Reversal And Original Valuation Extension
+
+Owner approved full original-split fund reversal, independent per-fund liquidity
+checks, separate refund, and original snapshot valuation for discounts/taxes and
+0.001 quantities. Header-only amounts use approved proportional gross allocation,
+stable line-ID order and cumulative cent rounding. Derived evidence is preserved
+in credit-note lines. Online Store remains last. Local implementation and review
+fixes passed the full local check (882 app / 47 simulated harness cases, complete
+builds), dependency gate and 32 disposable PostgreSQL cases loading 84 scripts.
+Exact-source fresh database/concurrency CI remains pending at this checkpoint;
+no hosted release, credential or financial UAT is claimed. See
+product/AW4_FUND_REVERSAL_VALUATION_EXTENSION.md.
+
+The AW3 frozen release manifest and unresolved host execution restriction remain
+separate. Do not combine new AW4 scripts with any earlier approved live batch.
+
+## Historical Increment: Cross-Command Concurrency Verification
 
 The loopback-only disposable CI concurrency harness now adds six independent-session orderings: payment-before-confirmation, confirmation-before-payment, opening-before-payment, unclassified-payment rejection before opening, cancellation-before-payment, and payment-before-cancellation. Customer locks are observed for serialized credit/opening commands; payment/cancellation are deliberately allowed to commute while the first transaction is still open. Assertions reconcile exact credit exposure, invoice balances, reservation releases, immutable opening counts, payment/allocation/audit/outbox uniqueness, and shared stock. A failed payment uses an outer customer lock and savepoint so the competing opening is demonstrably overlapping without recording money against unknown debt. No live connection is accepted.
 

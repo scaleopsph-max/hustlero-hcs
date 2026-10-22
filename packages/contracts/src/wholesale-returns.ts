@@ -9,7 +9,7 @@ export const wholesaleReturnRequestSchema = z
         z
           .object({
             invoiceLineId: z.uuid(),
-            quantityMilli: z.number().int().min(1000).max(Number.MAX_SAFE_INTEGER).multipleOf(1000),
+            quantityMilli: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
             returnToStock: z.boolean(),
           })
           .strict(),
@@ -28,6 +28,21 @@ export type WholesaleReturnRequest = z.infer<typeof wholesaleReturnRequestSchema
 
 const money = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 const positiveMoney = money.refine((amount) => amount > 0, 'Amount must be positive.')
+export const wholesaleReturnValuationSchema = z
+  .object({
+    policy: z.literal('header_gross_proportional_v1'),
+    grossMinor: money,
+    discountMinor: money,
+    taxMinor: money,
+    payableMinor: money,
+    originalQuantityMilli: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  })
+  .refine(
+    (row) =>
+      row.discountMinor <= row.grossMinor &&
+      BigInt(row.grossMinor) - BigInt(row.discountMinor) + BigInt(row.taxMinor) === BigInt(row.payableMinor),
+    'Original valuation must reconcile.',
+  )
 export const wholesaleCreditApplyRequestSchema = z.strictObject({
   creditNoteId: z.uuid(),
   invoiceId: z.uuid(),
@@ -111,8 +126,9 @@ export const wholesaleCreditNoteSchema = z
         z.object({
           invoiceLineId: z.uuid(),
           name: z.string(),
-          quantityMilli: z.number().int().min(1000).max(Number.MAX_SAFE_INTEGER).multipleOf(1000),
+          quantityMilli: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
           amountMinor: positiveMoney,
+          valuation: wholesaleReturnValuationSchema.nullable().optional(),
           returnToStock: z.boolean(),
         }),
       )
@@ -152,6 +168,8 @@ export const wholesaleReturnsContextSchema = z.object({
           returnedQuantityMilli: money,
           unitPriceMinor: money,
           originalTotalMinor: money,
+          discountMinor: money.nullable().optional(),
+          taxMinor: money.nullable().optional(),
           priorCreditMinor: money,
         }),
       ),

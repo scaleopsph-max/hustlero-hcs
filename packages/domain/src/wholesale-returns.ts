@@ -25,12 +25,17 @@ function safe(value: bigint): number {
   return Number(value)
 }
 
-function wholeQuantity(value: number, positive: boolean): bigint {
+function milliQuantity(value: number, positive: boolean): bigint {
   const quantity = nonnegative(value)
-  if ((positive && quantity === 0n) || quantity % 1000n !== 0n) {
-    throw new Error('Only positive whole-unit return quantities are supported; history may contain zero.')
+  if (positive && quantity === 0n) {
+    throw new Error('Return quantity must be a positive integer in milli-units.')
   }
-  return quantity / 1000n
+  return quantity
+}
+
+// Nonnegative half-up rounding, identical to PostgreSQL round(numeric).
+function proportional(amount: bigint, quantity: bigint, fulfilled: bigint): bigint {
+  return (amount * quantity * 2n + fulfilled) / (2n * fulfilled)
 }
 
 // Snapshots must be loaded by the authorized server; this pure quote does not authorize or post a return.
@@ -54,20 +59,28 @@ export function quoteWholesaleReturn(
     seen.add(selection.invoiceLineId)
     const snapshot = byId.get(selection.invoiceLineId)
     if (!snapshot || typeof selection.returnToStock !== 'boolean') throw new Error('Invalid return line.')
-    const fulfilled = wholeQuantity(snapshot.fulfilledQuantityMilli, true)
-    const returned = wholeQuantity(snapshot.returnedQuantityMilli, false)
-    const quantity = wholeQuantity(selection.quantityMilli, true)
+    const fulfilled = milliQuantity(snapshot.fulfilledQuantityMilli, true)
+    const returned = milliQuantity(snapshot.returnedQuantityMilli, false)
+    const quantity = milliQuantity(selection.quantityMilli, true)
     const price = nonnegative(snapshot.unitPriceMinor)
     const originalTotal = nonnegative(snapshot.originalTotalMinor)
     const priorCredit = nonnegative(snapshot.priorCreditMinor)
-    if (nonnegative(snapshot.discountMinor) !== 0n || nonnegative(snapshot.taxMinor) !== 0n) {
-      throw new Error('Discounted or taxed returns require a separately verified valuation policy.')
-    }
-    if (price === 0n || fulfilled * price !== originalTotal || returned * price !== priorCredit) {
+    const discount = nonnegative(snapshot.discountMinor)
+    const tax = nonnegative(snapshot.taxMinor)
+    if (discount > originalTotal) throw new Error('Discount exceeds original line amount.')
+    const originalCharge = originalTotal - discount + tax
+    safe(originalCharge)
+    if (
+      price === 0n ||
+      originalCharge === 0n ||
+      proportional(price, fulfilled, 1000n) !== originalTotal ||
+      priorCredit !== proportional(originalCharge, returned, fulfilled)
+    ) {
       throw new Error('Invoice amount and return history do not reconcile.')
     }
     if (returned > fulfilled || quantity > fulfilled - returned) throw new Error('Return exceeds remaining quantity.')
-    const amount = quantity * price
+    const amount = proportional(originalCharge, returned + quantity, fulfilled) - priorCredit
+    if (amount === 0n) throw new Error('Selected quantity has no refundable centavo; select a larger quantity.')
     total += amount
     return { ...selection, amountMinor: safe(amount) }
   })

@@ -1,4 +1,7 @@
 import {
+  wholesaleFundReversalResponseSchema,
+  type WholesaleFundReversalRequest,
+  type WholesaleFundReversalResponse,
   wholesaleFundsContextSchema,
   wholesaleFundAllocationResponseSchema,
   type WholesaleFundAllocationRequest,
@@ -43,6 +46,30 @@ export type WholesaleFundsAllocator = (
   requestId: string,
   bindings: Bindings,
 ) => Promise<WholesaleFundAllocationResponse>
+export type WholesaleFundsReverser = (
+  userId: string,
+  tenantId: string,
+  request: WholesaleFundReversalRequest,
+  key: string,
+  hash: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<WholesaleFundReversalResponse>
+export const reverseWholesaleFundsInPostgres: WholesaleFundsReverser = (
+  user,
+  tenant,
+  request,
+  key,
+  hash,
+  requestId,
+  bindings,
+) =>
+  query(
+    bindings,
+    'select app.reverse_wholesale_payment_funds($1::uuid,$2::uuid,$3::jsonb,$4::text,$5::text,$6::text) response',
+    [user, tenant, JSON.stringify(request), key, hash, requestId],
+    (value) => wholesaleFundReversalResponseSchema.parse(value),
+  )
 export const loadWholesaleFundsFromPostgres: WholesaleFundsLoader = (userId, tenantId, bindings) =>
   query(bindings, 'select app.load_wholesale_funds($1::uuid,$2::uuid) response', [userId, tenantId], (value) =>
     wholesaleFundsContextSchema.parse(value),

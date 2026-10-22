@@ -2,6 +2,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Check } from 'lucide-react'
+import { WholesaleFundReversalForm } from './WholesaleFundReversalForm'
+import type { PendingFundReversal } from '@/lib/wholesale-fund-reversal'
 import {
   wholesaleFundAllocationRequestSchema,
   wholesaleFundsContextSchema,
@@ -40,7 +42,7 @@ export function WholesaleFundsWorkspace() {
     [error, setError] = useState<string | null>(null),
     [message, setMessage] = useState<string | null>(null)
   const locked = useRef(false)
-  async function call(path: string, token: string, tenant: string, request?: Pending) {
+  async function call(path: string, token: string, tenant: string, request?: Pending | PendingFundReversal) {
     if (!api) throw new Error('Back Office API is not configured.')
     const response = await fetch(`${api.replace(/\/$/, '')}${path}`, {
       method: request ? 'POST' : 'GET',
@@ -276,6 +278,31 @@ export function WholesaleFundsWorkspace() {
               {pending ? 'Retry allocation' : 'Confirm allocation'}
             </button>
           </form>
+          {scope && (
+            <WholesaleFundReversalForm
+              key={scope.storage}
+              storage={`${scope.storage}:reversal`}
+              data={data}
+              execute={async (command) => {
+                if (!auth) throw new Error('Authentication is not configured.')
+                const { data: session, error: sessionError } = await auth.auth.getSession()
+                if (sessionError) throw sessionError
+                if (!session.session || session.session.user.id !== scope.user)
+                  throw new Error('Sign in to the original account.')
+                const result = await call(
+                  '/v1/wholesale/funds/reverse',
+                  session.session.access_token,
+                  scope.tenant,
+                  command,
+                )
+                const history = wholesaleFundsContextSchema.parse(
+                  await call('/v1/wholesale/funds', session.session.access_token, scope.tenant),
+                )
+                setData(history)
+                return { result, history }
+              }}
+            />
+          )}
           <section>
             <h2 className="mb-3 text-xl font-semibold">Allocation history</h2>
             <div className="overflow-x-auto">
@@ -285,6 +312,7 @@ export function WholesaleFundsWorkspace() {
                     <th className="py-3">Receipt</th>
                     <th>Capital / COGS</th>
                     <th>Operating</th>
+                    <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -295,6 +323,7 @@ export function WholesaleFundsWorkspace() {
                         <td className="py-3">{item.reference}</td>
                         <td>{formatPeso(item.allocation!.capitalMinor)}</td>
                         <td>{formatPeso(item.allocation!.operatingMinor)}</td>
+                        <td>{item.reversal ? 'Reversed' : 'Allocated'}</td>
                       </tr>
                     ))}
                 </tbody>

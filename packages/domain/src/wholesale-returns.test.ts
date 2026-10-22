@@ -43,8 +43,6 @@ describe('wholesale return valuation foundation', () => {
   it.each([
     { originalTotalMinor: 449_999 },
     { priorCreditMinor: 1 },
-    { discountMinor: 1 },
-    { taxMinor: 1 },
     { fulfilledQuantityMilli: 1500 },
     { returnedQuantityMilli: 500 },
     { returnedQuantityMilli: 11_000, priorCreditMinor: 495_000 },
@@ -54,12 +52,63 @@ describe('wholesale return valuation foundation', () => {
     expect(() => quoteWholesaleReturn([{ ...snapshot, ...patch }], [selection])).toThrow()
   })
 
-  it.each([0, -1000, 1, 1500, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])(
+  it.each([0, -1000, 0.1, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])(
     'rejects invalid quantity %s',
     (quantityMilli) => {
       expect(() => quoteWholesaleReturn([snapshot], [{ ...selection, quantityMilli }])).toThrow()
     },
   )
+
+  it('uses original discounted/taxed amounts with milli-unit quantities and exact final remainder', () => {
+    const original = {
+      ...snapshot,
+      fulfilledQuantityMilli: 3000,
+      unitPriceMinor: 101,
+      originalTotalMinor: 303,
+      discountMinor: 10,
+      taxMinor: 35,
+    }
+    let returnedQuantityMilli = 0,
+      priorCreditMinor = 0
+    const amounts: number[] = []
+    for (const quantityMilli of [333, 667, 1000, 1000]) {
+      const quote = quoteWholesaleReturn(
+        [{ ...original, returnedQuantityMilli, priorCreditMinor }],
+        [{ ...selection, quantityMilli }],
+      )
+      amounts.push(quote.totalCreditMinor)
+      returnedQuantityMilli += quantityMilli
+      priorCreditMinor += quote.totalCreditMinor
+    }
+    expect(amounts).toEqual([36, 73, 110, 109])
+    expect(priorCreditMinor).toBe(328)
+  })
+  it('conserves cumulative cents across positive fractional return partitions', () => {
+    for (let amount = 2; amount < 32; amount++) {
+      const original = {
+        ...snapshot,
+        fulfilledQuantityMilli: 2000,
+        unitPriceMinor: amount,
+        originalTotalMinor: amount * 2,
+        discountMinor: 1,
+        taxMinor: 1,
+      }
+      const first = quoteWholesaleReturn([original], [{ ...selection, quantityMilli: 500 }]).totalCreditMinor
+      const last = quoteWholesaleReturn(
+        [{ ...original, returnedQuantityMilli: 500, priorCreditMinor: first }],
+        [{ ...selection, quantityMilli: 1500 }],
+      ).totalCreditMinor
+      expect(first + last).toBe(amount * 2)
+    }
+  })
+  it('rejects zero-cent slices, excessive discounts and inconsistent cumulative history', () => {
+    const tiny = { ...snapshot, fulfilledQuantityMilli: 1000, unitPriceMinor: 1, originalTotalMinor: 1 }
+    expect(() => quoteWholesaleReturn([tiny], [{ ...selection, quantityMilli: 1 }])).toThrow(/centavo/)
+    expect(() => quoteWholesaleReturn([{ ...snapshot, discountMinor: 450001 }], [selection])).toThrow(/Discount/)
+    expect(() =>
+      quoteWholesaleReturn([{ ...snapshot, returnedQuantityMilli: 1, priorCreditMinor: 1 }], [selection]),
+    ).toThrow(/reconcile/)
+  })
 
   it('rejects missing/duplicate lines and empty/excessive selections', () => {
     expect(() => quoteWholesaleReturn([snapshot], [])).toThrow()
