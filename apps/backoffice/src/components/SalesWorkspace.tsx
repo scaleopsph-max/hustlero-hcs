@@ -103,7 +103,10 @@ export function SalesWorkspace() {
                           : 'neutral'
                     }
                   >
-                    {sale.status.replace('_', ' ')}
+                    {(sale.channel === 'wholesale' ? sale.status.replace('refunded', 'credited') : sale.status).replace(
+                      '_',
+                      ' ',
+                    )}
                   </Chip>
                 </div>
               </div>
@@ -121,7 +124,9 @@ export function SalesWorkspace() {
               <div className="text-right">
                 <strong>{formatPeso(sale.netCentavos)}</strong>
                 {sale.refundedCentavos > 0 ? (
-                  <div className="mt-1 text-xs text-ink-500">Refunded {formatPeso(sale.refundedCentavos)}</div>
+                  <div className="mt-1 text-xs text-ink-500">
+                    {sale.channel === 'wholesale' ? 'Credited' : 'Refunded'} {formatPeso(sale.refundedCentavos)}
+                  </div>
                 ) : null}
               </div>
             </Link>

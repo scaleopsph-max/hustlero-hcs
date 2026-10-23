@@ -21,8 +21,17 @@ export const wholesaleFundAllocationResponseSchema = z.strictObject({
   operatingMinor: minor,
   recordedAt: z.iso.datetime({ offset: true }),
 })
+export const wholesaleFundReversalRequestSchema = z.strictObject({
+  paymentId: z.uuid(),
+  reason: z.string().trim().min(3).max(240),
+  reversalConfirmed: z.literal(true),
+})
+export const wholesaleFundReversalResponseSchema = wholesaleFundAllocationResponseSchema.extend({
+  reversalId: z.uuid(),
+})
 export const wholesaleFundsContextSchema = z.strictObject({
   canManage: z.boolean(),
+  canReverse: z.boolean().default(false),
   funds: z.array(
     z.strictObject({
       fundType: z.enum(['capital_cogs', 'operating']),
@@ -36,9 +45,12 @@ export const wholesaleFundsContextSchema = z.strictObject({
       reference: z.string(),
       amountMinor: minor,
       allocation: wholesaleFundAllocationResponseSchema.nullable(),
+      reversal: wholesaleFundReversalResponseSchema.nullable().default(null),
     }),
   ),
 })
 export type WholesaleFundAllocationRequest = z.infer<typeof wholesaleFundAllocationRequestSchema>
 export type WholesaleFundAllocationResponse = z.infer<typeof wholesaleFundAllocationResponseSchema>
 export type WholesaleFundsContext = z.infer<typeof wholesaleFundsContextSchema>
+export type WholesaleFundReversalRequest = z.infer<typeof wholesaleFundReversalRequestSchema>
+export type WholesaleFundReversalResponse = z.infer<typeof wholesaleFundReversalResponseSchema>

@@ -1,8 +1,39 @@
 # Project State
 
-Last updated: 2026-10-11
+Last updated: 2026-10-23
 
-## Current increment: cross-command concurrency verification
+## Current Increment: Reviewed Source Integration Preparation
+
+Owner approved source-only PR #5 merge after final review and passing CI. Remote
+main remains e2437ad; previous AW4 head 8d1b8e7 passed both exact CI runs, including
+882 app / 47 simulated harness cases and 1,922 combined-main SQL assertions.
+October 23 fresh audit now blocks Next.js 16.3.8 on newly reported high/critical
+advisories. All four app pins and the lockfile are updated to 16.4.2; no business
+code, migration, permission or audit exception changes. Clean npm ci and direct
+four-app version resolution confirmed 16.4.2. Fresh full local checks passed
+(882 app / 47 simulated harness cases, all builds), dependency policy and staged
+583-file secret scan. Exact updated-source CI remains required before merge.
+Earlier CI is historical evidence, not acceptance of this dependency update.
+See qa/AW4_SOURCE_INTEGRATION_2026-10-23.md. No hosted retry, token, migration,
+deployment, financial command or Production change is authorized by source merge.
+
+## Previous Increment: AW4 Fund Reversal And Original Valuation Extension
+
+Owner approved full original-split fund reversal, independent per-fund liquidity
+checks, separate refund, and original snapshot valuation for discounts/taxes and
+0.001 quantities. Header-only amounts use approved proportional gross allocation,
+stable line-ID order and cumulative cent rounding. Derived evidence is preserved
+in credit-note lines. Online Store remains last. Local implementation and review
+fixes passed the full local check (882 app / 47 simulated harness cases, complete
+builds), dependency gate and 32 disposable PostgreSQL cases loading 84 scripts.
+Exact-source fresh database/concurrency CI remains pending at this checkpoint;
+no hosted release, credential or financial UAT is claimed. See
+product/AW4_FUND_REVERSAL_VALUATION_EXTENSION.md.
+
+The AW3 frozen release manifest and unresolved host execution restriction remain
+separate. Do not combine new AW4 scripts with any earlier approved live batch.
+
+## Historical Increment: Cross-Command Concurrency Verification
 
 The loopback-only disposable CI concurrency harness now adds six independent-session orderings: payment-before-confirmation, confirmation-before-payment, opening-before-payment, unclassified-payment rejection before opening, cancellation-before-payment, and payment-before-cancellation. Customer locks are observed for serialized credit/opening commands; payment/cancellation are deliberately allowed to commute while the first transaction is still open. Assertions reconcile exact credit exposure, invoice balances, reservation releases, immutable opening counts, payment/allocation/audit/outbox uniqueness, and shared stock. A failed payment uses an outer customer lock and savepoint so the competing opening is demonstrably overlapping without recording money against unknown debt. No live connection is accepted.
 

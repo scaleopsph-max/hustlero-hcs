@@ -388,3 +388,4 @@ export {
   type WholesaleStatementQuery,
 } from './wholesale-statements'
 export * from './payment-references'
+export * from './wholesale-returns'
