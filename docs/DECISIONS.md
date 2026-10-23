@@ -1,5 +1,14 @@
 # Decision Register
 
+## October 23, 2026: Conditional Source-Only AW4 Merge
+
+Owner approved PR #5 source-only merge after final review and passing CI. This
+excludes hosted migration, deployment, financial testing and Production effects.
+Fresh dependency audit identified blocking Next.js advisories; update the four
+app pins and lockfile to 16.4.2 and revalidate exact source before merge. Do not
+add advisory exceptions or infer hosted execution permission from source approval.
+The unresolved AW3 execution restriction and frozen fifteen-script scope remain.
+
 ## October 21-22, 2026: AW4 Reversal And Original Valuation Extension
 
 Owner approved local build of full original Capital/Operating allocation reversal,
