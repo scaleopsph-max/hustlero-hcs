@@ -1,5 +1,19 @@
 # Project State
 
+## Current Follow-Up: AW4 Computation Regression And Dependency Hardening
+
+Owner requested next local development while hosted execution remains blocked.
+On separate branch codex/aw4-computation-workflow-regressions from main 3df2c9f,
+added six deterministic domain workflow tests (72 fractional histories / 150
+payment-boundary sequences) and two oversized/exact-limit request contract tests.
+Fresh audit found blocking Zod/Undici advisories; narrow pin/override/lockfile
+correction passed clean installation and direct version checks. Full local checks
+passed: 890 app / 47 simulated harness cases, all builds, dependency policy and
+585-file secret scan. No financial production-source,
+migration, authorization/security-policy or hosted changes. Full verification/CI
+exact CI pending at this checkpoint; not merged/deployed. See
+qa/AW4_COMPUTATION_WORKFLOW_REGRESSIONS.md. Online Store remains last.
+
 Last updated: 2026-10-23
 
 ## Current Increment: Reviewed Source Integration Preparation

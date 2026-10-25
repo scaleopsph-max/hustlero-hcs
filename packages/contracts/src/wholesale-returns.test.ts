@@ -52,6 +52,33 @@ describe('immutable wholesale credit-note detail', () => {
 })
 
 describe('wholesale return request foundation', () => {
+  it('rejects oversized collections before inspecting their invalid elements', () => {
+    let inspected = 0
+    const lines = Array.from({ length: 201 }, () => ({
+      get invoiceLineId() {
+        inspected++
+        return 'invalid-line-id'
+      },
+      quantityMilli: 0,
+      returnToStock: false,
+    }))
+    const result = wholesaleReturnRequestSchema.safeParse({ ...request, lines })
+    expect(result.success).toBe(false)
+    expect(inspected).toBe(0)
+    if (!result.success) {
+      expect(result.error.issues).toEqual([expect.objectContaining({ code: 'too_big', maximum: 200, path: ['lines'] })])
+    }
+  })
+
+  it('continues to accept the exact maximum collection of unique valid lines', () => {
+    const lines = Array.from({ length: 200 }, (_, index) => ({
+      invoiceLineId: `20000000-0000-4000-8000-${(index + 1).toString(16).padStart(12, '0')}`,
+      quantityMilli: 1,
+      returnToStock: true,
+    }))
+    expect(wholesaleReturnRequestSchema.parse({ ...request, lines }).lines).toEqual(lines)
+  })
+
   it('accepts only invoice/line quantities, disposition and reason', () => {
     expect(wholesaleReturnRequestSchema.parse(request)).toEqual(request)
   })
