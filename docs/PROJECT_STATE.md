@@ -9,9 +9,9 @@ payment-boundary sequences) and two oversized/exact-limit request contract tests
 Fresh audit found blocking Zod/Undici advisories; narrow pin/override/lockfile
 correction passed clean installation and direct version checks. Full local checks
 passed: 890 app / 47 simulated harness cases, all builds, dependency policy and
-585-file secret scan. No financial production-source,
-migration, authorization/security-policy or hosted changes. Full verification/CI
-exact CI pending at this checkpoint; not merged/deployed. See
+585-file secret scan. No financial production-source, migration,
+authorization/security-policy or hosted changes. Exact CI remains pending at
+this checkpoint; not merged/deployed. See
 qa/AW4_COMPUTATION_WORKFLOW_REGRESSIONS.md. Online Store remains last.
 
 Last updated: 2026-10-23
