@@ -1,5 +1,20 @@
 # Project State
 
+## Current Follow-Up: AW3-Only Security Candidate
+
+Owner prioritized AW3 completion. Prepared isolated source candidate from reviewed
+AW3-only e2437ad, excluding AW4 already present on current main. Next.js/Zod/
+Miniflare Undici patch pins plus two AW3 allocation parser regressions only;
+no financial production-source, migration, permission or audit exception changes.
+All eighty migrations remain byte-identical to 2be9c76; frozen helper untouched.
+Clean versions, full local check (713 app / 47 simulated harness cases, all builds),
+dependency gate and 550-file secret scan passed. Exact CI remains pending at this
+checkpoint. This is not a source-path exception,
+main merge or hosted release. Historical execution blocker and separate Staging/
+Production acceptance remain open. See qa/AW3_ONLY_SECURITY_CANDIDATE.md.
+
+## Historical Baseline Records
+
 Last updated: 2026-10-11
 
 ## Current increment: cross-command concurrency verification

@@ -18,6 +18,38 @@ const payment = {
 }
 
 describe('AW3 command contracts', () => {
+  it('rejects oversized allocation collections before reading invalid invoice entries', () => {
+    let inspected = 0
+    const allocations = Array.from({ length: 501 }, () => ({
+      get invoiceId() {
+        inspected++
+        return 'invalid-invoice'
+      },
+      amountMinor: 0,
+    }))
+    const result = wholesalePaymentAllocationRequestSchema.safeParse({ ...payment, allocations })
+    expect(result.success).toBe(false)
+    expect(inspected).toBe(0)
+    if (!result.success) {
+      expect(result.error.issues).toEqual([
+        expect.objectContaining({ code: 'too_big', maximum: 500, path: ['allocations'] }),
+      ])
+    }
+  })
+
+  it('accepts exactly 500 unique invoice allocations whose centavos match the receipt', () => {
+    const allocations = Array.from({ length: 500 }, (_, index) => ({
+      invoiceId: `10000000-0000-4000-8000-${(index + 1).toString(16).padStart(12, '0')}`,
+      amountMinor: 1,
+    }))
+    expect(
+      wholesalePaymentAllocationRequestSchema.parse({ ...payment, amountMinor: 500, allocations }).allocations,
+    ).toEqual(allocations)
+    expect(
+      wholesalePaymentAllocationRequestSchema.safeParse({ ...payment, amountMinor: 499, allocations }).success,
+    ).toBe(false)
+  })
+
   it('keeps unclassified debt unknown and rejects misleading zero-balance projections', () => {
     const invoice = {
       invoiceId,
