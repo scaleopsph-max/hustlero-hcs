@@ -1,5 +1,19 @@
 # Catalog Import Preview Candidate
 
+Intermediate head 6c2c2b68ae964019af89ee9876ad833b54de8c51 passed push/PR CI
+40316428903 / 40316435288. Follow-up self-review found entitlement expiry during
+product wrapper request-key waits could still return historical success. Added
+create/update overlap regressions in test-only ffcffa5; two post-key-lock access
+checks in the new, never-hosted category migration correct that edge. Red checkpoint
+ffcffa531573d0f373b671543a59a9623a8726d6 failed both push/PR CI 40316661076 /
+40316666851 exactly on create historical replay: actual unexpected-success versus
+expected HCS10 after the real key-lock wait. Reset, 1,968 pgTAP assertions and
+earlier overlaps passed, and cleanup completed. Update is covered by the same
+regression loop, but stopped after the first red create assertion; do not claim
+both failed independently. Fixed-head green CI remains pending. No applied
+migration or frozen hosted helper was rewritten. Preview row details now expose
+category, cost, tracking, retained barcodes and description before any future post.
+
 Continuation of the approved five-slice source batch on draft PR #10. This is a
 read-only vertical preview slice, NOT a completed importer or authorization to
 create products. Category manager's prior exact CI is recorded separately.

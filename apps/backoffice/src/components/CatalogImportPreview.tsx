@@ -210,6 +210,31 @@ export function CatalogImportPreview() {
                     <td className="max-w-72 break-words p-3">
                       <strong>{row.name}</strong>
                       <div className="text-xs text-ink-500">{row.variantName}</div>
+                      <details className="mt-2 text-xs">
+                        <summary className="cursor-pointer font-semibold">Details</summary>
+                        <dl className="mt-2 space-y-2">
+                          <div>
+                            <dt>Category</dt>
+                            <dd>{row.categoryName ?? 'Uncategorized'}</dd>
+                          </div>
+                          <div>
+                            <dt>Unit cost</dt>
+                            <dd>{row.unitCostMinor === null ? 'Not set' : formatPeso(row.unitCostMinor)}</dd>
+                          </div>
+                          <div>
+                            <dt>Track inventory</dt>
+                            <dd>{row.trackInventory ? 'Yes' : 'No'}</dd>
+                          </div>
+                          <div>
+                            <dt>Barcodes</dt>
+                            <dd className="break-all">{row.barcodes.join(', ') || 'None'}</dd>
+                          </div>
+                          <div>
+                            <dt>Description</dt>
+                            <dd className="break-words">{row.description || 'None'}</dd>
+                          </div>
+                        </dl>
+                      </details>
                     </td>
                     <td className="whitespace-nowrap p-3">
                       {row.retailPriceMinor === null ? '-' : formatPeso(row.retailPriceMinor)}

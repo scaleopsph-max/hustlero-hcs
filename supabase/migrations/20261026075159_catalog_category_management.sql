@@ -137,6 +137,7 @@ declare v_name text; v_result jsonb; v_existing app.idempotency_records%rowtype;
 begin
  perform app.lock_catalog_access(p_actor,p_tenant,true);
  perform pg_advisory_xact_lock(hashtextextended(p_tenant::text||':catalog.product.create:'||p_key,0));
+ perform app.lock_catalog_access(p_actor,p_tenant,true);
  select * into v_existing from app.idempotency_records where tenant_id=p_tenant and operation='catalog.product.create' and idempotency_key=p_key;
  if found then
   if v_existing.request_hash<>v_hash then raise exception using errcode='HCS08',message='Request key conflict'; end if;
@@ -158,6 +159,7 @@ declare v_name text; v_result jsonb; v_existing app.idempotency_records%rowtype;
 begin
  perform app.lock_catalog_access(p_actor,p_tenant,true);
  perform pg_advisory_xact_lock(hashtextextended(p_tenant::text||':catalog.product.update:'||p_key,0));
+ perform app.lock_catalog_access(p_actor,p_tenant,true);
  select * into v_existing from app.idempotency_records where tenant_id=p_tenant and operation='catalog.product.update' and idempotency_key=p_key;
  if found then
   if v_existing.request_hash<>v_hash then raise exception using errcode='HCS08',message='Request key conflict'; end if;

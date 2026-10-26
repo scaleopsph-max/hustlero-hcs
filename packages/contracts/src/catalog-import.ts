@@ -57,6 +57,7 @@ export const catalogImportPreviewResponseSchema = z.object({
         name: z.string(),
         description: z.string().nullable(),
         categoryId: id.nullable(),
+        categoryName: z.string().nullable(),
         variantName: z.string(),
         sku: z.string(),
         barcodes: z.array(z.string()),

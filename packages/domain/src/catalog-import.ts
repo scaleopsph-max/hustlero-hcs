@@ -34,6 +34,7 @@ export type CatalogImportPlannedRow = {
   name: string
   description: string | null
   categoryId: string | null
+  categoryName: string | null
   variantName: string
   sku: string
   barcodes: string[]
@@ -142,6 +143,7 @@ export function planCatalogImport(
       name,
       description,
       categoryId: categoryMatches[0]?.id ?? null,
+      categoryName: categoryMatches[0]?.name ?? (category || null),
       variantName,
       sku,
       barcodes,
