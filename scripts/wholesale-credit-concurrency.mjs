@@ -1882,8 +1882,50 @@ try {
     ).rows[0].count,
     0,
   )
+  for (const operation of ['create', 'update']) {
+    const replayKey = operation === 'create' ? 'category-product-ASSIGN-FIRST' : 'category-update-expiry-replay'
+    const updateBody = { name: 'Replay product', categoryId: assignFirstCategory, description: null }
+    await observer.query(
+      "update app.tenant_entitlements set ends_at=clock_timestamp()+interval '5 seconds' where tenant_id=$1 and feature_code='catalog'",
+      [tenant],
+    )
+    if (operation === 'update')
+      await observer.query('select app.update_catalog_product_selected_category($1,$2,$3,$4::jsonb,$5,$5,$5)', [
+        actor,
+        tenant,
+        categoryProduct,
+        JSON.stringify(updateBody),
+        replayKey,
+      ])
+    await observer.query(
+      "update app.tenant_entitlements set ends_at=clock_timestamp()+interval '1 second' where tenant_id=$1 and feature_code='catalog'",
+      [tenant],
+    )
+    await first.query('begin')
+    await first.query('select pg_advisory_xact_lock(hashtextextended($1,0))', [
+      `${tenant}:catalog.product.${operation}:${replayKey}`,
+    ])
+    const replay = (
+      operation === 'create'
+        ? selectedProduct(second, assignFirstCategory, 'ASSIGN-FIRST')
+        : second.query('select app.update_catalog_product_selected_category($1,$2,$3,$4::jsonb,$5,$5,$5)', [
+            actor,
+            tenant,
+            categoryProduct,
+            JSON.stringify(updateBody),
+            replayKey,
+          ])
+    ).then(
+      () => 'unexpected-success',
+      (error) => error.code,
+    )
+    await waitForLock()
+    await delay(1100)
+    await first.query('commit')
+    assert.equal(await replay, 'HCS10', `${operation} historical replay must reject expiry after request-key wait`)
+  }
   console.log(
-    'Catalog category concurrency passed: archive/assignment admission order, ID-preserving rename, one-effect same-key replay, queued suspension and wallclock expiry deny writes.',
+    'Catalog category concurrency passed: archive/assignment admission order, ID-preserving rename, one-effect same-key replay, queued suspension, wallclock expiry and expired create/update historical replay deny writes.',
   )
 } finally {
   // Release any held fixture transaction before closing another session waiting on it.
