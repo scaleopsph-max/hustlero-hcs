@@ -2,6 +2,15 @@
 
 ## Current Follow-Up: AW3 Fund Refresh Recovery
 
+Continuous October 26 follow-up: fixed the same refresh-completion order for
+credit settings/opening receivables, corrupt empty credit storage handling and
+stale-success messages on manual credit/payment refresh. Seventeen new regressions;
+full local check passed 743 app / 47 simulated harness cases and all builds.
+Synthetic actual-component settings/opening/payment checks and original fund
+browser rerun passed with mocked Auth/API; no hosted action. New-head CI pending.
+This extends draft PR #8 against the AW3-only candidate, not main; no merge or
+release-source exception. Server/SQL/financial rules and execution blocker unchanged.
+
 October 26: owner requested local development while Support resolution is pending.
 On codex/aw3-fund-refresh-recovery, fixed funds UI clearing pending commands and
 showing success before history refresh. Completion now verifies the refreshed

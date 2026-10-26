@@ -44,3 +44,28 @@ migrations, Auth configuration, hosted credentials or test-runner execution poli
 No fresh SQL test or hosted acceptance result is implied by local app checks.
 The existing exact-candidate CI remains evidence only for 10181e8, not this patch.
 Source review/CI and existing hosted execution/source-path/acceptance gates remain.
+
+## Continuous Credit And Payment Follow-Up
+
+The same premature pending-clear/success order existed in credit settings and
+opening receivables. Both now validate the original POST response and complete
+both context reads before clearing storage or reporting success. The UI does not
+require current credit settings or an invoice's remaining balance to equal the
+historical POST response: subsequent authorized revisions/payments are legitimate,
+and the original-key replay must not overwrite or reject them.
+
+Only null storage means no pending credit command; empty/corrupt values now fail
+closed instead of silently preparing a replacement command. Manual credit and
+payment refresh clear stale success before loading, including failed refreshes.
+No change to original permissions, payment terms, opening computation or API/SQL.
+
+Seventeen new credit regressions passed; focused payment/fund/credit suite is 146.
+Full local check passed 743 app tests, 47 simulated harness cases and all builds.
+Synthetic actual-component browser checks passed settings/opening POST-success
+refresh loss (including failure of the second read), reload and exact-key/body
+retry with one mock posting, corrupt empty storage fail-closed, stale-success
+clearing for payments/credit and mobile screenshots/overflow. Original fund browser
+batch was rerun and passed. Auth/API remain mocked. The first new browser harness
+attempt reset its own synthetic state on reload; fixture initialization was fixed
+and the final batch passed. Exact-head CI for this additional source commit must
+complete separately; prior 726-test CI does not prove the new head.
