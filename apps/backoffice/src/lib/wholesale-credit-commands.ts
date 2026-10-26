@@ -4,6 +4,8 @@ import {
   wholesaleCreditSettingsResponseSchema,
   wholesaleOpeningReceivableRequestSchema,
   wholesaleOpeningReceivableResponseSchema,
+  wholesaleCreditSettingsContextSchema,
+  wholesaleReceivablesContextSchema,
   type WholesaleCreditSettingsContext,
   type WholesaleReceivablesContext,
 } from '@hcs/contracts'
@@ -15,6 +17,23 @@ export const pendingCreditCommandSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('opening'), key: identity, payload: wholesaleOpeningReceivableRequestSchema }).strict(),
 ])
 export type PendingCreditCommand = z.infer<typeof pendingCreditCommandSchema>
+
+export function restoreCreditCommand(stored: string | null): PendingCreditCommand | null {
+  return stored === null ? null : pendingCreditCommandSchema.parse(JSON.parse(stored))
+}
+
+export async function refreshConfirmedCreditCommand(
+  command: PendingCreditCommand,
+  value: unknown,
+  refresh: () => Promise<{ settings: unknown; receivables: unknown }>,
+) {
+  validateCreditCommandResponse(command, value)
+  const next = await refresh()
+  return {
+    settings: wholesaleCreditSettingsContextSchema.parse(next.settings),
+    receivables: wholesaleReceivablesContextSchema.parse(next.receivables),
+  }
+}
 
 export function prepareCreditSettings(
   data: WholesaleCreditSettingsContext,

@@ -7,6 +7,7 @@ import {
   restoreFundReversal,
   reconcileFundReversal,
   fundReversalDefinitivelyRejected,
+  fundReversalCommandMatches,
   type PendingFundReversal,
 } from '@/lib/wholesale-fund-reversal'
 
@@ -14,8 +15,9 @@ type Props = {
   storage: string
   data: WholesaleFundsContext
   execute: (command: PendingFundReversal) => Promise<{ result: unknown; history: WholesaleFundsContext }>
+  disabled?: boolean
 }
-export function WholesaleFundReversalForm({ storage, data, execute }: Props) {
+export function WholesaleFundReversalForm({ storage, data, execute, disabled = false }: Props) {
   const [pending, setPending] = useState<PendingFundReversal | null>(null)
   const [payment, setPayment] = useState(''),
     [reason, setReason] = useState('')
@@ -24,25 +26,36 @@ export function WholesaleFundReversalForm({ storage, data, execute }: Props) {
   const [error, setError] = useState<string | null>(null),
     [message, setMessage] = useState<string | null>(null)
   const locked = useRef(false)
+  const [recoveryReady, setRecoveryReady] = useState(false)
   const [canDismiss, setCanDismiss] = useState(false)
   const selected = data.payments.find((row) => row.paymentId === (pending?.payload.paymentId ?? payment))
   useEffect(() => {
     try {
       setPending(restoreFundReversal(sessionStorage.getItem(storage)))
+      setRecoveryReady(true)
     } catch {
+      setRecoveryReady(false)
       setError('Pending reversal could not be read. Original command must be reconciled.')
       locked.current = true
     }
   }, [storage])
+  function clearOriginal(command: PendingFundReversal) {
+    if (!fundReversalCommandMatches(command, restoreFundReversal(sessionStorage.getItem(storage))))
+      throw new Error('Saved reversal changed. Reload to reconcile the pending command.')
+    sessionStorage.removeItem(storage)
+  }
   async function submit(event: FormEvent) {
     event.preventDefault()
-    if (locked.current || !data.canReverse) return
+    if (!recoveryReady || disabled || locked.current || !data.canReverse) return
     locked.current = true
     setBusy(true)
     setError(null)
     setMessage(null)
     setCanDismiss(false)
     try {
+      const stored = restoreFundReversal(sessionStorage.getItem(storage))
+      if (pending ? !fundReversalCommandMatches(pending, stored) : stored !== null)
+        throw new Error('Saved reversal changed. Reload to reconcile the pending command.')
       const command = pending ?? {
         key: crypto.randomUUID(),
         payload: wholesaleFundReversalRequestSchema.parse({ paymentId: payment, reason, reversalConfirmed: confirmed }),
@@ -51,7 +64,7 @@ export function WholesaleFundReversalForm({ storage, data, execute }: Props) {
       setPending(command)
       const { result, history } = await execute(command)
       reconcileFundReversal(command, result, history)
-      sessionStorage.removeItem(storage)
+      clearOriginal(command)
       setPending(null)
       setConfirmed(false)
       setMessage('Original fund allocation reversed. No customer payout recorded.')
@@ -76,21 +89,30 @@ export function WholesaleFundReversalForm({ storage, data, execute }: Props) {
       {pending && canDismiss && (
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || disabled}
           className="rounded border border-ink-900/20 px-3 py-2"
           onClick={() => {
-            sessionStorage.removeItem(storage)
-            setPending(null)
-            setCanDismiss(false)
-            setError(null)
-            setPayment('')
-            setConfirmed(false)
+            if (!pending || locked.current || disabled) return
+            try {
+              clearOriginal(pending)
+              setPending(null)
+              setCanDismiss(false)
+              setError(null)
+              setPayment('')
+              setConfirmed(false)
+            } catch (cause) {
+              setCanDismiss(false)
+              setError(cause instanceof Error ? cause.message : 'Original reversal could not be reconciled.')
+            }
           }}
         >
           Dismiss rejected reversal
         </button>
       )}
-      <fieldset disabled={busy || !!pending || !data.canReverse} className="min-w-0 space-y-3 disabled:opacity-60">
+      <fieldset
+        disabled={busy || disabled || !!pending || !data.canReverse || !recoveryReady}
+        className="min-w-0 space-y-3 disabled:opacity-60"
+      >
         <label className="block space-y-1">
           <span>Original allocated receipt</span>
           <select
@@ -143,7 +165,7 @@ export function WholesaleFundReversalForm({ storage, data, execute }: Props) {
         </label>
       </fieldset>
       <button
-        disabled={busy || !data.canReverse}
+        disabled={busy || disabled || !data.canReverse || !recoveryReady}
         className="inline-flex items-center gap-2 rounded border border-ink-900/20 px-4 py-2 disabled:opacity-50"
       >
         <Undo2 size={18} />

@@ -42,6 +42,9 @@
     "vitest": "4.1.11"
   },
   "overrides": {
+    "miniflare": {
+      "undici": "7.30.1"
+    },
     "sharp": "$sharp",
     "source-map-js": "1.2.2",
     "vite": "8.3.4"
