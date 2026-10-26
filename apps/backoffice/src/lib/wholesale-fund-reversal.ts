@@ -17,6 +17,15 @@ export function fundReversalDefinitivelyRejected(code: unknown): boolean {
 export function restoreFundReversal(stored: string | null): PendingFundReversal | null {
   return stored === null ? null : pendingFundReversalSchema.parse(JSON.parse(stored))
 }
+export function fundReversalCommandMatches(command: PendingFundReversal, stored: PendingFundReversal | null) {
+  return (
+    stored !== null &&
+    stored.key === command.key &&
+    stored.payload.paymentId === command.payload.paymentId &&
+    stored.payload.reason === command.payload.reason &&
+    stored.payload.reversalConfirmed === command.payload.reversalConfirmed
+  )
+}
 export function reconcileFundReversal(command: PendingFundReversal, value: unknown, history: WholesaleFundsContext) {
   const result = wholesaleFundReversalResponseSchema.parse(value)
   const payment = history.payments.find((row) => row.paymentId === command.payload.paymentId)

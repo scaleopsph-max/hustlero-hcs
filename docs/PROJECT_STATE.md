@@ -1,5 +1,21 @@
 # Project State
 
+## Current Priority: Combined AW3 And AW4 Source Closeout
+
+October 26 owner clarified all remaining AW3/AW4 development/QA; Online Store last.
+On codex/aw3-aw4-source-closeout from PR #7 d256339, integrated PR #8 frontend/
+shared-UI fixes without merging either PR or changing frozen AW3 runner. Preserved
+AW4 reversal code/error policy, fixed schema fixture mismatches and added combined
+fund allocation/reversal/recovery DOM tests. Fixed corrupt-recovery controls and
+an independently found P2 stale-completion storage race; red/green tests retained.
+Independent bounded re-review: no remaining actionable finding; review is not
+release approval. Added deferred Auth/history wait tests after reviewer noted gap.
+Final full local check passed 980 app / 47 simulated harness cases and all builds;
+exact source CI pending. Actual combined read-only returns/funds browser
+desktop/mobile checks passed with mocked Auth/API. No SQL/API/domain/contract
+definition/lockfile/workflow or hosted change. All 84 migration scripts unchanged.
+See qa/AW3_AW4_SOURCE_CLOSEOUT.md for module inventory, evidence and release holds.
+
 ## Current Follow-Up: AW4 Computation Regression And Dependency Hardening
 
 Owner requested next local development while hosted execution remains blocked.
