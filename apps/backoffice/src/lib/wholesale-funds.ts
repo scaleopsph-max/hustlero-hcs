@@ -1,5 +1,9 @@
 import { z } from 'zod'
-import { wholesaleFundAllocationRequestSchema, wholesaleFundAllocationResponseSchema } from '@hcs/contracts'
+import {
+  wholesaleFundAllocationRequestSchema,
+  wholesaleFundAllocationResponseSchema,
+  wholesaleFundsContextSchema,
+} from '@hcs/contracts'
 
 export const pendingFundAllocationSchema = z.strictObject({
   key: z.string().regex(/^[A-Za-z0-9_-]{16,128}$/),
@@ -20,6 +24,28 @@ export function validateFundAllocationResponse(command: PendingFundAllocation, v
   )
     throw new Error('Allocation response does not match the pending request. Retry the original request.')
   return response
+}
+
+export async function refreshConfirmedFundAllocation(
+  command: PendingFundAllocation,
+  value: unknown,
+  refresh: () => Promise<unknown>,
+) {
+  const response = validateFundAllocationResponse(command, value)
+  const context = wholesaleFundsContextSchema.parse(await refresh())
+  const receipts = context.payments.filter((item) => item.paymentId === command.payload.paymentId)
+  const receipt = receipts[0]
+  if (
+    receipts.length !== 1 ||
+    !receipt?.allocation ||
+    BigInt(receipt.amountMinor) !== BigInt(command.payload.capitalMinor) + BigInt(command.payload.operatingMinor) ||
+    receipt.allocation.paymentId !== response.paymentId ||
+    receipt.allocation.capitalMinor !== response.capitalMinor ||
+    receipt.allocation.operatingMinor !== response.operatingMinor ||
+    Date.parse(receipt.allocation.recordedAt) !== Date.parse(response.recordedAt)
+  )
+    throw new Error('Recorded allocation does not match the pending request. Retry the original request.')
+  return context
 }
 
 export function fundAllocationDefinitivelyRejected(code: string | undefined): boolean {

@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Check } from 'lucide-react'
+import { ArrowLeft, Check, RefreshCw } from 'lucide-react'
 import {
   wholesaleFundAllocationRequestSchema,
   wholesaleFundsContextSchema,
@@ -15,8 +15,8 @@ import { parsePaymentMoney } from '@/lib/wholesale-payment'
 import { StagingRecoveryControls, assertRecoveryPending, recoveryRequest } from '@/lib/staging-recovery-entry'
 import {
   fundAllocationDefinitivelyRejected,
+  refreshConfirmedFundAllocation,
   restoreFundAllocation,
-  validateFundAllocationResponse,
   type PendingFundAllocation,
 } from '@/lib/wholesale-funds'
 
@@ -96,6 +96,30 @@ export function WholesaleFundsWorkspace() {
       active = false
     }
   }, [auth])
+  async function refresh() {
+    if (!auth || !scope || locked.current) return
+    locked.current = true
+    setBusy(true)
+    setError(null)
+    setMessage(null)
+    setData(null)
+    try {
+      const { data: session, error: sessionError } = await auth.auth.getSession()
+      if (sessionError) throw sessionError
+      if (!session.session || session.session.user.id !== scope.user)
+        throw new Error('Sign in to the original account.')
+      setData(
+        wholesaleFundsContextSchema.parse(
+          await call('/v1/wholesale/funds', session.session.access_token, scope.tenant),
+        ),
+      )
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not refresh funds.')
+    } finally {
+      locked.current = false
+      setBusy(false)
+    }
+  }
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (!auth || !scope || !data?.canManage || locked.current) return
@@ -130,22 +154,21 @@ export function WholesaleFundsWorkspace() {
         sessionStorage.setItem(scope.storage, JSON.stringify(command))
         setPending(command)
       }
-      validateFundAllocationResponse(
+      const next = await refreshConfirmedFundAllocation(
         command,
         await recoveryRequest({ scope, path: '/v1/wholesale/funds', key: command.key, body: command.payload }, () =>
           call('/v1/wholesale/funds', session.session!.access_token, scope.tenant, command!),
         ),
+        () => {
+          setData(null)
+          return call('/v1/wholesale/funds', session.session!.access_token, scope.tenant)
+        },
       )
       sessionStorage.removeItem(scope.storage)
       setPending(null)
       setConfirmed(false)
       setMessage('Fund allocation recorded. No bank transfer was made.')
-      setData(null)
-      setData(
-        wholesaleFundsContextSchema.parse(
-          await call('/v1/wholesale/funds', session.session.access_token, scope.tenant),
-        ),
-      )
+      setData(next)
     } catch (cause) {
       const code = (cause as { code?: string }).code
       if (fundAllocationDefinitivelyRejected(code)) {
@@ -161,10 +184,22 @@ export function WholesaleFundsWorkspace() {
   return (
     <div className="min-w-0 space-y-5 p-4 md:p-6">
       {scope && data && <StagingRecoveryControls family="funds" scope={scope} context={data} />}
-      <Link href="/wholesale/payments" className="inline-flex items-center gap-2">
-        <ArrowLeft size={18} />
-        Payments
-      </Link>
+      <div className="flex items-center justify-between gap-4">
+        <Link href="/wholesale/payments" className="inline-flex items-center gap-2">
+          <ArrowLeft size={18} />
+          Payments
+        </Link>
+        <button
+          type="button"
+          title="Refresh funds"
+          aria-label="Refresh funds"
+          disabled={busy || !scope}
+          onClick={() => void refresh()}
+          className="grid size-10 place-items-center rounded border border-ink-900/20 disabled:opacity-50"
+        >
+          <RefreshCw size={18} />
+        </button>
+      </div>
       {error && (
         <p role="alert" className="border-l-2 border-red-500 bg-red-50 p-3">
           {error}

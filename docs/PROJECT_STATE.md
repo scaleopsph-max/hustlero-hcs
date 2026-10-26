@@ -1,5 +1,18 @@
 # Project State
 
+## Current Follow-Up: AW3 Fund Refresh Recovery
+
+October 26: owner requested local development while Support resolution is pending.
+On codex/aw3-fund-refresh-recovery, fixed funds UI clearing pending commands and
+showing success before history refresh. Completion now verifies the refreshed
+receipt/split/event; failed refresh retains original retry identity. Added a
+read-only refresh control. No server/SQL/Auth policy or financial posting changes.
+Local full check passed 726 app / 47 simulated harness cases, all builds and
+dependency gate. Synthetic component browser recovery/read-only/desktop/mobile
+checks passed with mocked Auth/API only. Exact new-head CI/review remains pending;
+prior 10181e8 CI success does not verify this follow-up. No live change or bypass.
+See qa/AW3_FUND_REFRESH_RECOVERY.md. Hosted release/source-path gates stay open.
+
 ## Current Follow-Up: AW3-Only Security Candidate
 
 Owner prioritized AW3 completion. Prepared isolated source candidate from reviewed
