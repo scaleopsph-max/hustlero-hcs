@@ -1,5 +1,13 @@
 export { canUseCapability, type ActorType, type RequestContext } from './request-context'
 export {
+  catalogImportColumns,
+  catalogImportMoney,
+  planCatalogImport,
+  type CatalogImportRawRow,
+  type CatalogImportSnapshot,
+  type CatalogImportPlannedRow,
+} from './catalog-import'
+export {
   wholesaleInvoiceDueDate,
   wholesaleReceivableAging,
   wholesaleCreditExposure,

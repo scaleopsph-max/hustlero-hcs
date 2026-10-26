@@ -8,7 +8,7 @@ import {
   wholesaleCreditRefundResponseSchema,
   wholesaleReturnsContextSchema,
 } from '@hcs/contracts'
-import { quoteWholesaleReturn, wholesaleReturnSettlement } from '@hcs/domain'
+import { quoteWholesaleReturn, wholesaleReturnSettlement, planCatalogImport } from '@hcs/domain'
 import {
   loadWholesaleReturnsFromPostgres,
   postWholesaleReturnInPostgres,
@@ -107,6 +107,8 @@ import {
   catalogProductUpdateResponseSchema,
   catalogResponseSchema,
   catalogCategoriesContextSchema,
+  catalogImportPreviewRequestSchema,
+  catalogImportPreviewResponseSchema,
   catalogCategoryCommandSchema,
   catalogCategoryCommandResponseSchema,
   catalogVariantCreateRequestSchema,
@@ -180,6 +182,7 @@ import {
 } from '@hcs/contracts'
 import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
+import { bodyLimit } from 'hono/body-limit'
 import { requestId } from 'hono/request-id'
 
 import { readBearerToken, verifySupabaseAccessToken, type AccessTokenVerifier } from './auth'
@@ -222,6 +225,8 @@ import {
   createCatalogVariantInPostgres,
   deactivateCatalogVariantInPostgres,
   loadCatalogFromPostgres,
+  loadCatalogImportSnapshotFromPostgres,
+  type CatalogImportSnapshotLoader,
   loadCatalogCategoriesFromPostgres,
   manageCatalogCategoryInPostgres,
   type CatalogCategoriesLoader,
@@ -436,6 +441,7 @@ interface AppDependencies {
   loadOnboarding: OnboardingLoader
   updateOnboarding: OnboardingUpdater
   loadCatalog: CatalogLoader
+  loadCatalogImportSnapshot: CatalogImportSnapshotLoader
   loadCatalogCategories: CatalogCategoriesLoader
   manageCatalogCategory: CatalogCategoryCommander
   createCatalogProduct: CatalogProductCreator
@@ -548,6 +554,7 @@ const defaultDependencies: AppDependencies = {
   loadOnboarding: loadOnboardingFromPostgres,
   updateOnboarding: updateOnboardingInPostgres,
   loadCatalog: loadCatalogFromPostgres,
+  loadCatalogImportSnapshot: loadCatalogImportSnapshotFromPostgres,
   loadCatalogCategories: loadCatalogCategoriesFromPostgres,
   manageCatalogCategory: manageCatalogCategoryInPostgres,
   createCatalogProduct: createCatalogProductInPostgres,
@@ -2430,6 +2437,66 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
       throw error
     }
   })
+
+  app.post(
+    '/v1/catalog/imports/preview',
+    bodyLimit({
+      maxSize: 6 * 1024 * 1024,
+      onError: (context) =>
+        context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'CATALOG_IMPORT_TOO_LARGE',
+              message: 'Import request exceeds 6 MB.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          413,
+        ),
+    }),
+    async (context) => {
+      const fail = (code: string, message: string, status: 400 | 401 | 403 | 413) =>
+        context.json(
+          apiErrorResponseSchema.parse({ error: { code, message, requestId: context.get('requestId') } }),
+          status,
+        )
+      if (!readBearerToken(context.req.header('authorization')))
+        return fail('AUTHENTICATION_REQUIRED', 'Sign in to preview a catalog import.', 401)
+      const scope = await resolveWholesaleTenant(context)
+      if (!scope) return fail('CATALOG_ACCESS_DENIED', 'Select an authorized business.', 403)
+      const text = await context.req.text()
+      if (new TextEncoder().encode(text).byteLength > 6 * 1024 * 1024)
+        return fail('CATALOG_IMPORT_TOO_LARGE', 'Import request exceeds 6 MB.', 413)
+      let body: unknown
+      try {
+        body = JSON.parse(text)
+      } catch {
+        return fail('INVALID_CATALOG_IMPORT', 'Invalid import request.', 400)
+      }
+      const parsed = catalogImportPreviewRequestSchema.safeParse(body)
+      if (!parsed.success)
+        return fail('INVALID_CATALOG_IMPORT', 'Check the filename, row count and catalog columns.', 400)
+      try {
+        const snapshot = await dependencies.loadCatalogImportSnapshot(
+          scope.userId,
+          scope.tenantId,
+          parsed.data.rows,
+          context.env,
+        )
+        return context.json(
+          catalogImportPreviewResponseSchema.parse({
+            filename: parsed.data.filename,
+            rows: planCatalogImport(parsed.data.rows, snapshot),
+          }),
+        )
+      } catch (error) {
+        const code = postgresErrorCode(error)
+        if (code === 'HCS09' || code === 'HCS10')
+          return fail('CATALOG_ACCESS_DENIED', 'Catalog management access is unavailable.', 403)
+        throw error
+      }
+    },
+  )
 
   const wholesaleError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
     const code = postgresErrorCode(error)

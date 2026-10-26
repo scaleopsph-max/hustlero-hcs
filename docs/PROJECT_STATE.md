@@ -1,5 +1,29 @@
 # Project State
 
+## Current Priority: Catalog And Inventory Operations
+
+October 26 owner approved five source development/QA slices with APPROVED
+BLUEPRINT - PROCEED TO BUILD: Categories, catalog import, retail discounts,
+PCOUNT and suppliers. Modifiers/Productions deferred. PCOUNT create/post is
+Owner/Manager-only; other explicitly authorized staff may count. Dedicated entry
+permissions and branch access must not be inferred from inventory.manage alone.
+Discount ticket/use details remain a separate owner question before that slice.
+
+Categories first candidate 0339684 passed both CI runs: 1,017 app / 47 harness,
+1,953 SQL assertions / 55 files, six category concurrency cases plus existing
+overlaps and cleanup. Draft PR #10, no merge or hosted action. Selected category
+UUIDs replace free-text creation; referenced categories cannot archive.
+
+Catalog import preview now has CSV template/parser, bounded SKU/parent/barcode/
+category planning, authenticated API and guarded relevant snapshot, and UI with
+per-row validation. Final full check passed 1,073 app / 47 harness and all builds;
+focused planner/CSV/API/DOM/browser passed. Exact SQL CI pending at this document
+checkpoint. No Import/Post action:
+durable jobs, confirmation, asynchronous posting/results and write reconciliation
+are next. Discounts, PCOUNT and supplier enhancements are not claimed built.
+See qa/CATALOG_IMPORT_PREVIEW_CANDIDATE_2026-10-26.md. No live migration/deployment,
+credential/access grant, main merge or policy bypass; frozen hosted runner unchanged.
+
 ## Current Priority: Combined AW3 And AW4 Source Closeout
 
 October 26 owner clarified all remaining AW3/AW4 development/QA; Online Store last.

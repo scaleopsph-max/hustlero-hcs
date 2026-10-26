@@ -1,5 +1,10 @@
 # Category Manager Source Candidate
 
+Exact source checkpoint 03396847cc4386dcf5995f880583306ffbdb7921 passed push CI
+40290069995 and PR CI 40290078197: 1,017 app / 47 harness cases, 1,953 SQL
+assertions / 55 files, six category overlaps plus existing concurrency, reset and
+cleanup. The pending-CI wording below is the earlier committed checkpoint.
+
 Owner approved five core operations slices with APPROVED BLUEPRINT - PROCEED TO
 BUILD on October 26. Branch codex/catalog-inventory-operations starts at main
 b45b1f6. This first slice is Categories; catalog import, discounts, PCOUNT and

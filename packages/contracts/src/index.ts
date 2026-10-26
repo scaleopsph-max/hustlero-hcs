@@ -141,6 +141,14 @@ export {
   type CatalogVariantUpdateResponse,
   type CatalogResponse,
 } from './catalog'
+export {
+  catalogImportPreviewRequestSchema,
+  catalogImportPreviewResponseSchema,
+  catalogImportSnapshotSchema,
+  type CatalogImportPreviewRequest,
+  type CatalogImportPreviewResponse,
+  type CatalogImportSnapshot,
+} from './catalog-import'
 export { environmentSchema, healthResponseSchema, type HealthResponse } from './health'
 export {
   customerCreateRequestSchema,

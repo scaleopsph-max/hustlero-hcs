@@ -3,6 +3,9 @@ import {
   catalogProductUpdateResponseSchema,
   catalogResponseSchema,
   catalogCategoriesContextSchema,
+  catalogImportSnapshotSchema,
+  type CatalogImportSnapshot,
+  type CatalogImportPreviewRequest,
   catalogCategoryCommandResponseSchema,
   type CatalogCategoryCommand,
   type CatalogCategoryCommandResponse,
@@ -27,6 +30,43 @@ import { z } from 'zod'
 import type { Bindings } from './env'
 
 export type CatalogLoader = (userId: string, tenantId: string, bindings: Bindings) => Promise<CatalogResponse>
+export type CatalogImportSnapshotLoader = (
+  userId: string,
+  tenantId: string,
+  rows: CatalogImportPreviewRequest['rows'],
+  bindings: Bindings,
+) => Promise<CatalogImportSnapshot>
+export const loadCatalogImportSnapshotFromPostgres: CatalogImportSnapshotLoader = async (
+  userId,
+  tenantId,
+  rows,
+  bindings,
+) => {
+  const client = new Client({ connectionString: connectionString(bindings) })
+  try {
+    await client.connect()
+    const result = await client.query(
+      'select app.load_catalog_import_snapshot($1::uuid,$2::uuid,$3::text[],$4::text[],$5::text[]) response',
+      [
+        userId,
+        tenantId,
+        [
+          ...new Set(
+            rows
+              .flatMap((row) => [row.sku ?? '', row.product_sku ?? ''])
+              .map((value) => value.trim().toUpperCase())
+              .filter(Boolean),
+          ),
+        ],
+        [...new Set(rows.map((row) => (row.barcode ?? '').trim().toUpperCase()).filter(Boolean))],
+        [...new Set(rows.map((row) => (row.category ?? '').trim().toLowerCase()).filter(Boolean))],
+      ],
+    )
+    return catalogImportSnapshotSchema.parse(result.rows[0]?.response)
+  } finally {
+    await client.end()
+  }
+}
 export type CatalogCategoriesLoader = (
   userId: string,
   tenantId: string,
