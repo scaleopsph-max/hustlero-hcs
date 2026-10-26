@@ -1,5 +1,17 @@
 # Project State
 
+## Current Follow-Up: AW3 Report Reconciliation
+
+October 26: fixed payment-report receipt display losing one cent at the supported
+safe-integer boundary by using the existing exact BigInt report formatter. Bound
+loaded-report scope to POS/wholesale channel as well as date/branch. Six new
+regressions; full local check passed 749 app / 47 simulated harness cases, all
+builds. Synthetic actual-component report/CSV/filter/channel/browser checks and
+original credit/fund batches passed with mocked Auth/API. Exact new-head CI pending.
+No SQL/API/domain/contracts/lockfile or hosted change. Draft PR #8 targets the
+isolated AW3 branch, not main. Shared formatPeso's other-screen extreme-amount
+display remains a separate follow-up. See qa/AW3_PAYMENT_REPORT_RECONCILIATION.md.
+
 ## Current Follow-Up: AW3 Fund Refresh Recovery
 
 Continuous October 26 follow-up: fixed the same refresh-completion order for

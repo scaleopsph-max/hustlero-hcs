@@ -7,7 +7,6 @@ import {
   sessionContextResponseSchema,
   type PosPaymentReferenceReport,
 } from '@hcs/contracts'
-import { formatPeso } from '@hcs/ui'
 import { createClient } from '@/lib/supabase-browser'
 import { selectActiveTenant } from '@/lib/active-tenant'
 import {
@@ -49,7 +48,10 @@ export function PaymentReferenceReport({ wholesale = false }: { wholesale?: bool
   const [method, setMethod] = useState('')
   const [loadedReport, setReport] = useState<PosPaymentReferenceReport | null>(null)
   const [loadedScope, setLoadedScope] = useState<PaymentReferenceScope | null>(null)
-  const report = paymentReferenceScopeMatches(loadedScope, { from, to, locationId: location }) ? loadedReport : null
+  const channel = wholesale ? 'wholesale' : 'pos'
+  const report = paymentReferenceScopeMatches(loadedScope, { from, to, locationId: location, channel })
+    ? loadedReport
+    : null
   const [locations, setLocations] = useState<PosPaymentReferenceReport['locations']>([])
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -63,7 +65,7 @@ export function PaymentReferenceReport({ wholesale = false }: { wholesale?: bool
     setBusy(true)
     setError(null)
     setReport(null)
-    const requestedScope = { from, to, locationId: location }
+    const requestedScope: PaymentReferenceScope = { from, to, locationId: location, channel }
     try {
       if (!auth) throw new Error('Authentication is not configured.')
       const { data, error: sessionError } = await auth.auth.getSession()
@@ -75,7 +77,7 @@ export function PaymentReferenceReport({ wholesale = false }: { wholesale?: bool
       if (scope.current && (scope.current.user !== data.session.user.id || scope.current.tenant !== tenant.tenantId))
         throw new Error('Business or account changed. Reload this page.')
       scope.current = { user: data.session.user.id, tenant: tenant.tenantId }
-      const query = new URLSearchParams({ from, to, channel: wholesale ? 'wholesale' : 'pos' })
+      const query = new URLSearchParams({ from, to, channel: requestedScope.channel })
       if (location) query.set('locationId', location)
       const next = posPaymentReferenceReportSchema.parse(
         await call(
@@ -118,6 +120,7 @@ export function PaymentReferenceReport({ wholesale = false }: { wholesale?: bool
             {
               from,
               to,
+              channel,
               locationId: location,
               branchName: location
                 ? (locations.find((item) => item.id === location)?.name ?? location)
@@ -279,7 +282,7 @@ export function PaymentReferenceReport({ wholesale = false }: { wholesale?: bool
                     <td className="p-3">{row.cashierName}</td>
                     <td className="p-3">{row.customerName ?? '-'}</td>
                     <td className="p-3">{row.methodName}</td>
-                    <td className="p-3">{formatPeso(row.amountMinor)}</td>
+                    <td className="p-3">PHP {paymentReferenceDecimal(BigInt(row.amountMinor))}</td>
                     <td className="whitespace-nowrap p-3">
                       {row.referenceLastFour ? `Ref ${row.referenceLastFour}` : 'Not recorded'}
                     </td>
