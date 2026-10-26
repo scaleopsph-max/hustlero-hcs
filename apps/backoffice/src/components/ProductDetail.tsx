@@ -68,6 +68,7 @@ export function ProductDetail({ productId }: { productId: string }) {
   const [product, setProduct] = useState<CatalogResponse['products'][number] | null>(null)
   const [name, setName] = useState('')
   const [categoryName, setCategoryName] = useState('')
+  const [categories, setCategories] = useState<CatalogResponse['categories']>([])
   const [description, setDescription] = useState('')
   const [variantName, setVariantName] = useState('Black / XL')
   const [variantSku, setVariantSku] = useState('')
@@ -91,7 +92,8 @@ export function ProductDetail({ productId }: { productId: string }) {
       if (!nextProduct) throw new Error('Product not found.')
       setProduct(nextProduct)
       setName(nextProduct.name)
-      setCategoryName(nextProduct.category?.name ?? '')
+      setCategoryName(nextProduct.category?.id ?? '')
+      setCategories(catalog.categories)
       setDescription(nextProduct.description ?? '')
     },
     [auth, productId],
@@ -130,7 +132,8 @@ export function ProductDetail({ productId }: { productId: string }) {
     setNotice(null)
     const request: CatalogProductUpdateRequest = {
       name: name.trim(),
-      categoryName: categoryName.trim() || null,
+      categoryName: null,
+      categoryId: categoryName || null,
       description: description.trim() || null,
     }
     let requestToken = token
@@ -488,13 +491,18 @@ export function ProductDetail({ productId }: { productId: string }) {
               </label>
               <label className="text-sm font-medium">
                 Category
-                <input
+                <select
                   className={`${inputClass} mt-1.5`}
-                  maxLength={80}
                   value={categoryName}
                   onChange={(event) => setCategoryName(event.target.value)}
-                  placeholder="Optional"
-                />
+                >
+                  <option value="">Uncategorized</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="text-sm font-medium">
                 Description

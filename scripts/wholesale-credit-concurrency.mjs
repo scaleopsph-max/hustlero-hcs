@@ -1744,6 +1744,147 @@ try {
   console.log(
     'AW4 fund reversal concurrency passed: overlapping same-key replay and different-key duplicate denial; fund-account wait precedes common event time; original splits net to zero exactly once.',
   )
+  const categoryCommand = (client, body, key) =>
+    client.query('select app.manage_catalog_category($1,$2,$3::jsonb,$4,$4,$4) response', [
+      actor,
+      tenant,
+      JSON.stringify(body),
+      key,
+    ])
+  const selectedProduct = (client, categoryId, suffix) =>
+    client.query('select app.create_catalog_product_selected_category($1,$2,$3::jsonb,$4,$4,$4) response', [
+      actor,
+      tenant,
+      JSON.stringify({
+        name: `Category ${suffix}`,
+        categoryId,
+        variantName: 'Default',
+        sku: `CATEGORY-${suffix}`,
+        retailPriceMinor: 100,
+        unitCostMinor: null,
+        trackInventory: false,
+        barcodes: [],
+      }),
+      `category-product-${suffix}`,
+    ])
+  const newCategory = async (suffix) =>
+    (await categoryCommand(observer, { action: 'create', name: `Category ${suffix}` }, `category-create-${suffix}`))
+      .rows[0].response.categoryId
+  const archiveFirstCategory = await newCategory('archive-first')
+  await first.query('begin')
+  await categoryCommand(first, { action: 'archive', categoryId: archiveFirstCategory }, 'category-archive-first')
+  const afterArchive = selectedProduct(second, archiveFirstCategory, 'ARCHIVE-FIRST').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await afterArchive, 'HCS11')
+
+  const assignFirstCategory = await newCategory('assign-first')
+  await first.query('begin')
+  const categoryProduct = (await selectedProduct(first, assignFirstCategory, 'ASSIGN-FIRST')).rows[0].response.productId
+  const afterAssign = categoryCommand(
+    second,
+    { action: 'archive', categoryId: assignFirstCategory },
+    'category-after-assign',
+  ).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await afterAssign, 'HCCT2')
+  assert.equal(
+    (await observer.query('select category_id from app.products where id=$1', [categoryProduct])).rows[0].category_id,
+    assignFirstCategory,
+  )
+
+  const renameCategory = await newCategory('rename-first')
+  await first.query('begin')
+  await categoryCommand(
+    first,
+    { action: 'rename', categoryId: renameCategory, name: 'Renamed while assigning' },
+    'category-rename-first',
+  )
+  const afterRename = selectedProduct(second, renameCategory, 'RENAME-FIRST')
+  await waitForLock()
+  await first.query('commit')
+  const renamedProduct = (await afterRename).rows[0].response.productId
+  assert.equal(
+    (await observer.query('select category_id from app.products where id=$1', [renamedProduct])).rows[0].category_id,
+    renameCategory,
+  )
+  assert.equal(
+    (
+      await observer.query('select count(*)::int count from app.product_categories where tenant_id=$1 and name=$2', [
+        tenant,
+        'Category rename-first',
+      ])
+    ).rows[0].count,
+    0,
+  )
+
+  await first.query('begin')
+  const sameCategoryBody = { action: 'create', name: 'Same key category' }
+  const sameCategoryKey = 'category-concurrent-replay'
+  const firstCategoryResponse = (await categoryCommand(first, sameCategoryBody, sameCategoryKey)).rows[0].response
+  const sameCategoryReplay = categoryCommand(second, sameCategoryBody, sameCategoryKey)
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await sameCategoryReplay).rows[0].response, firstCategoryResponse)
+  assert.equal(
+    (
+      await observer.query(
+        "select count(*)::int count from audit.audit_events where tenant_id=$1 and entity_id=$2 and action='catalog.category.create'",
+        [tenant, firstCategoryResponse.categoryId],
+      )
+    ).rows[0].count,
+    1,
+  )
+
+  await first.query('begin')
+  await first.query("update app.tenants set status='suspended' where id=$1", [tenant])
+  const suspendedCategory = categoryCommand(
+    second,
+    { action: 'create', name: 'Must not exist' },
+    'category-suspended-wait',
+  ).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await suspendedCategory, 'HCS09')
+  await observer.query("update app.tenants set status='active' where id=$1", [tenant])
+
+  const expiryCategory = await newCategory('expiry-wait')
+  await observer.query(
+    "update app.tenant_entitlements set ends_at=clock_timestamp()+interval '1 second' where tenant_id=$1 and feature_code='catalog'",
+    [tenant],
+  )
+  await first.query('begin')
+  await first.query('select 1 from app.product_categories where id=$1 for update', [expiryCategory])
+  const expiredCategory = selectedProduct(second, expiryCategory, 'EXPIRED-WAIT').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await delay(1100)
+  await first.query('commit')
+  assert.equal(await expiredCategory, 'HCS10')
+  assert.equal(
+    (
+      await observer.query(
+        "select count(*)::int count from app.products where tenant_id=$1 and name='Category EXPIRED-WAIT'",
+        [tenant],
+      )
+    ).rows[0].count,
+    0,
+  )
+  console.log(
+    'Catalog category concurrency passed: archive/assignment admission order, ID-preserving rename, one-effect same-key replay, queued suspension and wallclock expiry deny writes.',
+  )
 } finally {
   // Release any held fixture transaction before closing another session waiting on it.
   await first.query('rollback').catch(() => {})

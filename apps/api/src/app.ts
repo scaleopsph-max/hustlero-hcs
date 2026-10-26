@@ -106,6 +106,9 @@ import {
   catalogProductUpdateRequestSchema,
   catalogProductUpdateResponseSchema,
   catalogResponseSchema,
+  catalogCategoriesContextSchema,
+  catalogCategoryCommandSchema,
+  catalogCategoryCommandResponseSchema,
   catalogVariantCreateRequestSchema,
   catalogVariantCreateResponseSchema,
   catalogVariantDeactivateResponseSchema,
@@ -219,6 +222,10 @@ import {
   createCatalogVariantInPostgres,
   deactivateCatalogVariantInPostgres,
   loadCatalogFromPostgres,
+  loadCatalogCategoriesFromPostgres,
+  manageCatalogCategoryInPostgres,
+  type CatalogCategoriesLoader,
+  type CatalogCategoryCommander,
   updateCatalogProductInPostgres,
   updateCatalogVariantInPostgres,
   type CatalogLoader,
@@ -429,6 +436,8 @@ interface AppDependencies {
   loadOnboarding: OnboardingLoader
   updateOnboarding: OnboardingUpdater
   loadCatalog: CatalogLoader
+  loadCatalogCategories: CatalogCategoriesLoader
+  manageCatalogCategory: CatalogCategoryCommander
   createCatalogProduct: CatalogProductCreator
   createCatalogVariant: CatalogVariantCreator
   updateCatalogProduct: CatalogProductUpdater
@@ -539,6 +548,8 @@ const defaultDependencies: AppDependencies = {
   loadOnboarding: loadOnboardingFromPostgres,
   updateOnboarding: updateOnboardingInPostgres,
   loadCatalog: loadCatalogFromPostgres,
+  loadCatalogCategories: loadCatalogCategoriesFromPostgres,
+  manageCatalogCategory: manageCatalogCategoryInPostgres,
   createCatalogProduct: createCatalogProductInPostgres,
   createCatalogVariant: createCatalogVariantInPostgres,
   updateCatalogProduct: updateCatalogProductInPostgres,
@@ -2372,6 +2383,53 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
         : undefined
     return tenant ? { userId: user.userId, tenantId: tenant.tenantId } : null
   }
+
+  app.on(['GET', 'POST'], '/v1/catalog/categories', async (context) => {
+    const fail = (code: string, message: string, status: 400 | 401 | 403 | 404 | 409) =>
+      context.json(
+        apiErrorResponseSchema.parse({ error: { code, message, requestId: context.get('requestId') } }),
+        status,
+      )
+    if (!readBearerToken(context.req.header('authorization')))
+      return fail('AUTHENTICATION_REQUIRED', 'Sign in to manage categories.', 401)
+    const scope = await resolveWholesaleTenant(context)
+    if (!scope) return fail('CATALOG_ACCESS_DENIED', 'Select an authorized business.', 403)
+    try {
+      if (context.req.method === 'GET')
+        return context.json(
+          catalogCategoriesContextSchema.parse(
+            await dependencies.loadCatalogCategories(scope.userId, scope.tenantId, context.env),
+          ),
+        )
+      const key = context.req.header('idempotency-key')
+      if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+        return fail('IDEMPOTENCY_KEY_REQUIRED', 'A valid request key is required.', 400)
+      const parsed = catalogCategoryCommandSchema.safeParse(await context.req.json().catch(() => null))
+      if (!parsed.success) return fail('INVALID_CATEGORY', 'Check the category details.', 400)
+      const result = await dependencies.manageCatalogCategory(
+        scope.userId,
+        scope.tenantId,
+        parsed.data,
+        key,
+        await requestHash(parsed.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(catalogCategoryCommandResponseSchema.parse(result))
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS09' || code === 'HCS10')
+        return fail('CATALOG_ACCESS_DENIED', 'Catalog access is unavailable.', 403)
+      if (code === 'HCS12') return fail('CATEGORY_NOT_FOUND', 'Category not found.', 404)
+      if (code === '23505') return fail('CATEGORY_DUPLICATE', 'A category with this name already exists.', 409)
+      if (code === 'HCS08') return fail('IDEMPOTENCY_KEY_CONFLICT', 'Request key belongs to a different command.', 409)
+      if (code === 'HCCT1') return fail('CATEGORY_ARCHIVED', 'Category is archived.', 409)
+      if (code === 'HCCT2')
+        return fail('CATEGORY_IN_USE', 'Reassign product and pricing references before archival.', 409)
+      if (code === 'HCS11' || code === '22P02') return fail('INVALID_CATEGORY', 'Check the category details.', 400)
+      throw error
+    }
+  })
 
   const wholesaleError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
     const code = postgresErrorCode(error)

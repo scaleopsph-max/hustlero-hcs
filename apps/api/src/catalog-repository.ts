@@ -2,6 +2,11 @@ import {
   catalogProductCreateResponseSchema,
   catalogProductUpdateResponseSchema,
   catalogResponseSchema,
+  catalogCategoriesContextSchema,
+  catalogCategoryCommandResponseSchema,
+  type CatalogCategoryCommand,
+  type CatalogCategoryCommandResponse,
+  type CatalogCategoriesContext,
   catalogVariantCreateResponseSchema,
   catalogVariantDeactivateResponseSchema,
   catalogVariantUpdateResponseSchema,
@@ -22,6 +27,55 @@ import { z } from 'zod'
 import type { Bindings } from './env'
 
 export type CatalogLoader = (userId: string, tenantId: string, bindings: Bindings) => Promise<CatalogResponse>
+export type CatalogCategoriesLoader = (
+  userId: string,
+  tenantId: string,
+  bindings: Bindings,
+) => Promise<CatalogCategoriesContext>
+export type CatalogCategoryCommander = (
+  userId: string,
+  tenantId: string,
+  request: CatalogCategoryCommand,
+  key: string,
+  hash: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<CatalogCategoryCommandResponse>
+
+export const loadCatalogCategoriesFromPostgres: CatalogCategoriesLoader = async (userId, tenantId, bindings) => {
+  const client = new Client({ connectionString: connectionString(bindings) })
+  try {
+    await client.connect()
+    const result = await client.query('select app.load_catalog_categories($1::uuid,$2::uuid) as response', [
+      userId,
+      tenantId,
+    ])
+    return catalogCategoriesContextSchema.parse(result.rows[0]?.response)
+  } finally {
+    await client.end()
+  }
+}
+export const manageCatalogCategoryInPostgres: CatalogCategoryCommander = async (
+  userId,
+  tenantId,
+  request,
+  key,
+  hash,
+  requestId,
+  bindings,
+) => {
+  const client = new Client({ connectionString: connectionString(bindings) })
+  try {
+    await client.connect()
+    const result = await client.query(
+      'select app.manage_catalog_category($1::uuid,$2::uuid,$3::jsonb,$4::text,$5::text,$6::text) as response',
+      [userId, tenantId, JSON.stringify(request), key, hash, requestId],
+    )
+    return catalogCategoryCommandResponseSchema.parse(result.rows[0]?.response)
+  } finally {
+    await client.end()
+  }
+}
 export type CatalogProductCreator = (
   userId: string,
   tenantId: string,
@@ -153,26 +207,9 @@ export const createCatalogProductInPostgres: CatalogProductCreator = async (
   try {
     await client.connect()
     const result = await client.query(
-      `select app.create_catalog_product(
-        $1::uuid, $2::uuid, $3::text, $4::text, $5::text, $6::text, $7::text,
-        $8::numeric, $9::numeric, $10::boolean, $11::text[], $12::text, $13::text, $14::text
-      ) as response`,
-      [
-        userId,
-        tenantId,
-        request.name,
-        request.description ?? null,
-        request.categoryName ?? null,
-        request.variantName,
-        request.sku,
-        minorToDecimal(request.retailPriceMinor),
-        request.unitCostMinor === null ? null : minorToDecimal(request.unitCostMinor),
-        request.trackInventory,
-        request.barcodes,
-        idempotencyKey,
-        requestHash,
-        requestId,
-      ],
+      `select app.create_catalog_product_selected_category(
+        $1::uuid,$2::uuid,$3::jsonb,$4::text,$5::text,$6::text) as response`,
+      [userId, tenantId, JSON.stringify(request), idempotencyKey, requestHash, requestId],
     )
     return catalogProductCreateResponseSchema.parse(result.rows[0]?.response)
   } finally {
@@ -233,20 +270,9 @@ export const updateCatalogProductInPostgres: CatalogProductUpdater = async (
   try {
     await client.connect()
     const result = await client.query(
-      `select app.update_catalog_product(
-        $1::uuid, $2::uuid, $3::uuid, $4::text, $5::text, $6::text, $7::text, $8::text, $9::text
-      ) as response`,
-      [
-        userId,
-        tenantId,
-        productId,
-        request.name,
-        request.description,
-        request.categoryName,
-        idempotencyKey,
-        requestHash,
-        requestId,
-      ],
+      `select app.update_catalog_product_selected_category(
+        $1::uuid,$2::uuid,$3::uuid,$4::jsonb,$5::text,$6::text,$7::text) as response`,
+      [userId, tenantId, productId, JSON.stringify(request), idempotencyKey, requestHash, requestId],
     )
     return catalogProductUpdateResponseSchema.parse(result.rows[0]?.response)
   } finally {

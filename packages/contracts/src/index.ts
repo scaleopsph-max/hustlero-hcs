@@ -112,6 +112,12 @@ export {
 } from './approvals'
 export {
   catalogCategorySchema,
+  catalogCategoryCommandSchema,
+  catalogCategoryCommandResponseSchema,
+  catalogCategoriesContextSchema,
+  type CatalogCategoryCommand,
+  type CatalogCategoryCommandResponse,
+  type CatalogCategoriesContext,
   catalogProductCreateRequestSchema,
   catalogProductCreateResponseSchema,
   catalogProductUpdateRequestSchema,

@@ -147,7 +147,7 @@ export function ProductCatalog() {
     setNotice(null)
     const request: CatalogProductCreateRequest = {
       name: name.trim(),
-      categoryName: categoryName.trim() || undefined,
+      categoryId: categoryName || null,
       variantName: variantName.trim() || 'Default',
       sku: sku.trim().toUpperCase(),
       retailPriceMinor: parsePeso(retailPrice),
@@ -253,10 +253,15 @@ export function ProductCatalog() {
         title="Products"
         subtitle="Product master, variants, tenant-unique SKUs and barcodes."
         actions={
-          <Button variant="primary" size="sm" onClick={() => setShowForm((current) => !current)}>
-            <Plus size={18} strokeWidth={2} className="mr-2" />
-            Add product
-          </Button>
+          <div className="flex flex-wrap items-center gap-3">
+            <Link href="/categories" className="text-sm font-semibold underline">
+              Categories
+            </Link>
+            <Button variant="primary" size="sm" onClick={() => setShowForm((current) => !current)}>
+              <Plus size={18} strokeWidth={2} className="mr-2" />
+              Add product
+            </Button>
+          </div>
         }
       />
 
@@ -454,20 +459,19 @@ export function ProductCatalog() {
               </label>
               <label className="text-sm font-medium">
                 Category
-                <input
+                <select
                   className={`${inputClass} mt-1.5`}
-                  list="catalog-categories"
-                  maxLength={80}
                   value={categoryName}
                   onChange={(event) => setCategoryName(event.target.value)}
-                  placeholder="Optional"
-                />
+                >
+                  <option value="">Uncategorized</option>
+                  {catalog.categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
               </label>
-              <datalist id="catalog-categories">
-                {catalog.categories.map((category) => (
-                  <option key={category.id} value={category.name} />
-                ))}
-              </datalist>
               <div className="grid grid-cols-2 gap-3">
                 <label className="text-sm font-medium">
                   Variant
