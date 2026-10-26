@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import { wholesaleFundsContextSchema } from '@hcs/contracts'
-import { restoreFundReversal, reconcileFundReversal } from './wholesale-fund-reversal'
+import { restoreFundReversal, reconcileFundReversal, fundReversalCommandMatches } from './wholesale-fund-reversal'
 const id = '20000000-0000-4000-8000-000000000001'
 const command = { key: id, payload: { paymentId: id, reason: 'Original allocation reversed', reversalConfirmed: true } }
 const result = {
@@ -45,4 +45,19 @@ it('rejects injected scope, partial amounts and an unconfirmed reversal', () => 
       restoreFundReversal(JSON.stringify({ ...command, payload: { ...command.payload, ...patch } })),
     ).toThrow()
   }
+})
+it('matches only the same saved reversal key and complete body', () => {
+  const saved = restoreFundReversal(JSON.stringify(command))!
+  expect(fundReversalCommandMatches(saved, restoreFundReversal(JSON.stringify(command)))).toBe(true)
+  expect(fundReversalCommandMatches(saved, null)).toBe(false)
+  expect(fundReversalCommandMatches(saved, { ...saved, key: '20000000-0000-4000-8000-000000000002' })).toBe(false)
+  expect(fundReversalCommandMatches(saved, { ...saved, payload: { ...saved.payload, reason: 'Newer reason' } })).toBe(
+    false,
+  )
+  expect(
+    fundReversalCommandMatches(saved, {
+      ...saved,
+      payload: { ...saved.payload, paymentId: '20000000-0000-4000-8000-000000000002' },
+    }),
+  ).toBe(false)
 })

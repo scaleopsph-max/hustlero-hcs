@@ -1,5 +1,5 @@
 import { createElement } from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { wholesaleFundsContextSchema } from '@hcs/contracts'
 import { WholesaleFundReversalForm } from './WholesaleFundReversalForm'
@@ -77,6 +77,114 @@ it('does not offer a write to a reader without reversal permission', () => {
   const execute = vi.fn()
   render(createElement(WholesaleFundReversalForm, { storage, data, execute }))
   expect((screen.getByRole('button', { name: 'Reverse allocation' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(execute).not.toHaveBeenCalled()
+})
+it.each(['', '{', 'null', '{}'])(
+  'disables reversal controls when original saved recovery is corrupt: %s',
+  async (stored) => {
+    sessionStorage.setItem(storage, stored)
+    const execute = vi.fn()
+    const rendered = render(createElement(WholesaleFundReversalForm, { storage, data: fixture(), execute }))
+    await screen.findByRole('alert')
+    expect((screen.getByRole('button', { name: 'Reverse allocation' }) as HTMLButtonElement).disabled).toBe(true)
+    const fieldset = rendered.container.querySelector('fieldset')!
+    expect(fieldset.disabled).toBe(true)
+    fireEvent.submit(rendered.container.querySelector('form')!)
+    expect(execute).not.toHaveBeenCalled()
+    expect(sessionStorage.getItem(storage)).toBe(stored)
+    expect(screen.queryByRole('button', { name: 'Dismiss rejected reversal' })).toBeNull()
+  },
+)
+it('does not let an unmounted older completion clear a newer pending reversal', async () => {
+  const original = { key: id, payload: { paymentId: id, reason: 'Original reversal', reversalConfirmed: true } }
+  sessionStorage.setItem(storage, JSON.stringify(original))
+  type Outcome = { result: typeof result; history: ReturnType<typeof fixture> }
+  let finishOriginal!: (value: Outcome) => void
+  let finishNewer!: (value: Outcome) => void
+  const originalReply = new Promise<Outcome>((resolve) => {
+    finishOriginal = resolve
+  })
+  const newerReply = new Promise<Outcome>((resolve) => {
+    finishNewer = resolve
+  })
+  const history = fixture()
+  history.payments[0]!.reversal = result
+  const execute = vi
+    .fn()
+    .mockImplementationOnce(() => originalReply)
+    .mockResolvedValueOnce({ result, history })
+    .mockImplementationOnce(() => newerReply)
+  const old = render(createElement(WholesaleFundReversalForm, { storage, data: fixture(), execute }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Retry original reversal' }))
+  await waitFor(() => expect(execute).toHaveBeenCalledTimes(1))
+  old.unmount()
+  const current = render(createElement(WholesaleFundReversalForm, { storage, data: history, execute }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Retry original reversal' }))
+  await waitFor(() => expect(sessionStorage.getItem(storage)).toBeNull())
+  const other = '20000000-0000-4000-8000-000000000002'
+  const next = structuredClone(history)
+  next.payments.push({
+    ...fixture().payments[0]!,
+    paymentId: other,
+    reference: 'Newer receipt',
+    allocation: { ...fixture().payments[0]!.allocation!, paymentId: other },
+  })
+  current.rerender(createElement(WholesaleFundReversalForm, { storage, data: next, execute }))
+  fireEvent.change(screen.getByLabelText('Original allocated receipt'), { target: { value: other } })
+  fireEvent.change(screen.getByLabelText('Reversal reason'), { target: { value: 'Newer reversal' } })
+  fireEvent.click(screen.getByLabelText('Reverse the full original Capital / Operating allocation.'))
+  fireEvent.click(screen.getByRole('button', { name: 'Reverse allocation' }))
+  await waitFor(() => expect(execute).toHaveBeenCalledTimes(3))
+  const newerSaved = sessionStorage.getItem(storage)
+  expect(newerSaved).not.toBeNull()
+  await act(async () => {
+    finishOriginal({ result, history })
+  })
+  expect(sessionStorage.getItem(storage)).toBe(newerSaved)
+  const newerResult = { ...result, paymentId: other, reversalId: other }
+  next.payments[1]!.reversal = newerResult
+  await act(async () => {
+    finishNewer({ result: newerResult, history: next })
+  })
+  await waitFor(() => expect(sessionStorage.getItem(storage)).toBeNull())
+})
+it('does not dismiss another saved command after an older definitive rejection', async () => {
+  const original = { key: id, payload: { paymentId: id, reason: 'Original reversal', reversalConfirmed: true } }
+  sessionStorage.setItem(storage, JSON.stringify(original))
+  const execute = vi
+    .fn()
+    .mockRejectedValue(Object.assign(new Error('Definitive rejection'), { code: 'WHOLESALE_FUNDS_HCFD6' }))
+  render(createElement(WholesaleFundReversalForm, { storage, data: fixture(), execute }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Retry original reversal' }))
+  const dismiss = await screen.findByRole('button', { name: 'Dismiss rejected reversal' })
+  const newer = {
+    ...original,
+    key: '20000000-0000-4000-8000-000000000002',
+    payload: { ...original.payload, reason: 'Newer reversal' },
+  }
+  const saved = JSON.stringify(newer)
+  sessionStorage.setItem(storage, saved)
+  fireEvent.click(dismiss)
+  expect(sessionStorage.getItem(storage)).toBe(saved)
+})
+it.each([true, false])('does not overwrite newer saved recovery on submit; old pending=%s', async (restoreOriginal) => {
+  const original = { key: id, payload: { paymentId: id, reason: 'Original reversal', reversalConfirmed: true } }
+  if (restoreOriginal) sessionStorage.setItem(storage, JSON.stringify(original))
+  const execute = vi.fn()
+  render(createElement(WholesaleFundReversalForm, { storage, data: fixture(), execute }))
+  if (!restoreOriginal) {
+    fireEvent.change(screen.getByLabelText('Original allocated receipt'), { target: { value: id } })
+    fireEvent.change(screen.getByLabelText('Reversal reason'), { target: { value: 'Fresh reversal' } })
+    fireEvent.click(screen.getByLabelText('Reverse the full original Capital / Operating allocation.'))
+  }
+  const newer = { ...original, key: '20000000-0000-4000-8000-000000000002' }
+  const saved = JSON.stringify(newer)
+  sessionStorage.setItem(storage, saved)
+  fireEvent.click(
+    await screen.findByRole('button', { name: restoreOriginal ? 'Retry original reversal' : 'Reverse allocation' }),
+  )
+  await screen.findByRole('alert')
+  expect(sessionStorage.getItem(storage)).toBe(saved)
   expect(execute).not.toHaveBeenCalled()
 })
 it.each(['WHOLESALE_FUNDS_HCFD6', 'WHOLESALE_FUNDS_HCFD7'])(

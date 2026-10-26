@@ -14,11 +14,11 @@ import { createClient } from '@/lib/supabase-browser'
 import { selectActiveTenant } from '@/lib/active-tenant'
 import { paymentMoneyInput } from '@/lib/wholesale-payment'
 import {
-  pendingCreditCommandSchema,
+  restoreCreditCommand,
+  refreshConfirmedCreditCommand,
   prepareCreditSettings,
   prepareOpeningReceivable,
   creditCommandDefinitivelyRejected,
-  validateCreditCommandResponse,
   type PendingCreditCommand,
 } from '@/lib/wholesale-credit-commands'
 
@@ -100,7 +100,7 @@ export function WholesaleCreditWorkspace() {
         if (!tenant) throw new Error('Select a business first.')
         const storage = `hcs-wholesale-credit:${data.session.user.id}:${tenant.tenantId}`
         const stored = sessionStorage.getItem(storage)
-        const restored = stored ? pendingCreditCommandSchema.parse(JSON.parse(stored)) : null
+        const restored = restoreCreditCommand(stored)
         if (active) {
           setScope({ user: data.session.user.id, tenant: tenant.tenantId, storage })
           setPending(restored)
@@ -132,6 +132,7 @@ export function WholesaleCreditWorkspace() {
     locked.current = true
     setBusy(true)
     setError(null)
+    setMessage(null)
     setSettings(null)
     setReceivables(null)
     try {
@@ -175,7 +176,7 @@ export function WholesaleCreditWorkspace() {
         sessionStorage.setItem(scope.storage, JSON.stringify(command))
         setPending(command)
       }
-      validateCreditCommandResponse(
+      const next = await refreshConfirmedCreditCommand(
         command,
         await call(
           kind === 'settings' ? '/v1/wholesale/credit-settings' : '/v1/wholesale/receivables/opening',
@@ -183,6 +184,13 @@ export function WholesaleCreditWorkspace() {
           scope.tenant,
           command,
         ),
+        async () => {
+          if (mounted.current) {
+            setSettings(null)
+            setReceivables(null)
+          }
+          return load(session.access_token, scope.tenant)
+        },
       )
       sessionStorage.removeItem(scope.storage)
       if (!mounted.current) return
@@ -195,13 +203,8 @@ export function WholesaleCreditWorkspace() {
           ? 'Credit settings revision saved.'
           : 'Unpaid opening receivable recorded. No new sale or payment was created.',
       )
-      setSettings(null)
-      setReceivables(null)
-      const next = await load(session.access_token, scope.tenant)
-      if (mounted.current) {
-        setSettings(next.settings)
-        setReceivables(next.receivables)
-      }
+      setSettings(next.settings)
+      setReceivables(next.receivables)
     } catch (cause) {
       if (creditCommandDefinitivelyRejected(kind, (cause as { code?: string }).code)) {
         sessionStorage.removeItem(scope.storage)

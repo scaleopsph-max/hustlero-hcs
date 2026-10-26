@@ -1,11 +1,15 @@
 import type { PosPaymentReferenceReport } from '@hcs/contracts'
 import { reportCsv } from './report-csv'
 
-export type PaymentReferenceScope = { from: string; to: string; locationId: string }
+export type PaymentReferenceScope = { from: string; to: string; locationId: string; channel: 'pos' | 'wholesale' }
 
 export function paymentReferenceScopeMatches(loaded: PaymentReferenceScope | null, selected: PaymentReferenceScope) {
   return (
-    !!loaded && loaded.from === selected.from && loaded.to === selected.to && loaded.locationId === selected.locationId
+    !!loaded &&
+    loaded.from === selected.from &&
+    loaded.to === selected.to &&
+    loaded.locationId === selected.locationId &&
+    loaded.channel === selected.channel
   )
 }
 
