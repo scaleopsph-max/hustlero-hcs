@@ -4,6 +4,10 @@ Date: October 26, 2026, Asia/Manila.
 Source-only follow-up on draft PR #8; target remains the isolated AW3 candidate,
 not main. No migration/deployment or execution-policy change.
 
+Subsequent source follow-up: the shared formatter limitation below is now addressed
+by qa/SHARED_MONEY_DISPLAY_EXACTNESS.md. The original report increment and its
+verification boundary remain recorded here; no hosted rollout is implied.
+
 ## Defects And Boundary
 
 At the supported safe-integer boundary, the receipt row used the shared formatter's

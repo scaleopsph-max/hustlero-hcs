@@ -1,5 +1,18 @@
 # Project State
 
+## Current Follow-Up: Shared Money Display Exactness
+
+October 26: addressed the report review's remaining shared formatPeso display gap.
+Safe-integer centavos now use BigInt quotient/remainder plus existing Intl currency
+parts. Currency/grouping/signs and legacy fractional-preview behavior retained;
+no parser, stored money, domain/SQL/API/contract/permission change. Thirty-three
+new tests; full local check passed 782 app / 47 simulated harness cases and all
+builds. Browser actual-helper/funds safe-limit signed balance checks and original
+workflow/report suites passed with mocked Auth/API. Latest-head CI pending;
+draft PR #8 remains source-only against isolated AW3 branch, not main. Hosted
+execution/source-path/acceptance gates unchanged. See
+qa/SHARED_MONEY_DISPLAY_EXACTNESS.md.
+
 ## Current Follow-Up: AW3 Report Reconciliation
 
 October 26: fixed payment-report receipt display losing one cent at the supported
