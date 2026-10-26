@@ -1,10 +1,12 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   pendingCreditCommandSchema,
   prepareCreditSettings,
   prepareOpeningReceivable,
   creditCommandDefinitivelyRejected,
   validateCreditCommandResponse,
+  restoreCreditCommand,
+  refreshConfirmedCreditCommand,
 } from './wholesale-credit-commands'
 const id = '30000000-0000-4000-8000-000000000001',
   other = '30000000-0000-4000-8000-000000000002'
@@ -41,6 +43,89 @@ const settingsCommand = { kind: 'settings' as const, key: 'synthetic-credit-key-
 const openingCommand = { kind: 'opening' as const, key: 'synthetic-opening-key-001', payload: openingPayload }
 const settingsResponse = { settingsId: id, ...settingsPayload, revision: 1, recordedAt: '2026-10-11T04:00:00Z' }
 const openingResponse = { chargeId: id, invoiceId: id, dueDate: '2026-10-11', amountMinor: 225000, status: 'unpaid' }
+describe('credit storage and refresh recovery', () => {
+  it('treats only absent storage as no pending command', () => expect(restoreCreditCommand(null)).toBeNull())
+  it.each([
+    '',
+    '{',
+    'null',
+    '[]',
+    '{}',
+    JSON.stringify({ ...settingsCommand, key: 'bad' }),
+    JSON.stringify({ ...openingCommand, unknown: true }),
+    JSON.stringify({ ...openingCommand, payload: { ...openingPayload, amountMinor: 1 } }),
+  ])('blocks corrupt credit recovery instead of creating a replacement command: %s', (stored) => {
+    expect(() => restoreCreditCommand(stored)).toThrow()
+  })
+  it.each([
+    { command: settingsCommand, response: settingsResponse },
+    { command: openingCommand, response: openingResponse },
+  ])('requires refreshed context before completing $command.kind', async ({ command, response }) => {
+    const saved = JSON.stringify(command)
+    const refresh = vi.fn().mockRejectedValue(new Error('Synthetic refresh disconnected'))
+    await expect(refreshConfirmedCreditCommand(command, response, refresh)).rejects.toThrow('disconnected')
+    const restored = restoreCreditCommand(saved)!
+    expect(restored).toEqual(command)
+    const next = { settings: credit, receivables: opening }
+    await expect(refreshConfirmedCreditCommand(restored, response, async () => next)).resolves.toEqual(next)
+  })
+  it.each([
+    { command: settingsCommand, response: { ...settingsResponse, customerId: other } },
+    { command: openingCommand, response: { ...openingResponse, dueDate: '2026-10-12' } },
+  ])('does not refresh mismatched $command.kind response', async ({ command, response }) => {
+    const refresh = vi.fn().mockResolvedValue({ settings: credit, receivables: opening })
+    await expect(refreshConfirmedCreditCommand(command, response, refresh)).rejects.toThrow('does not match')
+    expect(refresh).not.toHaveBeenCalled()
+  })
+  it.each([
+    { settings: {}, receivables: opening },
+    { settings: credit, receivables: {} },
+  ])('retains recovery when either refreshed context is malformed', async (next) => {
+    await expect(refreshConfirmedCreditCommand(settingsCommand, settingsResponse, async () => next)).rejects.toThrow()
+  })
+  it('allows an old successful replay when another authorized revision is now current', async () => {
+    const next = {
+      settings: {
+        ...credit,
+        customers: [
+          {
+            ...credit.customers[0]!,
+            settings: { ...settingsResponse, revision: 2, paymentTerm: 'cod', creditLimitMinor: 0 },
+          },
+        ],
+      },
+      receivables: opening,
+    }
+    const result = await refreshConfirmedCreditCommand(settingsCommand, settingsResponse, async () => next)
+    expect(result.settings.customers[0]!.settings).toMatchObject({
+      revision: 2,
+      paymentTerm: 'cod',
+      creditLimitMinor: 0,
+    })
+    expect(settingsCommand.payload).toEqual(settingsPayload)
+  })
+  it('allows original opening replay after the same invoice has subsequently been paid', async () => {
+    const next = {
+      settings: credit,
+      receivables: {
+        ...opening,
+        invoices: [
+          {
+            ...opening.invoices[0]!,
+            classification: 'opening',
+            eligibleForOpening: false,
+            openBalanceMinor: 0,
+            dueDate: openingPayload.dueDate,
+          },
+        ],
+      },
+    }
+    const result = await refreshConfirmedCreditCommand(openingCommand, openingResponse, async () => next)
+    expect(result.receivables.invoices[0]!.openBalanceMinor).toBe(0)
+    expect(openingCommand.payload).toEqual(openingPayload)
+  })
+})
+
 describe('wholesale credit command UI rules', () => {
   it.each(['prepaid', 'cod', 'net_7', 'net_15', 'net_30'])('accepts explicit %s terms and exact centavos', (term) => {
     expect(prepareCreditSettings(credit, id, term, '4500.01', 'Confirmed')).toEqual({

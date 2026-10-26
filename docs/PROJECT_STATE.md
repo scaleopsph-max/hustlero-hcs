@@ -1,5 +1,52 @@
 # Project State
 
+## Current Follow-Up: Shared Money Display Exactness
+
+October 26: addressed the report review's remaining shared formatPeso display gap.
+Safe-integer centavos now use BigInt quotient/remainder plus existing Intl currency
+parts. Currency/grouping/signs and legacy fractional-preview behavior retained;
+no parser, stored money, domain/SQL/API/contract/permission change. Thirty-three
+new tests; full local check passed 782 app / 47 simulated harness cases and all
+builds. Browser actual-helper/funds safe-limit signed balance checks and original
+workflow/report suites passed with mocked Auth/API. Latest-head CI pending;
+draft PR #8 remains source-only against isolated AW3 branch, not main. Hosted
+execution/source-path/acceptance gates unchanged. See
+qa/SHARED_MONEY_DISPLAY_EXACTNESS.md.
+
+## Current Follow-Up: AW3 Report Reconciliation
+
+October 26: fixed payment-report receipt display losing one cent at the supported
+safe-integer boundary by using the existing exact BigInt report formatter. Bound
+loaded-report scope to POS/wholesale channel as well as date/branch. Six new
+regressions; full local check passed 749 app / 47 simulated harness cases, all
+builds. Synthetic actual-component report/CSV/filter/channel/browser checks and
+original credit/fund batches passed with mocked Auth/API. Exact new-head CI pending.
+No SQL/API/domain/contracts/lockfile or hosted change. Draft PR #8 targets the
+isolated AW3 branch, not main. Shared formatPeso's other-screen extreme-amount
+display remains a separate follow-up. See qa/AW3_PAYMENT_REPORT_RECONCILIATION.md.
+
+## Current Follow-Up: AW3 Fund Refresh Recovery
+
+Continuous October 26 follow-up: fixed the same refresh-completion order for
+credit settings/opening receivables, corrupt empty credit storage handling and
+stale-success messages on manual credit/payment refresh. Seventeen new regressions;
+full local check passed 743 app / 47 simulated harness cases and all builds.
+Synthetic actual-component settings/opening/payment checks and original fund
+browser rerun passed with mocked Auth/API; no hosted action. New-head CI pending.
+This extends draft PR #8 against the AW3-only candidate, not main; no merge or
+release-source exception. Server/SQL/financial rules and execution blocker unchanged.
+
+October 26: owner requested local development while Support resolution is pending.
+On codex/aw3-fund-refresh-recovery, fixed funds UI clearing pending commands and
+showing success before history refresh. Completion now verifies the refreshed
+receipt/split/event; failed refresh retains original retry identity. Added a
+read-only refresh control. No server/SQL/Auth policy or financial posting changes.
+Local full check passed 726 app / 47 simulated harness cases, all builds and
+dependency gate. Synthetic component browser recovery/read-only/desktop/mobile
+checks passed with mocked Auth/API only. Exact new-head CI/review remains pending;
+prior 10181e8 CI success does not verify this follow-up. No live change or bypass.
+See qa/AW3_FUND_REFRESH_RECOVERY.md. Hosted release/source-path gates stay open.
+
 ## Current Follow-Up: AW3-Only Security Candidate
 
 Owner prioritized AW3 completion. Prepared isolated source candidate from reviewed

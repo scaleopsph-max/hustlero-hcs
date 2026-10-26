@@ -133,6 +133,7 @@ export function WholesalePaymentsWorkspace() {
     lock.current = true
     setBusy(true)
     setError(null)
+    setMessage(null)
     setContext(null)
     try {
       setContext(
