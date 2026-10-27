@@ -54,3 +54,10 @@ failed during migration creation with SQLSTATE 42702 (ambiguous `value` alias in
 the scope-state SKU extraction). Posting tests had not run. Corrected the new,
 never-hosted migration with explicit raw/unnest column aliases before rerunning.
 The app verification job/local full checks passed; this is not a database pass.
+
+Second candidate cec8199: migration/reset passed; pgTAP stopped after 14 passing
+new assertions because the SQL fixture regenerated a review hash after successful
+posting, then incorrectly expected historical replay. The command correctly raised
+HCS08. Fixed the fixture to retain its original confirmation request hash/key and
+added explicit changed-hash denial coverage; no command guard was weakened.
+Concurrency had not yet run in that failed checkpoint. Final SQL CI pending.

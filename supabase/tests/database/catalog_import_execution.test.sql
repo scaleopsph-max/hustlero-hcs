@@ -25,9 +25,18 @@ create function pg_temp.new_exec_job(p_key text,p_raw jsonb) returns uuid langua
  select (app.save_catalog_import_job('19000000-0000-4000-8000-000000000001','29000000-0000-4000-8000-000000000001',
  jsonb_build_object('filename',p_key||'.csv','rows',p_raw),pg_temp.exec_plan(p_raw),p_key,p_key)->>'jobId')::uuid
 $$;
-create function pg_temp.start_exec(p_job uuid) returns jsonb language sql as $$
- select app.start_catalog_import('19000000-0000-4000-8000-000000000001','29000000-0000-4000-8000-000000000001',p_job,
- app.review_catalog_import('19000000-0000-4000-8000-000000000001','29000000-0000-4000-8000-000000000001',p_job)->>'hash','confirm-'||p_job::text,'confirm-import')
+create temp table exec_confirm_requests(job uuid primary key,review_hash text not null);
+create function pg_temp.start_exec(p_job uuid) returns jsonb language plpgsql as $$
+declare v_hash text;
+begin
+ select review_hash into v_hash from exec_confirm_requests where job=p_job;
+ if not found then
+  v_hash:=app.review_catalog_import('19000000-0000-4000-8000-000000000001','29000000-0000-4000-8000-000000000001',p_job)->>'hash';
+  insert into exec_confirm_requests values(p_job,v_hash);
+ end if;
+ return app.start_catalog_import('19000000-0000-4000-8000-000000000001','29000000-0000-4000-8000-000000000001',p_job,
+ v_hash,'confirm-'||p_job::text,'confirm-import');
+end;
 $$;
 create function pg_temp.step_exec(p_job uuid,p_group integer default 0) returns jsonb language sql as $$
  select app.process_catalog_import_group('19000000-0000-4000-8000-000000000001','29000000-0000-4000-8000-000000000001',p_job,p_group,'process-import')
@@ -53,6 +62,7 @@ select is((select retail_price from app.product_variants where tenant_id='290000
 select is((select unit_cost from app.product_variants where tenant_id='29000000-0000-4000-8000-000000000001' and sku='EXEC-8'),200.01::numeric,'exact unit cost retained');
 select is(pg_temp.step_exec((select job from exec_cases where name='new')),(select value from exec_done),'same group replay posts nothing again');
 select is(pg_temp.start_exec((select job from exec_cases where name='new')),(select value from exec_done),'confirmation replay after posting ignores changed catalog baseline');
+select throws_ok($$select app.start_catalog_import('19000000-0000-4000-8000-000000000001','29000000-0000-4000-8000-000000000001',(select job from exec_cases where name='new'),repeat('f',64),'confirm-'||(select job::text from exec_cases where name='new'),'changed-replay')$$,'HCS08','Import confirmation key conflict','changed review hash cannot masquerade as original confirmation replay');
 select is((select count(*)::integer from audit.audit_events where tenant_id='29000000-0000-4000-8000-000000000001' and action='catalog.import.group_processed'),1,'group replay emits one audit');
 select is((select count(*)::integer from integration.event_outbox where tenant_id='29000000-0000-4000-8000-000000000001' and topic='catalog.import.group_processed'),1,'group replay emits one outbox');
 insert into exec_cases values('update',pg_temp.new_exec_job('execution-update-product-001','[{"product_name":"Updated Shoes","sku":"EXEC-8","variant_name":"Size 8","retail_price":"450.01","unit_cost":"210.55"}]'));
