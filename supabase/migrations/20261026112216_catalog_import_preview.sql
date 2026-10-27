@@ -15,7 +15,7 @@ begin
  'products',(select coalesce(jsonb_agg(jsonb_build_object('id',p.id,'name',p.name,'description',p.description,
    'categoryId',p.category_id,'status',p.status,'variants',(
      select coalesce(jsonb_agg(jsonb_build_object('id',v.id,'sku',v.sku,'isActive',v.is_active,'trackInventory',v.track_inventory,
-       'barcodes',(select coalesce(jsonb_agg(b.barcode::text order by b.id),'[]'::jsonb) from app.product_barcodes b
+       'barcodes',(select coalesce(jsonb_agg(b.barcode::text order by b.is_primary desc,b.id),'[]'::jsonb) from app.product_barcodes b
        where b.tenant_id=p_tenant and b.variant_id=v.id)) order by v.id),'[]'::jsonb)
      from target_variants v where v.product_id=p.id)) order by p.id),'[]'::jsonb)
    from app.products p where p.tenant_id=p_tenant and exists(select 1 from target_variants v where v.product_id=p.id))));

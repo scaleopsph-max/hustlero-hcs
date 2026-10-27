@@ -18,10 +18,14 @@ create table app.catalog_import_results(
  product_id uuid, variant_id uuid, error_code text, recorded_at timestamptz not null,
  primary key(tenant_id,execution_id,row_number),
  foreign key(tenant_id,execution_id) references app.catalog_import_executions(tenant_id,id),
+ foreign key(tenant_id,product_id) references app.products(tenant_id,id),
+ foreign key(tenant_id,variant_id) references app.product_variants(tenant_id,id),
  check((outcome='failed' and error_code is not null and product_id is null and variant_id is null)
  or (outcome<>'failed' and error_code is null and product_id is not null and variant_id is not null))
 );
 create index catalog_import_results_groups on app.catalog_import_results(tenant_id,execution_id,group_index);
+create index catalog_import_results_products on app.catalog_import_results(tenant_id,product_id) where product_id is not null;
+create index catalog_import_results_variants on app.catalog_import_results(tenant_id,variant_id) where variant_id is not null;
 alter table app.catalog_import_executions enable row level security;
 alter table app.catalog_import_results enable row level security;
 revoke all on app.catalog_import_executions,app.catalog_import_results from public,anon,authenticated,hcs_hyperdrive;

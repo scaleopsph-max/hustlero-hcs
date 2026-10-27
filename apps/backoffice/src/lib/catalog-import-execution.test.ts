@@ -101,3 +101,38 @@ it('requires unchanged update target product/variant IDs', () => {
     }),
   ).toThrow()
 })
+it('rejects duplicate posted variant identities across source rows', () => {
+  const second = { ...job.rows[0]!, rowNumber: 3, sku: 'SHOE-9', action: 'create_variant' as const }
+  const changed = {
+    ...job,
+    rowCount: 2,
+    proposedCreates: 2,
+    source: { ...source, rows: [...source.rows, ...source.rows] },
+    rows: [...job.rows, second],
+  }
+  expect(() =>
+    reconcileImportExecution(changed, {
+      execution: { ...execution, results: [...execution.results, { ...execution.results[0], rowNumber: 3 }] },
+    }),
+  ).toThrow()
+})
+it('rejects separate new product groups that falsely claim the same posted product', () => {
+  const second = { ...job.rows[0]!, rowNumber: 3, sku: 'OTHER-9', productSku: 'OTHER-9' }
+  const changed = {
+    ...job,
+    rowCount: 2,
+    proposedCreates: 2,
+    source: { ...source, rows: [...source.rows, ...source.rows] },
+    rows: [...job.rows, second],
+  }
+  expect(() =>
+    reconcileImportExecution(changed, {
+      execution: {
+        ...execution,
+        groupCount: 2,
+        nextGroup: 2,
+        results: [...execution.results, { ...execution.results[0], groupIndex: 1, rowNumber: 3, variantId: user }],
+      },
+    }),
+  ).toThrow()
+})

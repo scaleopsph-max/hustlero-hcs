@@ -47,6 +47,7 @@ export function CatalogImportHistory() {
     }
     if (data.session.user.id !== identity.current.user) throw new Error('Sign in to the original account.')
     const response = await fetch(`${api.replace(/\/$/, '')}/v1/catalog/imports/jobs${path}`, {
+      cache: 'no-store',
       method: body ? 'POST' : 'GET',
       headers: {
         Authorization: `Bearer ${data.session.access_token}`,
@@ -156,9 +157,9 @@ export function CatalogImportHistory() {
           <tbody>
             {jobs.map((job) => (
               <tr key={job.id} className="border-b border-ink-900/10">
-                <td className="max-w-64 break-all p-3">
+                <td className="min-w-52 max-w-64 break-all p-3">
                   <strong>{job.filename}</strong>
-                  <div className="text-xs">
+                  <div className="whitespace-nowrap text-xs">
                     {new Date(job.createdAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}
                   </div>
                 </td>

@@ -37,6 +37,7 @@ export function CatalogImportPreview() {
   async function call(token: string, tenant: string, path: string, body?: unknown, requestKey?: string) {
     if (!api) throw new Error('Back Office API is not configured.')
     const response = await fetch(`${api.replace(/\/$/, '')}${path}`, {
+      cache: 'no-store',
       method: body ? 'POST' : 'GET',
       headers: {
         Authorization: `Bearer ${token}`,

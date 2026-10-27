@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { Check, Play, Pause, RotateCcw, RefreshCw } from 'lucide-react'
+import { Check, Play, Pause, RotateCcw, RefreshCw, Download } from 'lucide-react'
+import { catalogImportResultsCsv, catalogImportErrorLabel } from '@/lib/catalog-import-results'
 import {
   catalogImportReviewSchema,
   type CatalogImportJob,
@@ -186,6 +187,38 @@ export function CatalogImportExecutionPanel({ job, user, tenant, call, onChecked
       setError(cause instanceof Error ? cause.message : 'Could not reconcile pending request.')
     }
   }
+  async function downloadResults() {
+    if (lock.current || !execution || pending) return
+    lock.current = true
+    const request = ++sequence.current
+    setBusy(true)
+    setError(null)
+    try {
+      const fresh = await load()
+      if (!fresh || fresh.id !== execution.id) throw new Error('Import results could not be reconciled.')
+      const csv = catalogImportResultsCsv(job, fresh)
+      if (request !== sequence.current) return
+      setExecution(fresh)
+      onChecked(true)
+      const href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })),
+        link = document.createElement('a')
+      link.href = href
+      link.download = `hustlero-catalog-import-${job.id}-results.csv`
+      link.click()
+      URL.revokeObjectURL(href)
+    } catch (cause) {
+      if (request === sequence.current) {
+        setExecution(null)
+        setReview(null)
+        setError(cause instanceof Error ? cause.message : 'Could not export import results.')
+      }
+    } finally {
+      if (request === sequence.current) {
+        lock.current = false
+        setBusy(false)
+      }
+    }
+  }
   return (
     <section className="my-4 border-y border-ink-900/15 py-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -223,6 +256,17 @@ export function CatalogImportExecutionPanel({ job, user, tenant, call, onChecked
         </div>
       )}
       <div className="my-3 flex flex-wrap gap-3">
+        {execution && execution.results.length > 0 && (
+          <button
+            type="button"
+            onClick={() => void downloadResults()}
+            disabled={busy || !!pending}
+            className="inline-flex min-h-10 items-center gap-2 rounded border border-ink-900/20 px-3 disabled:opacity-50"
+          >
+            <Download size={17} />
+            Export results
+          </button>
+        )}
         {!execution && !pending && job.state === 'preview' && (
           <button
             type="button"
@@ -302,9 +346,11 @@ export function CatalogImportExecutionPanel({ job, user, tenant, call, onChecked
                 <tr key={row.rowNumber} className="border-t border-ink-900/10">
                   <td className="p-3">{row.rowNumber}</td>
                   <td className="p-3">{row.outcome}</td>
-                  <td className="p-3 font-mono text-xs">{row.productId ?? '-'}</td>
-                  <td className="p-3 font-mono text-xs">{row.variantId ?? '-'}</td>
-                  <td className="p-3">{row.errorCode ?? '-'}</td>
+                  <td className="whitespace-nowrap p-3 font-mono text-xs">{row.productId ?? '-'}</td>
+                  <td className="whitespace-nowrap p-3 font-mono text-xs">{row.variantId ?? '-'}</td>
+                  <td className="p-3" title={row.errorCode ?? undefined}>
+                    {catalogImportErrorLabel(row.errorCode)}
+                  </td>
                 </tr>
               ))}
             </tbody>

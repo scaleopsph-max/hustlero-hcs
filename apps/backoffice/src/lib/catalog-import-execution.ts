@@ -24,8 +24,21 @@ export function reconcileImportExecution(job: CatalogImportJob, value: unknown):
     groups.set(key, group)
   }
   const results = new Map(execution.results.map((row) => [row.rowNumber, row]))
+  const variantIds = execution.results.filter((row) => row.outcome !== 'failed').map((row) => row.variantId)
+  const productGroups = new Map<string, string>()
+  for (const result of execution.results) {
+    if (result.outcome === 'failed' || result.productId === null) continue
+    const row = expected.get(result.rowNumber)
+    if (!row) throw new Error('Import results include an unknown source row.')
+    const group = row.productId ? `product:${row.productId}` : `sku:${row.productSku}`,
+      prior = productGroups.get(result.productId)
+    if (prior !== undefined && prior !== group)
+      throw new Error('Separate product groups cannot share one posted product.')
+    productGroups.set(result.productId, group)
+  }
   if (
     execution.jobId !== job.id ||
+    new Set(variantIds).size !== variantIds.length ||
     execution.groupCount !== groups.size ||
     job.rejectedCount !== 0 ||
     execution.results.some((result) => {

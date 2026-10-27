@@ -86,6 +86,7 @@ it('reviews only an unchanged server-recomputed plan', async () => {
   const { request } = setup()
   const response = await request('/review')
   expect(response.status).toBe(200)
+  expect(response.headers.get('Cache-Control')).toBe('private, no-store')
   expect(await response.json()).toEqual({ hash, jobId, groupCount: 1 })
 })
 it('revalidates again on first confirmation before passing the bound actor/key to SQL', async () => {
@@ -179,4 +180,10 @@ it('bounds execution requests before parsing', async () => {
   const { request, execute } = setup()
   expect((await request('/execution', { action: 'step', groupIndex: 0, extra: 'x'.repeat(2000) })).status).toBe(413)
   expect(execute).not.toHaveBeenCalled()
+})
+it('never permits shared caching of denied catalog requests', async () => {
+  const { request } = setup()
+  const response = await request('/execution', undefined, {})
+  expect(response.status).toBe(401)
+  expect(response.headers.get('Cache-Control')).toBe('private, no-store')
 })

@@ -14,12 +14,13 @@ create function pg_temp.exec_plan(p_raw jsonb) returns jsonb language sql as $$
  select jsonb_agg(jsonb_build_object('rowNumber',r.ordinality+1,'issues','[]'::jsonb,
  'action',case when v.id is not null then 'update_variant' when coalesce(r.value->>'product_sku',r.value->>'sku')=r.value->>'sku' and parent.id is null then 'create_product' else 'create_variant' end,
  'productId',parent.product_id,'variantId',v.id,'productSku',coalesce(r.value->>'product_sku',r.value->>'sku'),
- 'name',r.value->>'product_name','description',null,'categoryId',null,'categoryName',null,
- 'variantName',coalesce(r.value->>'variant_name','Default'),'sku',r.value->>'sku','barcodes',coalesce((select jsonb_agg(b.barcode::text order by b.id) from app.product_barcodes b where b.tenant_id=v.tenant_id and b.variant_id=v.id),'[]'::jsonb),
+ 'name',r.value->>'product_name','description',null,'categoryId',c.id,'categoryName',c.name,
+ 'variantName',coalesce(r.value->>'variant_name','Default'),'sku',r.value->>'sku','barcodes',coalesce((select jsonb_agg(b.barcode::text order by b.is_primary desc,b.id) from app.product_barcodes b where b.tenant_id=v.tenant_id and b.variant_id=v.id),'[]'::jsonb)||case when r.value->>'barcode' is not null then jsonb_build_array(r.value->>'barcode') else '[]'::jsonb end,
  'retailPriceMinor',(r.value->>'retail_price')::numeric*100,'unitCostMinor',nullif(r.value->>'unit_cost','')::numeric*100,'trackInventory',true) order by r.ordinality)
  from jsonb_array_elements(p_raw) with ordinality r
  left join app.product_variants v on v.tenant_id='29000000-0000-4000-8000-000000000001' and v.sku=(r.value->>'sku')::extensions.citext
  left join app.product_variants parent on parent.tenant_id='29000000-0000-4000-8000-000000000001' and parent.sku=coalesce(r.value->>'product_sku',r.value->>'sku')::extensions.citext
+ left join app.product_categories c on c.tenant_id='29000000-0000-4000-8000-000000000001' and lower(btrim(c.name))=lower(btrim(r.value->>'category'))
 $$;
 create function pg_temp.new_exec_job(p_key text,p_raw jsonb) returns uuid language sql as $$
  select (app.save_catalog_import_job('19000000-0000-4000-8000-000000000001','29000000-0000-4000-8000-000000000001',
@@ -115,6 +116,40 @@ select is((select count(distinct product_id)::integer from app.product_variants 
 select is((select sum(retail_price) from app.product_variants where tenant_id='29000000-0000-4000-8000-000000000001' and sku::text like 'LIMIT-%'),101.00::numeric,'one hundred exact prices reconcile');
 select is((select sum(unit_cost) from app.product_variants where tenant_id='29000000-0000-4000-8000-000000000001' and sku::text like 'LIMIT-%'),55.00::numeric,'one hundred exact costs reconcile');
 select is((select count(*)::integer from app.inventory_movements where tenant_id='29000000-0000-4000-8000-000000000001'),0,'boundary import also creates no stock');
+insert into exec_cases values('aliases',pg_temp.new_exec_job('execution-parent-aliases-001','[
+ {"product_sku":"EXEC-8","product_name":"Alias Shoes","sku":"EXEC-8","retail_price":"450.01"},
+ {"product_sku":"EXEC-9","product_name":"Alias Shoes","sku":"EXEC-9","retail_price":"460.02"}]'));
+select is((app.review_catalog_import('19000000-0000-4000-8000-000000000001','29000000-0000-4000-8000-000000000001',(select job from exec_cases where name='aliases'))->>'groupCount')::integer,1,'different parent SKU aliases use one existing product group');
+select pg_temp.start_exec((select job from exec_cases where name='aliases'));
+select is(jsonb_array_length(pg_temp.step_exec((select job from exec_cases where name='aliases'))->'execution'->'results'),2,'alias group updates both variants atomically');
+select is((select sum(retail_price) from app.product_variants where tenant_id='29000000-0000-4000-8000-000000000001' and sku in('EXEC-8','EXEC-9')),910.03::numeric,'alias prices reconcile without float rounding');
+insert into app.product_categories(id,tenant_id,name,created_by) values('79000000-0000-4000-8000-000000000001','29000000-0000-4000-8000-000000000001','Import Category','19000000-0000-4000-8000-000000000001');
+insert into exec_cases values('category-stale',pg_temp.new_exec_job('execution-category-stale-001','[{"product_name":"Category Changed","sku":"CATEGORY-STALE","category":"Import Category","retail_price":"1.00"}]'));
+select pg_temp.start_exec((select job from exec_cases where name='category-stale'));
+update app.product_categories set status='archived' where id='79000000-0000-4000-8000-000000000001';
+select is(pg_temp.step_exec((select job from exec_cases where name='category-stale'))->'execution'->'results'->0->>'errorCode','HCIS1','archived category after confirmation becomes failed result');
+select is((select count(*)::integer from app.product_variants where tenant_id='29000000-0000-4000-8000-000000000001' and sku='CATEGORY-STALE'),0,'stale category does not create an uncategorized replacement');
+insert into exec_cases values('barcode-stale',pg_temp.new_exec_job('execution-barcode-stale-001','[{"product_name":"Barcode Changed","sku":"BARCODE-STALE","barcode":"480001999888","retail_price":"1.00"}]'));
+select pg_temp.start_exec((select job from exec_cases where name='barcode-stale'));
+insert into app.product_barcodes(tenant_id,variant_id,barcode,is_primary) select tenant_id,id,'480001999888',true from app.product_variants where tenant_id='29000000-0000-4000-8000-000000000001' and sku='EXEC-9';
+select is(pg_temp.step_exec((select job from exec_cases where name='barcode-stale'))->'execution'->'results'->0->>'errorCode','HCIS1','new barcode owner after confirmation becomes failed result');
+select is((select count(*)::integer from app.product_variants where tenant_id='29000000-0000-4000-8000-000000000001' and sku='BARCODE-STALE'),0,'barcode conflict creates no duplicate SKU');
+select is((select count(*)::integer from app.product_barcodes where tenant_id='29000000-0000-4000-8000-000000000001' and barcode='480001999888'),1,'barcode ownership is preserved');
+insert into app.products(id,tenant_id,name,created_by) values('89000000-0000-4000-8000-000000000001','29000000-0000-4000-8000-000000000002','Foreign product','19000000-0000-4000-8000-000000000001');
+insert into app.product_variants(id,tenant_id,product_id,name,sku,retail_price,created_by) values('99000000-0000-4000-8000-000000000001','29000000-0000-4000-8000-000000000002','89000000-0000-4000-8000-000000000001','Default','FOREIGN-EXEC',1,'19000000-0000-4000-8000-000000000001');
+select throws_ok($$insert into app.catalog_import_results(tenant_id,execution_id,group_index,row_number,outcome,product_id,variant_id,recorded_at) select '29000000-0000-4000-8000-000000000001',(value->'execution'->>'id')::uuid,0,5001,'created','89000000-0000-4000-8000-000000000001','99000000-0000-4000-8000-000000000001',clock_timestamp() from exec_started$$,'23503',null,'result foreign keys reject another tenant product and variant');
+insert into exec_cases values('maximum',pg_temp.new_exec_job('execution-maximum-job-001',(select jsonb_agg(jsonb_build_object('product_name','Maximum Product '||i,'sku','MAXIMUM-'||i,'retail_price','1.01') order by i) from generate_series(1,5000) i)));
+set local statement_timeout='30s';
+select is((app.review_catalog_import('19000000-0000-4000-8000-000000000001','29000000-0000-4000-8000-000000000001',(select job from exec_cases where name='maximum'))->>'groupCount')::integer,5000,'maximum supported job reviews all five thousand separate product groups');
+set local statement_timeout=0;
+select is((select count(*)::integer from app.catalog_import_executions where job_id=(select job from exec_cases where name='maximum')),0,'maximum review remains read only');
+insert into app.product_barcodes(id,tenant_id,variant_id,barcode,is_primary) select 'fb000000-0000-4000-8000-000000000001',tenant_id,id,'480000281111',true from app.product_variants where tenant_id='29000000-0000-4000-8000-000000000001' and sku='EXEC-8';
+insert into app.product_barcodes(id,tenant_id,variant_id,barcode,is_primary) select '0b000000-0000-4000-8000-000000000001',tenant_id,id,'480000281112',false from app.product_variants where tenant_id='29000000-0000-4000-8000-000000000001' and sku='EXEC-8';
+insert into exec_cases values('primary-preserved',pg_temp.new_exec_job('execution-primary-preserved-001','[{"product_name":"Alias Shoes","sku":"EXEC-8","retail_price":"450.01"}]'));
+select pg_temp.start_exec((select job from exec_cases where name='primary-preserved'));
+select is(pg_temp.step_exec((select job from exec_cases where name='primary-preserved'))->'execution'->>'state','completed','existing multi-barcode variant imports successfully');
+select is((select b.barcode::text from app.product_barcodes b join app.product_variants v on v.tenant_id=b.tenant_id and v.id=b.variant_id where v.tenant_id='29000000-0000-4000-8000-000000000001' and v.sku='EXEC-8' and b.is_primary),'480000281111','import update preserves primary barcode rather than UUID ordering');
+select is((select count(*)::integer from app.product_barcodes b join app.product_variants v on v.tenant_id=b.tenant_id and v.id=b.variant_id where v.tenant_id='29000000-0000-4000-8000-000000000001' and v.sku='EXEC-8'),2,'secondary barcode is also retained after update');
 update app.tenants set status='suspended' where id='29000000-0000-4000-8000-000000000001';
 select throws_ok($$select pg_temp.step_exec((select job from exec_cases where name='new'))$$,'HCS09','Catalog access denied','suspended tenant cannot replay completed group');
 select * from finish();

@@ -1,5 +1,12 @@
 # Project State
 
+October 27 execution baseline c6efe63 passed both exact CI runs, with 1,152 app
+tests / 61 files, 47 harness cases and 2,062 SQL assertions / 58 files, reset,
+concurrency and cleanup. Actual import posting is now implemented in source,
+not hosted. Closeout adds fresh-authorized result CSV, private/no-store reads,
+identity/FK guards and scale/barcode regressions; final closeout verification is
+pending at this checkpoint. See qa/CATALOG_IMPORT_CLOSEOUT_2026-10-27.md.
+
 October 27 next increment: catalog import confirmation, bounded atomic product-group
 posting, durable outcomes and UI recovery are implemented for execution QA. At
 this checkpoint 1,152 app tests / 61 files and 47 harness cases passed, along with

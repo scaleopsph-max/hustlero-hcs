@@ -19,6 +19,9 @@ insert into app.membership_roles(tenant_id,user_id,role_id) values('27000000-000
 select app.create_catalog_product('17000000-0000-4000-8000-000000000001','27000000-0000-4000-8000-000000000001',
  'Existing shoe',null,'Shoes','Size 8','IMPORT-OLD-8',499,200,true,array['480000171717'],'import-fixture-001','import-fixture-hash','import-fixture-request');
 update app.product_variants set is_active=false where tenant_id='27000000-0000-4000-8000-000000000001';
+update app.product_barcodes set id='fa000000-0000-4000-8000-000000000001' where tenant_id='27000000-0000-4000-8000-000000000001';
+insert into app.product_barcodes(id,tenant_id,variant_id,barcode,is_primary)
+select '0a000000-0000-4000-8000-000000000001',tenant_id,id,'480000171718',false from app.product_variants where tenant_id='27000000-0000-4000-8000-000000000001';
 insert into app.product_categories(tenant_id,name,status,created_by) values
  ('27000000-0000-4000-8000-000000000001','Archived','archived','17000000-0000-4000-8000-000000000001'),
  ('27000000-0000-4000-8000-000000000002','Foreign secret category','active','17000000-0000-4000-8000-000000000001');
@@ -29,6 +32,7 @@ create temp table import_snapshot as select pg_temp.import_snapshot('17000000-00
 select is(jsonb_array_length((select value->'products' from import_snapshot)),1,'snapshot contains own product');
 select is(((select value->'products'->0->'variants'->0->>'isActive' from import_snapshot))::boolean,false,'inactive SKU is retained for conflict detection');
 select is((select value->'products'->0->'variants'->0->'barcodes'->>0 from import_snapshot),'480000171717','snapshot preserves barcode ownership');
+select is((select value->'products'->0->'variants'->0->'barcodes'->>1 from import_snapshot),'480000171718','secondary barcode never displaces primary despite earlier UUID order');
 select is(jsonb_array_length((select value->'categories' from import_snapshot)),2,'active and archived categories both retained');
 select ok((select value::text not like '%Foreign secret%' from import_snapshot),'foreign category is never projected');
 select throws_ok($$select pg_temp.import_snapshot('17000000-0000-4000-8000-000000000001','27000000-0000-4000-8000-000000000002')$$,'HCS09','Catalog access denied','foreign tenant denied');

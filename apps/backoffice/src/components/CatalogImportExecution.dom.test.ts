@@ -125,6 +125,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 async function confirm() {
   fireEvent.click(screen.getByRole('button', { name: 'Review import' }))
@@ -232,4 +233,132 @@ it('does not offer confirmation for a cancelled preview', async () => {
     ),
   )
   expect(screen.queryByRole('button', { name: 'Review import' })).toBeNull()
+})
+it('rechecks access before exporting instead of exporting cached results after revocation', async () => {
+  const { mount } = setup()
+  await mount()
+  await confirm()
+  fireEvent.click(screen.getByRole('button', { name: 'Continue import' }))
+  await screen.findByText('completed')
+  const create = vi.fn(() => 'blob:synthetic'),
+    revoke = vi.fn()
+  vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL: create, revokeObjectURL: revoke }))
+  deny = true
+  fireEvent.click(screen.getByRole('button', { name: 'Export results' }))
+  await screen.findByRole('alert')
+  expect(create).not.toHaveBeenCalled()
+  expect(effects).toBe(1)
+})
+it('downloads reconciled result CSV without issuing any additional mutation', async () => {
+  const { mount } = setup()
+  await mount()
+  await confirm()
+  fireEvent.click(screen.getByRole('button', { name: 'Continue import' }))
+  await screen.findByText('completed')
+  const create = vi.fn(() => 'blob:synthetic'),
+    revoke = vi.fn()
+  let filename = ''
+  vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL: create, revokeObjectURL: revoke }))
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+    filename = this.download
+  })
+  const before = posts.length
+  fireEvent.click(screen.getByRole('button', { name: 'Export results' }))
+  await waitFor(() => expect(create).toHaveBeenCalledOnce())
+  expect(filename).toBe(`hustlero-catalog-import-${jobId}-results.csv`)
+  expect(revoke).toHaveBeenCalledWith('blob:synthetic')
+  expect(posts).toHaveLength(before)
+})
+function batchFixture(gated = false) {
+  const batchSource = {
+    filename: 'batch.csv',
+    rows: Array.from({ length: 26 }, (_, index) => ({
+      product_name: `Item ${index}`,
+      sku: `BATCH-${index}`,
+      retail_price: '1.01',
+    })),
+  }
+  const batchJob = {
+    ...job,
+    filename: batchSource.filename,
+    rowCount: 26,
+    proposedCreates: 26,
+    source: batchSource,
+    rows: planCatalogImport(batchSource.rows, { products: [], categories: [] }),
+  }
+  let current: CatalogImportExecution = {
+    id: executionId,
+    jobId,
+    state: 'running',
+    groupCount: 26,
+    nextGroup: 0,
+    confirmedBy: user,
+    requestKey: 'batch-confirmation-key',
+    reviewHash: hash,
+    confirmedAt: '2026-10-27T00:00:00Z',
+    completedAt: null,
+    results: [],
+  }
+  const indices: number[] = []
+  let release = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const call = vi.fn(async (_path: string, body?: unknown) => {
+    if (body) {
+      const command = body as { action: string; groupIndex: number }
+      indices.push(command.groupIndex)
+      if (gated && indices.length === 1) await gate
+      const index = command.groupIndex
+      if (index !== current.nextGroup) throw new Error('Unexpected group index')
+      current = {
+        ...current,
+        nextGroup: index + 1,
+        state: index === 25 ? 'completed' : 'running',
+        completedAt: index === 25 ? '2026-10-27T00:00:01Z' : null,
+        results: [
+          ...current.results,
+          {
+            groupIndex: index,
+            rowNumber: index + 2,
+            outcome: 'created',
+            productId: crypto.randomUUID(),
+            variantId: crypto.randomUUID(),
+            errorCode: null,
+            recordedAt: '2026-10-27T00:00:01Z',
+          },
+        ],
+      }
+    }
+    return { execution: structuredClone(current) }
+  })
+  return { props: { job: batchJob, user, tenant, call, onChecked: checked }, indices, release }
+}
+it('bounds one Continue action to 25 groups and resumes the exact remaining index', async () => {
+  const { props, indices } = batchFixture()
+  render(createElement(CatalogImportExecutionPanel, props))
+  fireEvent.click(await screen.findByRole('button', { name: 'Continue import' }))
+  await waitFor(() => expect(indices).toHaveLength(25), { timeout: 5000 })
+  await waitFor(() =>
+    expect((screen.getByRole('button', { name: 'Continue import' }) as HTMLButtonElement).disabled).toBe(false),
+  )
+  expect(indices).toEqual(Array.from({ length: 25 }, (_, index) => index))
+  expect(sessionStorage.length).toBe(0)
+  fireEvent.click(screen.getByRole('button', { name: 'Continue import' }))
+  await screen.findByText('completed')
+  expect(indices).toEqual(Array.from({ length: 26 }, (_, index) => index))
+  expect(sessionStorage.length).toBe(0)
+})
+it('pauses after the in-flight group and does not post the next one', async () => {
+  const { props, indices, release } = batchFixture(true)
+  render(createElement(CatalogImportExecutionPanel, props))
+  fireEvent.click(await screen.findByRole('button', { name: 'Continue import' }))
+  await waitFor(() => expect(indices).toHaveLength(1))
+  fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
+  release()
+  await waitFor(() =>
+    expect((screen.getByRole('button', { name: 'Continue import' }) as HTMLButtonElement).disabled).toBe(false),
+  )
+  expect(indices).toEqual([0])
+  expect(sessionStorage.length).toBe(0)
 })

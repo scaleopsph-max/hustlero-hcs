@@ -729,6 +729,14 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
   const app = new Hono<{ Bindings: Bindings }>()
 
   app.use('*', requestId())
+  app.use('/v1/catalog', async (context, next) => {
+    context.header('Cache-Control', 'private, no-store')
+    await next()
+  })
+  app.use('/v1/catalog/*', async (context, next) => {
+    context.header('Cache-Control', 'private, no-store')
+    await next()
+  })
   app.use(
     '/v1/*',
     cors({
