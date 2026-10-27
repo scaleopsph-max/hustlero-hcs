@@ -12,12 +12,12 @@ insert into app.tenant_memberships(tenant_id,user_id,status,is_owner) values
  ('27000000-0000-4000-8000-000000000001','17000000-0000-4000-8000-000000000001','active',true),
  ('27000000-0000-4000-8000-000000000001','17000000-0000-4000-8000-000000000002','active',false),
  ('27000000-0000-4000-8000-000000000001','17000000-0000-4000-8000-000000000003','active',false);
-insert into app.roles(id,tenant_id,code,name) values
- ('37000000-0000-4000-8000-000000000001','27000000-0000-4000-8000-000000000001','cashier','Cashier'),
- ('37000000-0000-4000-8000-000000000002','27000000-0000-4000-8000-000000000001','manager','Manager');
-insert into app.membership_roles(tenant_id,user_id,role_id) values
- ('27000000-0000-4000-8000-000000000001','17000000-0000-4000-8000-000000000002','37000000-0000-4000-8000-000000000001'),
- ('27000000-0000-4000-8000-000000000001','17000000-0000-4000-8000-000000000003','37000000-0000-4000-8000-000000000002');
+-- Tenant initialization already creates system roles. Bind their actual IDs;
+-- duplicate role insertion is not a valid test of the guarded command.
+insert into app.membership_roles(tenant_id,user_id,role_id)
+select tenant_id,case lower(code::text) when 'cashier' then '17000000-0000-4000-8000-000000000002'::uuid
+ else '17000000-0000-4000-8000-000000000003'::uuid end,id
+from app.roles where tenant_id='27000000-0000-4000-8000-000000000001' and lower(code::text) in ('cashier','manager');
 create function pg_temp.discount(p_body jsonb,p_key text,p_actor uuid default '17000000-0000-4000-8000-000000000001',p_tenant uuid default '27000000-0000-4000-8000-000000000001')
 returns jsonb language sql as $$select app.manage_retail_discount(p_actor,p_tenant,p_body,p_key,'discount-test')$$;
 create function pg_temp.discounts(p_id uuid default null,p_revision integer default null,p_actor uuid default '17000000-0000-4000-8000-000000000001',p_tenant uuid default '27000000-0000-4000-8000-000000000001')
@@ -36,8 +36,8 @@ select throws_ok($$select pg_temp.discount('{"action":"create","name":"Other","v
 select throws_ok($$select pg_temp.discounts(null,null,'17000000-0000-4000-8000-000000000002')$$,'HCDI0','Discount management denied','apply-only cashier cannot read private management history');
 select throws_ok($$select pg_temp.discounts(null,null,'17000000-0000-4000-8000-000000000001','27000000-0000-4000-8000-000000000002')$$,'HCDI0','Discount management denied','foreign tenant denied');
 select lives_ok($$select pg_temp.discounts(null,null,'17000000-0000-4000-8000-000000000003')$$,'manager default management permission');
-select ok(exists(select 1 from app.role_permissions where role_id='37000000-0000-4000-8000-000000000001' and permission_code='discounts.apply'),'cashier default apply permission');
-select ok(not exists(select 1 from app.role_permissions where role_id='37000000-0000-4000-8000-000000000001' and permission_code='discounts.manage'),'cashier never defaults to manage');
+select ok(exists(select 1 from app.role_permissions rp join app.roles r on r.tenant_id=rp.tenant_id and r.id=rp.role_id where r.tenant_id='27000000-0000-4000-8000-000000000001' and lower(r.code::text)='cashier' and permission_code='discounts.apply'),'cashier default apply permission');
+select ok(not exists(select 1 from app.role_permissions rp join app.roles r on r.tenant_id=rp.tenant_id and r.id=rp.role_id where r.tenant_id='27000000-0000-4000-8000-000000000001' and lower(r.code::text)='cashier' and permission_code='discounts.manage'),'cashier never defaults to manage');
 
 select throws_ok(format('select pg_temp.discount(%L::jsonb,%L)',jsonb_build_object('action','update','discountId',(select result->>'id' from discount_state),'expectedRevision',2,'name','Fixed','value',jsonb_build_object('kind','percent','rateBps',1000),'status','active'),'discount-wrong-revision'),'HCDI4','Discount revision conflict','stale revision denied');
 select lives_ok(format('select pg_temp.discount(%L::jsonb,%L)',jsonb_build_object('action','update','discountId',(select result->>'id' from discount_state),'expectedRevision',1,'name','Renamed','value',jsonb_build_object('kind','percent','rateBps',1250),'status','active'),'discount-update-key-001'),'update changes configuration');
@@ -76,10 +76,21 @@ select ok(not has_function_privilege('authenticated','app.load_retail_discounts(
 select ok((select relrowsecurity from pg_class where oid='app.retail_discounts'::regclass),'definitions RLS enabled');
 select ok((select relrowsecurity from pg_class where oid='app.retail_discount_versions'::regclass),'versions RLS enabled');
 select ok(not exists(select 1 from app.retail_discounts d join audit.audit_events a on a.entity_id=d.id and a.action='retail.discount.archive' join integration.event_outbox e on e.aggregate_id=d.id and e.topic=a.action where d.updated_at<>a.occurred_at or d.updated_at<>e.created_at),'definition audit/event share one command timestamp');
+create temp table discount_long_history as select pg_temp.discount('{"action":"create","name":"Long history","value":{"kind":"fixed","amountMinor":1},"status":"inactive"}','discount-history-initial') result;
+do $$declare i integer;begin
+ for i in 1..101 loop
+  perform pg_temp.discount(jsonb_build_object('action','update','discountId',(select result->>'id' from discount_long_history),
+   'expectedRevision',i,'name','Long history','value',jsonb_build_object('kind','fixed','amountMinor',i+1),'status','inactive'),
+   'discount-history-update-'||i);
+ end loop;
+end;$$;
+select is(jsonb_array_length(pg_temp.discounts((select (result->>'id')::uuid from discount_long_history))->'versions'),100,'management history bounded to latest 100');
+select is(pg_temp.discounts((select (result->>'id')::uuid from discount_long_history),1),(select result from discount_long_history),'exact proof still reads revision older than latest 100');
+select is(pg_temp.discounts((select (result->>'id')::uuid from discount_long_history))->'versions'->0->>'revision','102','latest revision first');
 update app.tenant_entitlements set ends_at=clock_timestamp()-interval '1 second' where tenant_id='27000000-0000-4000-8000-000000000001' and feature_code='sales';
 select throws_ok($$select pg_temp.discount('{"action":"create","name":" Fixed ","value":{"kind":"fixed","amountMinor":123},"status":"inactive"}','discount-create-key-001')$$,'HCDI1','Sales unavailable','expired entitlement denies even completed replay');
 update app.tenant_entitlements set ends_at=null where tenant_id='27000000-0000-4000-8000-000000000001' and feature_code='sales';
-delete from app.role_permissions where role_id='37000000-0000-4000-8000-000000000002' and permission_code='discounts.manage';
+delete from app.role_permissions rp using app.roles r where r.tenant_id=rp.tenant_id and r.id=rp.role_id and r.tenant_id='27000000-0000-4000-8000-000000000001' and lower(r.code::text)='manager' and rp.permission_code='discounts.manage';
 select throws_ok($$select pg_temp.discounts(null,null,'17000000-0000-4000-8000-000000000003')$$,'HCDI0','Discount management denied','revoked management denied');
 update app.tenants set status='suspended' where id='27000000-0000-4000-8000-000000000001';
 select throws_ok($$select pg_temp.discounts()$$,'HCDI0','Discount management denied','suspended tenant denied');
