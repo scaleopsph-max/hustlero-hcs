@@ -13,6 +13,7 @@ import { formatPeso } from '@hcs/ui'
 import { createClient } from '@/lib/supabase-browser'
 import { selectActiveTenant } from '@/lib/active-tenant'
 import { Topbar } from './Topbar'
+import { CatalogImportExecutionPanel } from './CatalogImportExecution'
 const api = process.env.NEXT_PUBLIC_API_URL,
   url = process.env.NEXT_PUBLIC_SUPABASE_URL,
   key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
@@ -23,10 +24,12 @@ export function CatalogImportHistory() {
   const [busy, setBusy] = useState(true),
     [error, setError] = useState<string | null>(null),
     [confirm, setConfirm] = useState(false)
+  const [executionChecked, setExecutionChecked] = useState(false),
+    [hasExecution, setHasExecution] = useState(false)
   const identity = useRef<{ user: string; tenant: string } | null>(null),
     lock = useRef(false),
     sequence = useRef(0)
-  async function call(path: string, body?: unknown) {
+  async function call(path: string, body?: unknown, requestKey?: string) {
     if (!auth || !api) throw new Error('Authentication or API is not configured.')
     const { data, error: authError } = await auth.auth.getSession()
     if (authError) throw authError
@@ -49,12 +52,16 @@ export function CatalogImportHistory() {
         Authorization: `Bearer ${data.session.access_token}`,
         'X-Tenant-Id': identity.current.tenant,
         ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...(requestKey ? { 'Idempotency-Key': requestKey } : {}),
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
     })
     const value: unknown = await response.json()
     if (!response.ok)
-      throw new Error((value as { error?: { message?: string } }).error?.message ?? 'Could not load import history.')
+      throw Object.assign(
+        new Error((value as { error?: { message?: string } }).error?.message ?? 'Could not load import history.'),
+        { code: (value as { error?: { code?: string } }).error?.code },
+      )
     return value
   }
   async function run(action: 'list' | 'view' | 'cancel', id?: string) {
@@ -64,6 +71,8 @@ export function CatalogImportHistory() {
     setBusy(true)
     setError(null)
     setConfirm(false)
+    setExecutionChecked(false)
+    setHasExecution(false)
     if (action === 'list') {
       setJobs([])
       setDetail(null)
@@ -180,7 +189,7 @@ export function CatalogImportHistory() {
         <section className="mt-6 border-t border-ink-900/20 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="min-w-0 break-all text-lg font-semibold">{detail.filename}</h2>
-            {detail.state === 'preview' && (
+            {detail.state === 'preview' && executionChecked && !hasExecution && (
               <button
                 type="button"
                 onClick={() => setConfirm(true)}
@@ -216,6 +225,19 @@ export function CatalogImportHistory() {
           <p className="py-3 text-sm">
             {detail.state} · {detail.rowCount} rows · {detail.rejectedCount} rejected
           </p>
+          {identity.current && (
+            <CatalogImportExecutionPanel
+              key={detail.id}
+              job={detail}
+              user={identity.current.user}
+              tenant={identity.current.tenant}
+              call={call}
+              onChecked={(exists) => {
+                setExecutionChecked(true)
+                setHasExecution(exists)
+              }}
+            />
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>

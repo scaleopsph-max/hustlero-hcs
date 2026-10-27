@@ -74,6 +74,7 @@ beforeEach(() => {
       requests.push({ path, method, body: init?.body ? JSON.parse(String(init.body)) : null })
       expect(new Headers(init?.headers).get('x-tenant-id')).toBe(tenant)
       if (deny) return Response.json({ error: { message: 'Access revoked' } }, { status: 403 })
+      if (path.endsWith('/execution')) return Response.json({ execution: null })
       if (path.endsWith('/jobs'))
         return Response.json({
           jobs: [
@@ -116,7 +117,7 @@ it('requires explicit cancellation and retains history', async () => {
   await mount()
   fireEvent.click(screen.getByRole('button', { name: 'View catalog.csv' }))
   await screen.findByText('SHOE-8')
-  fireEvent.click(screen.getByRole('button', { name: 'Cancel preview' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Cancel preview' }))
   expect(requests.every((row) => row.method === 'GET')).toBe(true)
   fireEvent.click(screen.getByRole('button', { name: 'Confirm cancellation' }))
   await waitFor(() => expect(requests.filter((row) => row.method === 'POST')).toHaveLength(1))
@@ -154,7 +155,7 @@ it('does not cancel after an account switch', async () => {
   await mount()
   fireEvent.click(screen.getByRole('button', { name: 'View catalog.csv' }))
   await screen.findByText('SHOE-8')
-  fireEvent.click(screen.getByRole('button', { name: 'Cancel preview' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Cancel preview' }))
   mocks.getSession.mockResolvedValue({
     data: { session: { access_token: 'other', user: { id: tenant } } },
     error: null,

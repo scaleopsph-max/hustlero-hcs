@@ -1,5 +1,12 @@
 # Project State
 
+October 27 next increment: catalog import confirmation, bounded atomic product-group
+posting, durable outcomes and UI recovery are implemented for execution QA. At
+this checkpoint 1,152 app tests / 61 files and 47 harness cases passed, along with
+mocked desktop/mobile component checks; builds and isolated SQL CI remain pending.
+See qa/CATALOG_IMPORT_EXECUTION_CANDIDATE_2026-10-27.md and
+product/CATALOG_IMPORT_PROCESSING_2026-10-27.md. No hosted environment changed.
+
 October 27 source continuation: durable catalog import prepared jobs/history and
 cancel-only lifecycle implemented for QA, not posting. Original raw input and
 server-derived plan are immutable; request-key recovery retains exact source.

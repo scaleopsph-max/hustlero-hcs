@@ -2009,6 +2009,177 @@ try {
   console.log(
     'Catalog import job concurrency passed: simultaneous save and cancellation emit once, expiry after request-key wait denies historical save replay, no product posting.',
   )
+  await observer.query(
+    "update app.tenant_entitlements set ends_at=null where tenant_id=$1 and feature_code='catalog'",
+    [tenant],
+  )
+  const executionRaw = {
+    filename: 'execution-race.csv',
+    rows: [{ product_name: 'Execution Race', sku: 'EXECUTION-RACE', retail_price: '49.99', unit_cost: '20.01' }],
+  }
+  const executionPlan = [
+    {
+      rowNumber: 2,
+      issues: [],
+      action: 'create_product',
+      productId: null,
+      variantId: null,
+      productSku: 'EXECUTION-RACE',
+      name: 'Execution Race',
+      description: null,
+      categoryId: null,
+      categoryName: null,
+      variantName: 'Default',
+      sku: 'EXECUTION-RACE',
+      barcodes: [],
+      retailPriceMinor: 4999,
+      unitCostMinor: 2001,
+      trackInventory: true,
+    },
+  ]
+  const prepareExecution = async (raw, plan, key) =>
+    (
+      await observer.query('select app.save_catalog_import_job($1,$2,$3::jsonb,$4::jsonb,$5,$5) response', [
+        actor,
+        tenant,
+        JSON.stringify(raw),
+        JSON.stringify(plan),
+        key,
+      ])
+    ).rows[0].response.jobId
+  const executionJob = await prepareExecution(executionRaw, executionPlan, 'execution-race-prepared-001')
+  const executionHash = (
+    await observer.query('select app.review_catalog_import($1,$2,$3) response', [actor, tenant, executionJob])
+  ).rows[0].response.hash
+  const startExecution = (client) =>
+    client.query('select app.start_catalog_import($1,$2,$3,$4,$5,$5) response', [
+      actor,
+      tenant,
+      executionJob,
+      executionHash,
+      'execution-race-confirm-key',
+    ])
+  await first.query('begin')
+  const firstExecution = (await startExecution(first)).rows[0].response
+  const startReplay = startExecution(second)
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await startReplay).rows[0].response, firstExecution)
+  assert.equal(
+    (
+      await observer.query(
+        "select count(*)::int count from audit.audit_events where tenant_id=$1 and entity_id=$2 and action='catalog.import.confirmed'",
+        [tenant, firstExecution.execution.id],
+      )
+    ).rows[0].count,
+    1,
+  )
+  const stepExecution = (client, job = executionJob) =>
+    client.query('select app.process_catalog_import_group($1,$2,$3,0,$4) response', [
+      actor,
+      tenant,
+      job,
+      'execution-race-step',
+    ])
+  await first.query('begin')
+  const firstStep = (await stepExecution(first)).rows[0].response
+  const stepReplay = stepExecution(second)
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await stepReplay).rows[0].response, firstStep)
+  assert.equal(
+    (
+      await observer.query(
+        "select count(*)::int count from app.product_variants where tenant_id=$1 and sku='EXECUTION-RACE'",
+        [tenant],
+      )
+    ).rows[0].count,
+    1,
+  )
+  assert.equal(
+    (
+      await observer.query(
+        "select count(*)::int count from audit.audit_events where tenant_id=$1 and entity_id=$2 and action='catalog.import.group_processed'",
+        [tenant, firstExecution.execution.id],
+      )
+    ).rows[0].count,
+    1,
+  )
+  const executionTarget = firstStep.execution.results[0]
+  const stalePlan = [
+    {
+      ...executionPlan[0],
+      action: 'update_variant',
+      productId: executionTarget.productId,
+      variantId: executionTarget.variantId,
+      retailPriceMinor: 4501,
+    },
+  ]
+  const staleJob = await prepareExecution(
+    { ...executionRaw, rows: [{ ...executionRaw.rows[0], retail_price: '45.01' }] },
+    stalePlan,
+    'execution-race-stale-001',
+  )
+  const staleHash = (
+    await observer.query('select app.review_catalog_import($1,$2,$3) response', [actor, tenant, staleJob])
+  ).rows[0].response.hash
+  await observer.query('select app.start_catalog_import($1,$2,$3,$4,$5,$5)', [
+    actor,
+    tenant,
+    staleJob,
+    staleHash,
+    'execution-race-stale-confirm',
+  ])
+  await first.query('begin')
+  await first.query('update app.product_variants set retail_price=55.01 where tenant_id=$1 and id=$2', [
+    tenant,
+    executionTarget.variantId,
+  ])
+  const staleStep = stepExecution(second, staleJob)
+  await waitForLock()
+  await first.query('commit')
+  const staleResult = (await staleStep).rows[0].response.execution
+  assert.equal(staleResult.state, 'completed_with_errors')
+  assert.equal(staleResult.results[0].errorCode, 'HCIS1')
+  assert.equal(
+    (
+      await observer.query('select retail_price::text value from app.product_variants where id=$1', [
+        executionTarget.variantId,
+      ])
+    ).rows[0].value,
+    '55.01',
+  )
+  await observer.query(
+    "update app.tenant_entitlements set ends_at=clock_timestamp()+interval '1 second' where tenant_id=$1 and feature_code='catalog'",
+    [tenant],
+  )
+  await first.query('begin')
+  await first.query('select 1 from app.catalog_import_jobs where id=$1 for update', [executionJob])
+  const expiredStep = stepExecution(second).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await delay(1100)
+  await first.query('commit')
+  assert.equal(await expiredStep, 'HCS10')
+  await observer.query(
+    "update app.tenant_entitlements set ends_at=null where tenant_id=$1 and feature_code='catalog'",
+    [tenant],
+  )
+  await first.query('begin')
+  await first.query("update app.tenants set status='suspended' where id=$1", [tenant])
+  const suspendedStep = stepExecution(second).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await suspendedStep, 'HCS09')
+  await observer.query("update app.tenants set status='active' where id=$1", [tenant])
+  console.log(
+    'Catalog import execution concurrency passed: confirmation and same-index posting emit once, post-wait price edits become failed results without overwrite, expired and suspended historical replay denied.',
+  )
 } finally {
   // Release any held fixture transaction before closing another session waiting on it.
   await first.query('rollback').catch(() => {})
