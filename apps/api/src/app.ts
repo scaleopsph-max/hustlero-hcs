@@ -1,4 +1,16 @@
 import {
+  loadRetailDiscountsFromPostgres,
+  manageRetailDiscountInPostgres,
+  type RetailDiscountLoader,
+  type RetailDiscountCommander,
+} from './retail-discounts-repository'
+import {
+  retailDiscountCommandSchema,
+  retailDiscountSchema,
+  retailDiscountContextSchema,
+  retailDiscountVersionsSchema,
+} from '@hcs/contracts'
+import {
   wholesaleReturnRequestSchema,
   wholesaleReturnPreviewSchema,
   wholesaleReturnResponseSchema,
@@ -476,6 +488,8 @@ interface AppDependencies {
   executeCatalogImport: CatalogImportExecutor
   loadCatalogCategories: CatalogCategoriesLoader
   manageCatalogCategory: CatalogCategoryCommander
+  loadRetailDiscounts: RetailDiscountLoader
+  manageRetailDiscount: RetailDiscountCommander
   createCatalogProduct: CatalogProductCreator
   createCatalogVariant: CatalogVariantCreator
   updateCatalogProduct: CatalogProductUpdater
@@ -596,6 +610,8 @@ const defaultDependencies: AppDependencies = {
   executeCatalogImport: executeCatalogImportInPostgres,
   loadCatalogCategories: loadCatalogCategoriesFromPostgres,
   manageCatalogCategory: manageCatalogCategoryInPostgres,
+  loadRetailDiscounts: loadRetailDiscountsFromPostgres,
+  manageRetailDiscount: manageRetailDiscountInPostgres,
   createCatalogProduct: createCatalogProductInPostgres,
   createCatalogVariant: createCatalogVariantInPostgres,
   updateCatalogProduct: updateCatalogProductInPostgres,
@@ -2437,6 +2453,95 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
         : undefined
     return tenant ? { userId: user.userId, tenantId: tenant.tenantId } : null
   }
+
+  app.use('/v1/discounts', async (context, next) => {
+    context.header('Cache-Control', 'private, no-store')
+    await next()
+  })
+  app.use('/v1/discounts/*', async (context, next) => {
+    context.header('Cache-Control', 'private, no-store')
+    await next()
+  })
+  app.on(
+    ['GET', 'POST'],
+    ['/v1/discounts', '/v1/discounts/:id/versions', '/v1/discounts/:id/versions/:revision'],
+    bodyLimit({
+      maxSize: 4096,
+      onError: (context) =>
+        context.json(
+          {
+            error: {
+              code: 'INVALID_DISCOUNT',
+              message: 'Discount request is too large.',
+              requestId: context.get('requestId'),
+            },
+          },
+          413,
+        ),
+    }),
+    async (context) => {
+      const fail = (code: string, message: string, status: 400 | 401 | 403 | 404 | 409 | 405) =>
+        context.json(
+          apiErrorResponseSchema.parse({ error: { code, message, requestId: context.get('requestId') } }),
+          status,
+        )
+      if (!readBearerToken(context.req.header('authorization')))
+        return fail('AUTHENTICATION_REQUIRED', 'Sign in to manage discounts.', 401)
+      const scope = await resolveWholesaleTenant(context)
+      if (!scope) return fail('DISCOUNT_ACCESS_DENIED', 'Select an authorized business.', 403)
+      try {
+        const id = context.req.param('id') ?? null,
+          raw = context.req.param('revision')
+        const revision = raw === undefined ? null : Number(raw)
+        if (
+          (id !== null && !z.uuid().safeParse(id).success) ||
+          (raw !== undefined && (!/^[1-9]\d*$/.test(raw) || !Number.isInteger(revision) || revision! > 2147483647))
+        )
+          return fail('INVALID_DISCOUNT', 'Invalid discount identity or revision.', 400)
+        if (context.req.method === 'GET') {
+          const result = await dependencies.loadRetailDiscounts(scope.userId, scope.tenantId, id, revision, context.env)
+          return context.json(
+            (id === null
+              ? retailDiscountContextSchema
+              : revision === null
+                ? retailDiscountVersionsSchema
+                : retailDiscountSchema
+            ).parse(result),
+          )
+        }
+        if (id !== null) return fail('METHOD_NOT_ALLOWED', 'History is read-only.', 405)
+        const key = context.req.header('idempotency-key')
+        if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+          return fail('IDEMPOTENCY_KEY_REQUIRED', 'A valid request key is required.', 400)
+        const body = retailDiscountCommandSchema.safeParse(await context.req.json().catch(() => null))
+        if (!body.success) return fail('INVALID_DISCOUNT', 'Check the discount details.', 400)
+        return context.json(
+          retailDiscountSchema.parse(
+            await dependencies.manageRetailDiscount(
+              scope.userId,
+              scope.tenantId,
+              body.data,
+              key,
+              context.get('requestId'),
+              context.env,
+            ),
+          ),
+        )
+      } catch (error) {
+        const code = postgresErrorCode(error)
+        if (code === 'HCDI0' || code === 'HCDI1')
+          return fail('DISCOUNT_ACCESS_DENIED', 'Discount management is unavailable.', 403)
+        if (code === 'HCDI5') return fail('DISCOUNT_NOT_FOUND', 'Discount not found.', 404)
+        if (code === 'HCDI3') return fail('DISCOUNT_ARCHIVED', 'Archived discounts cannot be edited.', 409)
+        if (code === 'HCDI4')
+          return fail('DISCOUNT_REVISION_CONFLICT', 'Discount changed. Refresh before editing.', 409)
+        if (code === '23505') return fail('DISCOUNT_DUPLICATE', 'A discount with this name already exists.', 409)
+        if (code === 'HCS08') return fail('IDEMPOTENCY_KEY_CONFLICT', 'Request key belongs to another command.', 409)
+        if (code === 'HCDI2' || code === '22P02') return fail('INVALID_DISCOUNT', 'Check the discount details.', 400)
+        throw error
+      }
+    },
+  )
 
   app.on(['GET', 'POST'], '/v1/catalog/categories', async (context) => {
     const fail = (code: string, message: string, status: 400 | 401 | 403 | 404 | 409) =>

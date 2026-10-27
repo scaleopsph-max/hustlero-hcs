@@ -1,5 +1,12 @@
 # Project State
 
+October 27 discount configuration source candidate: versioned definitions/private
+API, dedicated permissions and Back Office manager with original-command recovery
+implemented for QA. 55 API/helper and 13 DOM tests passed, mocked desktop/mobile
+browser passed. Full local and isolated SQL/CI pending. No hosted action. POS
+application/posting, discounted refunds and reporting remain next. See
+qa/RETAIL_DISCOUNT_CONFIGURATION_2026-10-27.md.
+
 October 27 retail discount computation checkpoint: owner resolved whole-ticket
 scope, predefined-only dedicated manage/apply permissions, untaxed retail-only
 eligibility and rejection of zero/negative payable. Pure quote engine and strict

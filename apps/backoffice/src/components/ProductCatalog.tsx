@@ -257,6 +257,9 @@ export function ProductCatalog() {
             <Link href="/categories" className="text-sm font-semibold underline">
               Categories
             </Link>
+            <Link href="/discounts" className="text-sm font-semibold underline">
+              Discounts
+            </Link>
             <Link href="/products/import" className="text-sm font-semibold underline">
               Catalog import preview
             </Link>

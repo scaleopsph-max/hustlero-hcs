@@ -26,8 +26,12 @@ Use existing Sales entitlement; no new subscription, feature add-on or paid reso
 Implemented at this checkpoint: strict command/definition contracts and a pure
 integer quote engine, with original definition snapshots, proportional per-line
 amounts and positive-payable enforcement. Contracts describe future commands;
-they do not expose an endpoint or grant permissions. Database configuration,
-private API, manager UI and durable command recovery remain to implement.
+they do not by themselves expose an endpoint or grant permissions.
+
+The next source candidate adds database configuration, guarded private API,
+manager UI and durable exact-version command recovery. Verification is recorded
+in `../qa/RETAIL_DISCOUNT_CONFIGURATION_2026-10-27.md`; source presence is not
+hosted migration/deployment evidence.
 
 POS selection/checkout authorization and immutable sale-line discount posting,
 snapshot-based partial/full refunds and linked discount reporting are the next

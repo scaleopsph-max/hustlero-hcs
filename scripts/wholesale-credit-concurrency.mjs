@@ -2180,6 +2180,111 @@ try {
   console.log(
     'Catalog import execution concurrency passed: confirmation and same-index posting emit once, post-wait price edits become failed results without overwrite, expired and suspended historical replay denied.',
   )
+  // Retail discount metadata is a separate private management surface. No sales
+  // are posted here; use the same disposable loopback fixture and lock observer.
+  const discountCommand = (client, body, key) =>
+    client.query('select app.manage_retail_discount($1,$2,$3::jsonb,$4,$4) response', [
+      actor,
+      tenant,
+      JSON.stringify(body),
+      key,
+    ])
+  const discountBody = {
+    action: 'create',
+    name: 'Concurrent retail promotion',
+    value: { kind: 'fixed', amountMinor: 100 },
+    status: 'inactive',
+  }
+  await first.query('begin')
+  const createdDiscount = (await discountCommand(first, discountBody, 'discount-concurrent-create')).rows[0].response
+  const discountReplay = discountCommand(second, discountBody, 'discount-concurrent-create')
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await discountReplay).rows[0].response, createdDiscount)
+  assert.equal(
+    (
+      await observer.query(
+        'select count(*)::int count from app.retail_discount_versions where tenant_id=$1 and discount_id=$2',
+        [tenant, createdDiscount.id],
+      )
+    ).rows[0].count,
+    1,
+  )
+
+  const editDiscount = {
+    action: 'update',
+    discountId: createdDiscount.id,
+    expectedRevision: 1,
+    name: 'Updated retail promotion',
+    value: { kind: 'percent', rateBps: 1250 },
+    status: 'active',
+  }
+  await first.query('begin')
+  await discountCommand(first, editDiscount, 'discount-concurrent-edit-one')
+  const staleDiscount = discountCommand(second, editDiscount, 'discount-concurrent-edit-two').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await staleDiscount, 'HCDI4')
+  assert.equal(
+    (
+      await observer.query(
+        'select count(*)::int count from app.retail_discount_versions where tenant_id=$1 and discount_id=$2',
+        [tenant, createdDiscount.id],
+      )
+    ).rows[0].count,
+    2,
+  )
+
+  await first.query('begin')
+  await first.query("update app.tenants set status='suspended' where id=$1", [tenant])
+  const suspendedDiscount = discountCommand(second, discountBody, 'discount-concurrent-create').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await suspendedDiscount, 'HCDI0')
+  await observer.query("update app.tenants set status='active' where id=$1", [tenant])
+
+  await observer.query(
+    "update app.tenant_entitlements set ends_at=clock_timestamp()+interval '1 second' where tenant_id=$1 and feature_code='sales'",
+    [tenant],
+  )
+  await first.query('begin')
+  await first.query('select 1 from app.retail_discounts where tenant_id=$1 and id=$2 for update', [
+    tenant,
+    createdDiscount.id,
+  ])
+  const expiredDiscount = discountCommand(
+    second,
+    { ...editDiscount, expectedRevision: 2 },
+    'discount-expired-edit',
+  ).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await delay(1100)
+  await first.query('commit')
+  assert.equal(await expiredDiscount, 'HCDI1')
+  assert.equal(
+    (
+      await observer.query('select revision from app.retail_discounts where tenant_id=$1 and id=$2', [
+        tenant,
+        createdDiscount.id,
+      ])
+    ).rows[0].revision,
+    2,
+  )
+  await observer.query("update app.tenant_entitlements set ends_at=null where tenant_id=$1 and feature_code='sales'", [
+    tenant,
+  ])
+  console.log(
+    'Retail discount concurrency passed: same-key create emits once, stale competing edit denied, queued suspension and row-lock expiry deny completed replay/new effects.',
+  )
 } finally {
   // Release any held fixture transaction before closing another session waiting on it.
   await first.query('rollback').catch(() => {})
