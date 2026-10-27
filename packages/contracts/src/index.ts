@@ -148,6 +148,13 @@ export {
   type CatalogImportPreviewRequest,
   type CatalogImportPreviewResponse,
   type CatalogImportSnapshot,
+  catalogImportJobSummarySchema,
+  catalogImportJobSchema,
+  catalogImportJobListSchema,
+  catalogImportJobSavedSchema,
+  type CatalogImportJob,
+  type CatalogImportJobList,
+  type CatalogImportJobSaved,
 } from './catalog-import'
 export { environmentSchema, healthResponseSchema, type HealthResponse } from './health'
 export {

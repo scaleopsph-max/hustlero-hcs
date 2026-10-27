@@ -1,17 +1,24 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Check, Download, FileSpreadsheet } from 'lucide-react'
+import { ArrowLeft, Check, Download, FileSpreadsheet, Save, RotateCcw, History } from 'lucide-react'
 import {
   catalogImportPreviewRequestSchema,
   catalogImportPreviewResponseSchema,
   sessionContextResponseSchema,
   type CatalogImportPreviewResponse,
+  catalogImportJobSavedSchema,
 } from '@hcs/contracts'
 import { formatPeso } from '@hcs/ui'
 import { createClient } from '@/lib/supabase-browser'
 import { selectActiveTenant } from '@/lib/active-tenant'
 import { catalogImportTemplate, parseCatalogImportCsv } from '@/lib/catalog-import-file'
+import {
+  restoreImportSave,
+  sameImportSave,
+  reconcileImportSave,
+  type PendingImportSave,
+} from '@/lib/catalog-import-jobs'
 import { Topbar } from './Topbar'
 const api = process.env.NEXT_PUBLIC_API_URL,
   url = process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -23,9 +30,11 @@ export function CatalogImportPreview() {
     [preview, setPreview] = useState<CatalogImportPreviewResponse | null>(null)
   const [busy, setBusy] = useState(true),
     [error, setError] = useState<string | null>(null)
+  const [pending, setPending] = useState<PendingImportSave | null>(null),
+    [savedJob, setSavedJob] = useState<string | null>(null)
   const lock = useRef(false),
     sequence = useRef(0)
-  async function call(token: string, tenant: string, path: string, body?: unknown) {
+  async function call(token: string, tenant: string, path: string, body?: unknown, requestKey?: string) {
     if (!api) throw new Error('Back Office API is not configured.')
     const response = await fetch(`${api.replace(/\/$/, '')}${path}`, {
       method: body ? 'POST' : 'GET',
@@ -33,6 +42,7 @@ export function CatalogImportPreview() {
         Authorization: `Bearer ${token}`,
         'X-Tenant-Id': tenant,
         ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...(requestKey ? { 'Idempotency-Key': requestKey } : {}),
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
     })
@@ -52,12 +62,17 @@ export function CatalogImportPreview() {
         const context = sessionContextResponseSchema.parse(await call(data.session.access_token, '', '/v1/me'))
         const tenant = selectActiveTenant(context.tenants)
         if (!tenant) throw new Error('Select a business first.')
-        if (active)
+        if (active) {
+          const restored = restoreImportSave(
+            sessionStorage.getItem(`hcs-import-save:${data.session.user.id}:${tenant.tenantId}`),
+          )
+          setPending(restored)
           setScope({
             user: data.session.user.id,
             tenant: tenant.tenantId,
             canPreview: tenant.isOwner || tenant.permissions.includes('catalog.manage'),
           })
+        }
       } catch (cause) {
         if (active) setError(cause instanceof Error ? cause.message : 'Could not prepare import preview.')
       } finally {
@@ -79,11 +94,12 @@ export function CatalogImportPreview() {
     URL.revokeObjectURL(href)
   }
   async function run() {
-    if (!auth || !scope?.canPreview || !file || lock.current) return
+    if (!auth || !scope?.canPreview || !file || pending || lock.current) return
     lock.current = true
     setBusy(true)
     setError(null)
     setPreview(null)
+    setSavedJob(null)
     const request = ++sequence.current
     try {
       if (file.size > 5 * 1024 * 1024) throw new Error('CSV must be 5 MB or smaller.')
@@ -100,6 +116,48 @@ export function CatalogImportPreview() {
     } catch (cause) {
       if (request === sequence.current)
         setError(cause instanceof Error ? cause.message : 'Could not preview catalog import.')
+    } finally {
+      lock.current = false
+      if (request === sequence.current) setBusy(false)
+    }
+  }
+  async function save() {
+    if (!auth || !scope?.canPreview || lock.current || (!pending && (!file || !preview))) return
+    lock.current = true
+    setBusy(true)
+    setError(null)
+    const request = ++sequence.current
+    const storageKey = `hcs-import-save:${scope.user}:${scope.tenant}`
+    try {
+      const { data, error: authError } = await auth.auth.getSession()
+      if (authError) throw authError
+      if (!data.session || data.session.user.id !== scope.user) throw new Error('Sign in to the original account.')
+      let command = pending
+      if (!command) {
+        const payload = catalogImportPreviewRequestSchema.parse({
+          filename: file!.name,
+          rows: parseCatalogImportCsv(await file!.text()),
+        })
+        command = { key: crypto.randomUUID(), payload }
+        // Persist before the first request; storage failure must never send a write.
+        sessionStorage.setItem(storageKey, JSON.stringify(command))
+        setPending(command)
+      }
+      const result = catalogImportJobSavedSchema.parse(
+        await call(data.session.access_token, scope.tenant, '/v1/catalog/imports/jobs', command.payload, command.key),
+      )
+      const detail = await call(data.session.access_token, scope.tenant, `/v1/catalog/imports/jobs/${result.jobId}`)
+      const job = reconcileImportSave(command, result, detail)
+      if (request !== sequence.current) return
+      const stored = restoreImportSave(sessionStorage.getItem(storageKey))
+      if (!sameImportSave(command, stored)) throw new Error('Saved request changed. Keep the original import pending.')
+      sessionStorage.removeItem(storageKey)
+      setPending(null)
+      setSavedJob(job.id)
+      setPreview({ filename: job.filename, rows: job.rows })
+    } catch (cause) {
+      if (request === sequence.current)
+        setError(cause instanceof Error ? cause.message : 'Could not save import preview.')
     } finally {
       lock.current = false
       if (request === sequence.current) setBusy(false)
@@ -132,6 +190,18 @@ export function CatalogImportPreview() {
         <ArrowLeft size={16} />
         Products
       </Link>
+      <Link href="/products/import/history" className="ml-4 inline-flex items-center gap-2 py-3 text-sm font-semibold">
+        <History size={16} />
+        Import history
+      </Link>
+      {savedJob && (
+        <p role="status" className="border-l-2 border-green-600 bg-green-50 p-3">
+          Preview saved.{' '}
+          <Link className="underline" href="/products/import/history">
+            View history
+          </Link>
+        </p>
+      )}
       {error && (
         <p role="alert" className="border-l-2 border-red-500 bg-red-50 p-3">
           {error}
@@ -149,12 +219,13 @@ export function CatalogImportPreview() {
             aria-label="Catalog CSV"
             type="file"
             accept=".csv,text/csv"
-            disabled={busy || !scope?.canPreview}
+            disabled={busy || !!pending || !scope?.canPreview}
             onChange={(event) => {
               sequence.current++
               setFile(event.target.files?.[0] ?? null)
               setPreview(null)
               setError(null)
+              setSavedJob(null)
             }}
             className="mt-2 block min-h-11 w-full rounded border border-ink-900/20 bg-white px-3 py-2"
           />
@@ -162,12 +233,22 @@ export function CatalogImportPreview() {
         <button
           type="button"
           onClick={() => void run()}
-          disabled={busy || !scope?.canPreview || !file}
+          disabled={busy || !!pending || !scope?.canPreview || !file}
           className="inline-flex min-h-11 items-center gap-2 rounded bg-ink-900 px-4 text-white disabled:opacity-50"
         >
           <Check size={18} />
           Preview
         </button>
+        {(preview || pending) && (
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={busy || !scope?.canPreview || !!savedJob}
+            className="inline-flex min-h-11 items-center gap-2 rounded border border-ink-900/20 px-4 disabled:opacity-50"
+          >
+            {pending ? <RotateCcw size={18} /> : <Save size={18} />} {pending ? 'Retry save' : 'Save preview'}
+          </button>
+        )}
       </div>
       {preview && totals && (
         <>

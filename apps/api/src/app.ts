@@ -9,6 +9,18 @@ import {
   wholesaleReturnsContextSchema,
 } from '@hcs/contracts'
 import { quoteWholesaleReturn, wholesaleReturnSettlement, planCatalogImport } from '@hcs/domain'
+import { z } from 'zod'
+import {
+  saveCatalogImportJobInPostgres,
+  loadCatalogImportJobsFromPostgres,
+  loadCatalogImportJobFromPostgres,
+  cancelCatalogImportJobInPostgres,
+  type CatalogImportJobSaver,
+  type CatalogImportJobsLoader,
+  type CatalogImportJobLoader,
+  type CatalogImportJobCanceller,
+} from './catalog-import-jobs-repository'
+import { catalogImportJobSavedSchema, catalogImportJobListSchema, catalogImportJobSchema } from '@hcs/contracts'
 import {
   loadWholesaleReturnsFromPostgres,
   postWholesaleReturnInPostgres,
@@ -442,6 +454,10 @@ interface AppDependencies {
   updateOnboarding: OnboardingUpdater
   loadCatalog: CatalogLoader
   loadCatalogImportSnapshot: CatalogImportSnapshotLoader
+  saveCatalogImportJob: CatalogImportJobSaver
+  loadCatalogImportJobs: CatalogImportJobsLoader
+  loadCatalogImportJob: CatalogImportJobLoader
+  cancelCatalogImportJob: CatalogImportJobCanceller
   loadCatalogCategories: CatalogCategoriesLoader
   manageCatalogCategory: CatalogCategoryCommander
   createCatalogProduct: CatalogProductCreator
@@ -555,6 +571,10 @@ const defaultDependencies: AppDependencies = {
   updateOnboarding: updateOnboardingInPostgres,
   loadCatalog: loadCatalogFromPostgres,
   loadCatalogImportSnapshot: loadCatalogImportSnapshotFromPostgres,
+  saveCatalogImportJob: saveCatalogImportJobInPostgres,
+  loadCatalogImportJobs: loadCatalogImportJobsFromPostgres,
+  loadCatalogImportJob: loadCatalogImportJobFromPostgres,
+  cancelCatalogImportJob: cancelCatalogImportJobInPostgres,
   loadCatalogCategories: loadCatalogCategoriesFromPostgres,
   manageCatalogCategory: manageCatalogCategoryInPostgres,
   createCatalogProduct: createCatalogProductInPostgres,
@@ -2494,6 +2514,172 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
         if (code === 'HCS09' || code === 'HCS10')
           return fail('CATALOG_ACCESS_DENIED', 'Catalog management access is unavailable.', 403)
         throw error
+      }
+    },
+  )
+
+  const importJobError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
+    const code = postgresErrorCode(error)
+    const status =
+      code === 'HCS09' || code === 'HCS10'
+        ? 403
+        : code === 'HCS12'
+          ? 404
+          : code === 'HCS08'
+            ? 409
+            : code === 'HCS11'
+              ? 400
+              : null
+    if (status === null) throw error
+    return context.json(
+      apiErrorResponseSchema.parse({
+        error: {
+          code:
+            status === 403
+              ? 'CATALOG_ACCESS_DENIED'
+              : status === 404
+                ? 'IMPORT_JOB_NOT_FOUND'
+                : status === 409
+                  ? 'IMPORT_KEY_CONFLICT'
+                  : 'INVALID_IMPORT_JOB',
+          message:
+            status === 403
+              ? 'Catalog management access is unavailable.'
+              : status === 404
+                ? 'Import job was not found.'
+                : status === 409
+                  ? 'Retry the original import request key and file.'
+                  : 'Check the import request.',
+          requestId: context.get('requestId'),
+        },
+      }),
+      status,
+    )
+  }
+  app.on(
+    ['GET', 'POST'],
+    '/v1/catalog/imports/jobs',
+    bodyLimit({
+      maxSize: 6 * 1024 * 1024,
+      onError: (context) =>
+        context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'CATALOG_IMPORT_TOO_LARGE',
+              message: 'Import request exceeds 6 MB.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          413,
+        ),
+    }),
+    async (context) => {
+      if (!readBearerToken(context.req.header('authorization')))
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'AUTHENTICATION_REQUIRED',
+              message: 'Sign in to view import jobs.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          401,
+        )
+      const scope = await resolveWholesaleTenant(context)
+      if (!scope) return importJobError(context, { code: 'HCS09' })
+      try {
+        if (context.req.method === 'GET')
+          return context.json(
+            catalogImportJobListSchema.parse(
+              await dependencies.loadCatalogImportJobs(scope.userId, scope.tenantId, context.env),
+            ),
+          )
+        const key = context.req.header('idempotency-key')
+        if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key)) return importJobError(context, { code: 'HCS11' })
+        const raw = catalogImportPreviewRequestSchema.safeParse(await context.req.json().catch(() => null))
+        if (!raw.success) return importJobError(context, { code: 'HCS11' })
+        const snapshot = await dependencies.loadCatalogImportSnapshot(
+          scope.userId,
+          scope.tenantId,
+          raw.data.rows,
+          context.env,
+        )
+        const rows = planCatalogImport(raw.data.rows, snapshot)
+        return context.json(
+          catalogImportJobSavedSchema.parse(
+            await dependencies.saveCatalogImportJob(
+              scope.userId,
+              scope.tenantId,
+              raw.data,
+              rows,
+              key,
+              context.get('requestId'),
+              context.env,
+            ),
+          ),
+        )
+      } catch (error) {
+        return importJobError(context, error)
+      }
+    },
+  )
+  app.on(
+    ['GET', 'POST'],
+    '/v1/catalog/imports/jobs/:jobId',
+    bodyLimit({
+      maxSize: 1024,
+      onError: (context) =>
+        context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVALID_IMPORT_JOB',
+              message: 'Import command exceeds 1 KB.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          413,
+        ),
+    }),
+    async (context) => {
+      if (!readBearerToken(context.req.header('authorization')))
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'AUTHENTICATION_REQUIRED',
+              message: 'Sign in to view import jobs.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          401,
+        )
+      const scope = await resolveWholesaleTenant(context)
+      if (!scope) return importJobError(context, { code: 'HCS09' })
+      const job = z.uuid().safeParse(context.req.param('jobId'))
+      if (!job.success) return importJobError(context, { code: 'HCS11' })
+      try {
+        if (context.req.method === 'GET')
+          return context.json(
+            catalogImportJobSchema.parse(
+              await dependencies.loadCatalogImportJob(scope.userId, scope.tenantId, job.data, context.env),
+            ),
+          )
+        const command = z
+          .strictObject({ action: z.literal('cancel') })
+          .safeParse(await context.req.json().catch(() => null))
+        if (!command.success) return importJobError(context, { code: 'HCS11' })
+        return context.json(
+          catalogImportJobSchema.parse(
+            await dependencies.cancelCatalogImportJob(
+              scope.userId,
+              scope.tenantId,
+              job.data,
+              context.get('requestId'),
+              context.env,
+            ),
+          ),
+        )
+      } catch (error) {
+        return importJobError(context, error)
       }
     },
   )

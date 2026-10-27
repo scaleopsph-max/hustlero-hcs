@@ -13,6 +13,9 @@ const user = '10000000-0000-4000-8000-000000000001',
   tenant = '20000000-0000-4000-8000-000000000001'
 let Workspace: typeof import('./CatalogImportPreview').CatalogImportPreview
 let requests: { path: string; body: string }[], owner: boolean, fail: boolean, wrongFilename: boolean
+let saved: Map<string, { filename: string; rows: ReturnType<typeof planCatalogImport>; source: unknown }>,
+  loseSaveResponse: boolean,
+  detailFailure: boolean
 beforeAll(async () => {
   vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://import-api.example.invalid')
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://import-auth.example.invalid')
@@ -21,10 +24,14 @@ beforeAll(async () => {
 })
 beforeEach(() => {
   localStorage.clear()
+  sessionStorage.clear()
   requests = []
   owner = true
   fail = false
   wrongFilename = false
+  saved = new Map()
+  loseSaveResponse = false
+  detailFailure = false
   mocks.getSession.mockResolvedValue({
     data: { session: { access_token: 'synthetic-only', user: { id: user } } },
     error: null,
@@ -52,6 +59,39 @@ beforeEach(() => {
         })
       requests.push({ path, body: String(init?.body) })
       if (fail) return Response.json({ error: { message: 'Synthetic permission denial' } }, { status: 403 })
+      if (path === '/v1/catalog/imports/jobs') {
+        const body = JSON.parse(String(init?.body)),
+          key = new Headers(init?.headers).get('idempotency-key')!
+        if (!saved.has(key))
+          saved.set(key, {
+            filename: body.filename,
+            source: body,
+            rows: planCatalogImport(body.rows, { categories: [], products: [] }),
+          })
+        if (loseSaveResponse) {
+          loseSaveResponse = false
+          throw new Error('Response lost after commit')
+        }
+        return Response.json({ jobId: '30000000-0000-4000-8000-000000000001', status: 'saved' })
+      }
+      if (path.startsWith('/v1/catalog/imports/jobs/')) {
+        if (detailFailure) return Response.json({ error: { message: 'History unavailable' } }, { status: 403 })
+        const value = [...saved.values()][0]!
+        return Response.json({
+          id: '30000000-0000-4000-8000-000000000001',
+          uploaderId: user,
+          state: 'preview',
+          rowCount: value.rows.length,
+          rejectedCount: value.rows.filter((row) => row.issues.length > 0).length,
+          proposedCreates: value.rows.filter(
+            (row) => row.action === 'create_product' || row.action === 'create_variant',
+          ).length,
+          proposedUpdates: value.rows.filter((row) => row.action === 'update_variant').length,
+          createdAt: '2026-10-27T00:00:00Z',
+          cancelledAt: null,
+          ...value,
+        })
+      }
       const body = JSON.parse(String(init?.body))
       return Response.json({
         filename: wrongFilename ? 'other.csv' : body.filename,
@@ -75,6 +115,72 @@ function choose(csv = catalogImportTemplate(), name = 'catalog.csv') {
   Object.defineProperty(file, 'text', { value: async () => csv })
   fireEvent.change(screen.getByLabelText('Catalog CSV'), { target: { files: [file] } })
 }
+async function previewFile() {
+  await mount()
+  choose()
+  fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+  await screen.findByRole('table')
+}
+it('saves a durable preview and reconciles its exact source without posting products', async () => {
+  await previewFile()
+  fireEvent.click(screen.getByRole('button', { name: 'Save preview' }))
+  await screen.findByRole('status')
+  expect(saved.size).toBe(1)
+  expect(sessionStorage.length).toBe(0)
+  expect(requests.filter((row) => row.path === '/v1/catalog/imports/jobs')).toHaveLength(1)
+  expect(requests.every((row) => !row.path.endsWith('/process'))).toBe(true)
+})
+it('recovers a lost save response after remount using the original key and raw body', async () => {
+  await previewFile()
+  loseSaveResponse = true
+  fireEvent.click(screen.getByRole('button', { name: 'Save preview' }))
+  await screen.findByRole('alert')
+  const before = sessionStorage.getItem(`hcs-import-save:${user}:${tenant}`)
+  expect(before).toBeTruthy()
+  cleanup()
+  render(createElement(Workspace))
+  await screen.findByRole('button', { name: 'Retry save' })
+  expect((screen.getByLabelText('Catalog CSV') as HTMLInputElement).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Retry save' }))
+  await screen.findByRole('status')
+  expect(saved.size).toBe(1)
+  expect(requests.filter((row) => row.path === '/v1/catalog/imports/jobs').map((row) => row.body)).toEqual(
+    [JSON.parse(before!).payload, JSON.parse(before!).payload].map((value) => JSON.stringify(value)),
+  )
+  expect(sessionStorage.length).toBe(0)
+})
+it('retains original retry identity when detail reconciliation is unavailable', async () => {
+  await previewFile()
+  detailFailure = true
+  fireEvent.click(screen.getByRole('button', { name: 'Save preview' }))
+  await screen.findByRole('alert')
+  expect(sessionStorage.getItem(`hcs-import-save:${user}:${tenant}`)).toBeTruthy()
+  expect(screen.queryByRole('status')).toBeNull()
+  detailFailure = false
+  fireEvent.click(screen.getByRole('button', { name: 'Retry save' }))
+  await screen.findByRole('status')
+  expect(saved.size).toBe(1)
+})
+it('does not send a save if durable pending storage fails', async () => {
+  await previewFile()
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new Error('Storage quota exceeded')
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Save preview' }))
+  await screen.findByRole('alert')
+  expect(saved.size).toBe(0)
+  expect(requests.filter((row) => row.path === '/v1/catalog/imports/jobs')).toHaveLength(0)
+})
+it('does not save under a changed account', async () => {
+  await previewFile()
+  mocks.getSession.mockResolvedValue({
+    data: { session: { access_token: 'other', user: { id: tenant } } },
+    error: null,
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Save preview' }))
+  await screen.findByRole('alert')
+  expect(saved.size).toBe(0)
+})
 it('previews explicit grouped variants and never exposes an import/post command', async () => {
   await mount()
   choose()

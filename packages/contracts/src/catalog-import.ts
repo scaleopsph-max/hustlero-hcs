@@ -72,3 +72,42 @@ export const catalogImportPreviewResponseSchema = z.object({
 export type CatalogImportPreviewRequest = z.infer<typeof catalogImportPreviewRequestSchema>
 export type CatalogImportPreviewResponse = z.infer<typeof catalogImportPreviewResponseSchema>
 export type CatalogImportSnapshot = z.infer<typeof catalogImportSnapshotSchema>
+
+export const catalogImportJobSummarySchema = z.object({
+  id,
+  filename: z.string().min(1).max(255),
+  uploaderId: id,
+  state: z.enum(['preview', 'cancelled']),
+  rowCount: z.number().int().min(1).max(5000),
+  rejectedCount: z.number().int().min(0).max(5000),
+  proposedCreates: z.number().int().min(0).max(5000),
+  proposedUpdates: z.number().int().min(0).max(5000),
+  createdAt: z.iso.datetime({ offset: true }),
+  cancelledAt: z.iso.datetime({ offset: true }).nullable(),
+})
+export const catalogImportJobSchema = catalogImportJobSummarySchema
+  .extend({
+    source: catalogImportPreviewRequestSchema,
+    rows: catalogImportPreviewResponseSchema.shape.rows,
+  })
+  .superRefine((job, context) => {
+    if (
+      job.rows.length !== job.rowCount ||
+      job.rejectedCount + job.proposedCreates + job.proposedUpdates !== job.rowCount ||
+      job.rows.some((row) => row.issues.length > 0 !== (row.action === null)) ||
+      job.source.rows.length !== job.rowCount ||
+      job.source.filename !== job.filename ||
+      job.rows.some((row, index) => row.rowNumber !== index + 2) ||
+      job.rows.filter((row) => row.issues.length > 0).length !== job.rejectedCount ||
+      job.rows.filter((row) => row.action === 'create_product' || row.action === 'create_variant').length !==
+        job.proposedCreates ||
+      job.rows.filter((row) => row.action === 'update_variant').length !== job.proposedUpdates ||
+      (job.state === 'cancelled') !== (job.cancelledAt !== null)
+    )
+      context.addIssue({ code: 'custom', message: 'Import job totals do not reconcile.' })
+  })
+export const catalogImportJobListSchema = z.object({ jobs: z.array(catalogImportJobSummarySchema).max(50) })
+export const catalogImportJobSavedSchema = z.object({ jobId: id, status: z.literal('saved') })
+export type CatalogImportJob = z.infer<typeof catalogImportJobSchema>
+export type CatalogImportJobList = z.infer<typeof catalogImportJobListSchema>
+export type CatalogImportJobSaved = z.infer<typeof catalogImportJobSavedSchema>

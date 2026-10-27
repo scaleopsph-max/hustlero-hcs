@@ -1927,6 +1927,88 @@ try {
   console.log(
     'Catalog category concurrency passed: archive/assignment admission order, ID-preserving rename, one-effect same-key replay, queued suspension, wallclock expiry and expired create/update historical replay deny writes.',
   )
+  await observer.query(
+    "update app.tenant_entitlements set ends_at=null where tenant_id=$1 and feature_code='catalog'",
+    [tenant],
+  )
+  const importRaw = {
+    filename: 'concurrent-catalog.csv',
+    rows: [{ product_name: 'Job only', sku: 'JOB-ONLY', retail_price: '1.00' }],
+  }
+  const importPlan = [{ rowNumber: 2, issues: [], action: 'create_product', sku: 'JOB-ONLY', retailPriceMinor: 100 }]
+  const importKey = 'catalog-import-concurrent-save'
+  const saveImport = (client) =>
+    client.query('select app.save_catalog_import_job($1,$2,$3::jsonb,$4::jsonb,$5,$5) response', [
+      actor,
+      tenant,
+      JSON.stringify(importRaw),
+      JSON.stringify(importPlan),
+      importKey,
+    ])
+  await first.query('begin')
+  const importSaved = (await saveImport(first)).rows[0].response
+  const importReplay = saveImport(second)
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await importReplay).rows[0].response, importSaved)
+  assert.equal(
+    (
+      await observer.query(
+        "select count(*)::int count from audit.audit_events where tenant_id=$1 and entity_id=$2 and action='catalog.import.prepared'",
+        [tenant, importSaved.jobId],
+      )
+    ).rows[0].count,
+    1,
+  )
+  const cancelImport = (client) =>
+    client.query('select app.cancel_catalog_import_job($1,$2,$3,$4) response', [
+      actor,
+      tenant,
+      importSaved.jobId,
+      'catalog-import-concurrent-cancel',
+    ])
+  await first.query('begin')
+  await cancelImport(first)
+  const cancelReplay = cancelImport(second)
+  await waitForLock()
+  await first.query('commit')
+  assert.equal((await cancelReplay).rows[0].response.state, 'cancelled')
+  assert.equal(
+    (
+      await observer.query(
+        "select count(*)::int count from audit.audit_events where tenant_id=$1 and entity_id=$2 and action='catalog.import.cancelled'",
+        [tenant, importSaved.jobId],
+      )
+    ).rows[0].count,
+    1,
+  )
+  await observer.query(
+    "update app.tenant_entitlements set ends_at=clock_timestamp()+interval '1 second' where tenant_id=$1 and feature_code='catalog'",
+    [tenant],
+  )
+  await first.query('begin')
+  await first.query('select pg_advisory_xact_lock(hashtextextended($1,0))', [
+    `${tenant}:catalog.import.save:${importKey}`,
+  ])
+  const expiredImport = saveImport(second).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await delay(1100)
+  await first.query('commit')
+  assert.equal(await expiredImport, 'HCS10')
+  assert.equal(
+    (
+      await observer.query("select count(*)::int count from app.products where tenant_id=$1 and name='Job only'", [
+        tenant,
+      ])
+    ).rows[0].count,
+    0,
+  )
+  console.log(
+    'Catalog import job concurrency passed: simultaneous save and cancellation emit once, expiry after request-key wait denies historical save replay, no product posting.',
+  )
 } finally {
   // Release any held fixture transaction before closing another session waiting on it.
   await first.query('rollback').catch(() => {})

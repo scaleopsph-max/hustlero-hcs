@@ -1,5 +1,13 @@
 # Project State
 
+October 27 source continuation: durable catalog import prepared jobs/history and
+cancel-only lifecycle implemented for QA, not posting. Original raw input and
+server-derived plan are immutable; request-key recovery retains exact source.
+Final full local/isolated CI verification pending at this document checkpoint.
+See qa/CATALOG_IMPORT_JOBS_CANDIDATE_2026-10-27.md. No live environment changed.
+Actual confirmation/bounded async posting and result reconciliation remain next,
+then Discounts, PCOUNT and supplier improvements. Do not call the importer done.
+
 ## Current Priority: Catalog And Inventory Operations
 
 October 26 owner approved five source development/QA slices with APPROVED
