@@ -38,6 +38,10 @@ Candidate 95744da passed local full checks and the CI application job. Initial
 SQL fixture incorrectly reinserted seeded tenant roles and failed before any new
 assertion; corrected to bind the real seeded IDs, preserving the failed CI evidence.
 Added >100-version exact-proof coverage alongside latest-100 history bounds.
+Candidate aa10a0e executed 54 new SQL assertions without failures, then its expiry
+fixture violated the existing starts-before-ends constraint. Corrected the test
+window to start one day earlier and expire one second earlier; no schema constraint
+or application guard was weakened. Full SQL/concurrency acceptance still pending.
 New SQL tests cover permission separation/tenant denial, strict inputs, immutable
 history, current/replay reads, revision conflicts, event counts and expiry. New
 concurrency cases cover same-key effects, competing edits, queued tenant suspension

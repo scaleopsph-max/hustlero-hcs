@@ -87,7 +87,7 @@ end;$$;
 select is(jsonb_array_length(pg_temp.discounts((select (result->>'id')::uuid from discount_long_history))->'versions'),100,'management history bounded to latest 100');
 select is(pg_temp.discounts((select (result->>'id')::uuid from discount_long_history),1),(select result from discount_long_history),'exact proof still reads revision older than latest 100');
 select is(pg_temp.discounts((select (result->>'id')::uuid from discount_long_history))->'versions'->0->>'revision','102','latest revision first');
-update app.tenant_entitlements set ends_at=clock_timestamp()-interval '1 second' where tenant_id='27000000-0000-4000-8000-000000000001' and feature_code='sales';
+update app.tenant_entitlements set starts_at=clock_timestamp()-interval '1 day',ends_at=clock_timestamp()-interval '1 second' where tenant_id='27000000-0000-4000-8000-000000000001' and feature_code='sales';
 select throws_ok($$select pg_temp.discount('{"action":"create","name":" Fixed ","value":{"kind":"fixed","amountMinor":123},"status":"inactive"}','discount-create-key-001')$$,'HCDI1','Sales unavailable','expired entitlement denies even completed replay');
 update app.tenant_entitlements set ends_at=null where tenant_id='27000000-0000-4000-8000-000000000001' and feature_code='sales';
 delete from app.role_permissions rp using app.roles r where r.tenant_id=rp.tenant_id and r.id=rp.role_id and r.tenant_id='27000000-0000-4000-8000-000000000001' and lower(r.code::text)='manager' and rp.permission_code='discounts.manage';
