@@ -411,3 +411,4 @@ export {
 export * from './payment-references'
 export * from './wholesale-returns'
 export * from './catalog-import-execution'
+export * from './retail-discounts'

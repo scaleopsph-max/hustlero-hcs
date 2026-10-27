@@ -1,5 +1,15 @@
 # Project State
 
+October 27 retail discount computation checkpoint: owner resolved whole-ticket
+scope, predefined-only dedicated manage/apply permissions, untaxed retail-only
+eligibility and rejection of zero/negative payable. Pure quote engine and strict
+configuration contracts added; 66 focused tests and shared-package typechecks
+passed. Full local checks/all builds passed with 1,243 app tests / 64 files and
+47 simulated harness cases; final contract tightening separately passed 24
+contract tests/typecheck/lint. No new SQL schema or database execution. Database/API/
+manager UI, POS authorization/posting, refund and report integration remain pending.
+No hosted changes. See qa/RETAIL_DISCOUNT_COMPUTATION_2026-10-27.md.
+
 October 27 closeout e6e6de0 passed both exact CI runs with 1,177 app tests / 62
 files, 47 harness cases and 2,077 SQL assertions / 58 files, reset/concurrency/
 cleanup. Result CSV, private/no-store reads, maximum-group review and primary
@@ -35,7 +45,7 @@ BLUEPRINT - PROCEED TO BUILD: Categories, catalog import, retail discounts,
 PCOUNT and suppliers. Modifiers/Productions deferred. PCOUNT create/post is
 Owner/Manager-only; other explicitly authorized staff may count. Dedicated entry
 permissions and branch access must not be inferred from inventory.manage alone.
-Discount ticket/use details remain a separate owner question before that slice.
+Discount ticket/use details were resolved October 27; see the checkpoint above.
 
 Categories first candidate 0339684 passed both CI runs: 1,017 app / 47 harness,
 1,953 SQL assertions / 55 files, six category concurrency cases plus existing

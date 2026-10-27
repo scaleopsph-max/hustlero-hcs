@@ -1,5 +1,11 @@
 export { canUseCapability, type ActorType, type RequestContext } from './request-context'
 export {
+  quoteRetailTicketDiscount,
+  type RetailDiscountValue,
+  type RetailDiscountDefinition,
+  type RetailDiscountLine,
+} from './retail-discounts'
+export {
   catalogImportColumns,
   catalogImportMoney,
   planCatalogImport,
