@@ -52,8 +52,8 @@ for each row execute function app.guard_catalog_import_confirmation();
 -- Includes original prices/costs and barcode ownership, not inventory balances.
 create function app.catalog_import_scope_state(p_tenant uuid,p_raw jsonb) returns jsonb
 language sql stable security definer set search_path='' as $$
- with skus as materialized(select distinct upper(btrim(value)) sku from jsonb_array_elements(p_raw) r,
- lateral unnest(array[r->>'sku',r->>'product_sku']) value where nullif(btrim(value),'') is not null),
+ with skus as materialized(select distinct upper(btrim(s.value)) sku from jsonb_array_elements(p_raw) r(raw),
+ lateral unnest(array[r.raw->>'sku',r.raw->>'product_sku']) s(value) where nullif(btrim(s.value),'') is not null),
  codes as materialized(select distinct upper(btrim(r->>'barcode')) code from jsonb_array_elements(p_raw) r where nullif(btrim(r->>'barcode'),'') is not null),
  variants as materialized(select v.* from app.product_variants v where v.tenant_id=p_tenant and
  (v.sku in(select sku::extensions.citext from skus) or exists(select 1 from app.product_barcodes b where b.tenant_id=p_tenant and b.variant_id=v.id and b.barcode in(select code::extensions.citext from codes))))
@@ -93,7 +93,7 @@ begin
  v_job:=app.load_catalog_import_jobs(p_actor,p_tenant,p_job); v_rows:=v_job->'source'->'rows';
  return jsonb_build_object('hash',encode(sha256(convert_to(p_actor::text||p_tenant::text||p_job::text||v_groups::text,'UTF8')),'hex'),
  'groupCount',jsonb_array_length(v_groups),'job',v_job,'snapshot',app.load_catalog_import_snapshot(p_actor,p_tenant,
- array(select distinct upper(btrim(v)) from jsonb_array_elements(v_rows) r,lateral unnest(array[r->>'sku',r->>'product_sku']) v where nullif(btrim(v),'') is not null),
+ array(select distinct upper(btrim(s.value)) from jsonb_array_elements(v_rows) r(raw),lateral unnest(array[r.raw->>'sku',r.raw->>'product_sku']) s(value) where nullif(btrim(s.value),'') is not null),
  array(select distinct upper(btrim(r->>'barcode')) from jsonb_array_elements(v_rows) r where nullif(btrim(r->>'barcode'),'') is not null),
  array(select distinct lower(btrim(r->>'category')) from jsonb_array_elements(v_rows) r where nullif(btrim(r->>'category'),'') is not null)));
 end; $$;

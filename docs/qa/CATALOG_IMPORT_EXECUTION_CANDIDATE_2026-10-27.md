@@ -48,3 +48,9 @@ historical replay. Exact candidate CI results must be recorded after execution.
 
 No applied/frozen migration, hosted runner, token/access grant, paid resource,
 financial command, live deployment or main merge was changed.
+
+First exact candidate 2d444b7: push 40439872746 / PR 40439876891 database job
+failed during migration creation with SQLSTATE 42702 (ambiguous `value` alias in
+the scope-state SKU extraction). Posting tests had not run. Corrected the new,
+never-hosted migration with explicit raw/unnest column aliases before rerunning.
+The app verification job/local full checks passed; this is not a database pass.
