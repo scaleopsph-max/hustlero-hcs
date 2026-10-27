@@ -84,6 +84,10 @@ export const catalogImportJobSummarySchema = z.object({
   proposedUpdates: z.number().int().min(0).max(5000),
   createdAt: z.iso.datetime({ offset: true }),
   cancelledAt: z.iso.datetime({ offset: true }).nullable(),
+  executionState: z.enum(['running', 'completed', 'completed_with_errors']).nullable().optional(),
+  createdCount: z.number().int().min(0).max(5000).optional(),
+  updatedCount: z.number().int().min(0).max(5000).optional(),
+  failedCount: z.number().int().min(0).max(5000).optional(),
 })
 export const catalogImportJobSchema = catalogImportJobSummarySchema
   .extend({

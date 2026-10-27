@@ -217,7 +217,7 @@ it('does not strand loading under StrictMode and never posts on mount', async ()
   const { mount } = setup()
   await mount(true)
   expect(posts).toHaveLength(0)
-  expect(checked).toHaveBeenCalledWith(false)
+  expect(checked).toHaveBeenCalledWith(false, null)
 })
 it('does not offer confirmation for a cancelled preview', async () => {
   const { props } = setup()

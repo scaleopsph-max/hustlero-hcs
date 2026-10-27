@@ -19,7 +19,7 @@ type Props = {
   user: string
   tenant: string
   call: (path: string, body?: unknown, key?: string) => Promise<unknown>
-  onChecked: (hasExecution: boolean) => void
+  onChecked: (hasExecution: boolean, execution?: CatalogImportExecution | null) => void
 }
 export function CatalogImportExecutionPanel({ job, user, tenant, call, onChecked }: Props) {
   const [execution, setExecution] = useState<CatalogImportExecution | null>(null),
@@ -63,7 +63,7 @@ export function CatalogImportExecutionPanel({ job, user, tenant, call, onChecked
         const current = await load()
         if (request === sequence.current) {
           setExecution(current)
-          onChecked(current !== null)
+          onChecked(current !== null, current)
         }
       } else if (action === 'review') {
         const result = catalogImportReviewSchema.parse(await call(`/${job.id}/review`))
@@ -96,7 +96,7 @@ export function CatalogImportExecutionPanel({ job, user, tenant, call, onChecked
           clear(command)
           setExecution(current)
           setReview(null)
-          onChecked(true)
+          onChecked(true, current)
         } else {
           if (!current) current = await load()
           if (!current) throw new Error('Confirm the import before processing groups.')
@@ -122,7 +122,7 @@ export function CatalogImportExecutionPanel({ job, user, tenant, call, onChecked
             if (request !== sequence.current) return
             clear(attempt)
             setExecution(next)
-            onChecked(true)
+            onChecked(true, next)
             current = next
             command = null
             if (
@@ -153,7 +153,7 @@ export function CatalogImportExecutionPanel({ job, user, tenant, call, onChecked
               clear(stored)
               setExecution(current)
               setReview(null)
-              onChecked(true)
+              onChecked(true, current)
               setError(null)
             }
           } catch {
@@ -199,7 +199,7 @@ export function CatalogImportExecutionPanel({ job, user, tenant, call, onChecked
       const csv = catalogImportResultsCsv(job, fresh)
       if (request !== sequence.current) return
       setExecution(fresh)
-      onChecked(true)
+      onChecked(true, fresh)
       const href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })),
         link = document.createElement('a')
       link.href = href

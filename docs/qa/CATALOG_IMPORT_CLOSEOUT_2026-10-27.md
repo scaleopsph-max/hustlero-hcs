@@ -42,3 +42,19 @@ confirmed state before asserting cancellation is unavailable.
 Final local full checks and exact closeout SQL/CI remain pending at this source
 checkpoint. Keep PR #10 draft/unmerged; no hosted secrets, paid resources,
 financial commands, inventory writes, deployment or policy bypass authorized.
+
+## Verified Closeout Baseline And History Follow-Up
+
+e6e6de0010fcbbd8aaeafcd02dafadd3d844ae7c passed push CI 40507179071 and PR CI
+40507184913: 1,177 app tests / 62 files, 47 harness cases and 2,077 SQL assertions
+/ 58 files, reset, all prior concurrency and cleanup. Includes full 5,000-group
+read-only review (the complete SQL suite finished in five seconds), stale barcode/
+category checks, alias grouping, composite tenant references and primary-barcode
+preservation. Do not infer full 5,000-group posting/throughput or unattended-worker
+verification from this read-only scale check. Browser checks are mocked as above.
+
+The final follow-up exposes actual execution state and committed row counts in
+history, distinct from immutable preview/proposed counts. The UI updates the row
+from independently reconciled execution detail, including completion/export/reload.
+Adds two SQL projection assertions; a 37-case focused UI/export suite passed.
+Exact final follow-up CI remains pending at this source checkpoint.

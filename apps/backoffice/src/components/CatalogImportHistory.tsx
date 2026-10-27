@@ -145,13 +145,11 @@ export function CatalogImportHistory() {
         <table className="w-full text-left text-sm">
           <thead>
             <tr>
-              {['File / created', 'State', 'Rows', 'Proposed creates', 'Proposed updates', 'Rejected', ''].map(
-                (label) => (
-                  <th key={label} className="border-b border-ink-900/15 p-3">
-                    {label}
-                  </th>
-                ),
-              )}
+              {['File / created', 'Import', 'Rows', 'Created', 'Updated', 'Failed', ''].map((label) => (
+                <th key={label} className="border-b border-ink-900/15 p-3">
+                  {label}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -163,12 +161,16 @@ export function CatalogImportHistory() {
                     {new Date(job.createdAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}
                   </div>
                 </td>
-                <td className="p-3">{job.state}</td>
-                {[job.rowCount, job.proposedCreates, job.proposedUpdates, job.rejectedCount].map((value, index) => (
-                  <td key={index} className="p-3">
-                    {value}
-                  </td>
-                ))}
+                <td className="p-3">
+                  {job.executionState ?? (job.state === 'cancelled' ? 'cancelled' : 'not_started')}
+                </td>
+                {[job.rowCount, job.createdCount ?? 0, job.updatedCount ?? 0, job.failedCount ?? 0].map(
+                  (value, index) => (
+                    <td key={index} className="p-3">
+                      {value}
+                    </td>
+                  ),
+                )}
                 <td className="p-3">
                   <button
                     type="button"
@@ -233,9 +235,23 @@ export function CatalogImportHistory() {
               user={identity.current.user}
               tenant={identity.current.tenant}
               call={call}
-              onChecked={(exists) => {
+              onChecked={(exists, execution) => {
                 setExecutionChecked(true)
                 setHasExecution(exists)
+                if (execution)
+                  setJobs((current) =>
+                    current.map((row) =>
+                      row.id === detail.id
+                        ? {
+                            ...row,
+                            executionState: execution.state,
+                            createdCount: execution.results.filter((result) => result.outcome === 'created').length,
+                            updatedCount: execution.results.filter((result) => result.outcome === 'updated').length,
+                            failedCount: execution.results.filter((result) => result.outcome === 'failed').length,
+                          }
+                        : row,
+                    ),
+                  )
               }}
             />
           )}

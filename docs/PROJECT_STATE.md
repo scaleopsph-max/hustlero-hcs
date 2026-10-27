@@ -1,5 +1,11 @@
 # Project State
 
+October 27 closeout e6e6de0 passed both exact CI runs with 1,177 app tests / 62
+files, 47 harness cases and 2,077 SQL assertions / 58 files, reset/concurrency/
+cleanup. Result CSV, private/no-store reads, maximum-group review and primary
+barcode preservation passed. Final source follow-up adds actual execution state
+and committed counts to history; exact follow-up CI is pending. No hosted action.
+
 October 27 execution baseline c6efe63 passed both exact CI runs, with 1,152 app
 tests / 61 files, 47 harness cases and 2,062 SQL assertions / 58 files, reset,
 concurrency and cleanup. Actual import posting is now implemented in source,

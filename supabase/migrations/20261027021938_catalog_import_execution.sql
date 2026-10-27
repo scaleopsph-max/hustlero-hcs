@@ -30,6 +30,18 @@ alter table app.catalog_import_executions enable row level security;
 alter table app.catalog_import_results enable row level security;
 revoke all on app.catalog_import_executions,app.catalog_import_results from public,anon,authenticated,hcs_hyperdrive;
 
+create or replace function app.catalog_import_job_summary(p_job app.catalog_import_jobs) returns jsonb
+language sql stable set search_path='' as $$
+ select jsonb_build_object('id',p_job.id,'filename',p_job.filename,'uploaderId',p_job.uploader_id,
+ 'state',p_job.state,'rowCount',p_job.row_count,'rejectedCount',p_job.rejected_count,
+ 'proposedCreates',p_job.proposed_creates,'proposedUpdates',p_job.proposed_updates,
+ 'createdAt',p_job.created_at,'cancelledAt',p_job.cancelled_at,
+ 'executionState',e.state,'createdCount',r.created_count,'updatedCount',r.updated_count,'failedCount',r.failed_count)
+ from (select 1) singleton left join app.catalog_import_executions e on e.tenant_id=p_job.tenant_id and e.job_id=p_job.id
+ cross join lateral(select count(*) filter(where outcome='created') created_count,count(*) filter(where outcome='updated') updated_count,
+ count(*) filter(where outcome='failed') failed_count from app.catalog_import_results where tenant_id=p_job.tenant_id and execution_id=e.id) r
+$$;
+
 create function app.guard_catalog_execution_history() returns trigger language plpgsql set search_path='' as $$
 begin
  if tg_op='DELETE' or tg_table_name='catalog_import_results' then
