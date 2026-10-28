@@ -33,12 +33,18 @@ begin
   if v_old.request_hash<>v_hash then raise exception using errcode='HCS08',message='Request key conflict'; end if;
   if v_old.completed_at is not null then return v_old.response_body; end if;
  end if;
+ if p_enabled then
  select e.user_id into v_user from app.employees e
  join app.tenant_memberships m on m.tenant_id=e.tenant_id and m.user_id=e.user_id and m.status='active' and not m.is_owner
  join app.employee_locations el on el.tenant_id=e.tenant_id and el.employee_id=e.id and el.location_id=p_location
  join app.locations l on l.tenant_id=el.tenant_id and l.id=el.location_id and l.is_active
  where e.tenant_id=p_tenant and e.id=p_employee and e.status='active' for update of e for share of m,el,l;
  if not found then raise exception using errcode='HCPC1',message='Active linked employee and assigned branch required'; end if;
+ else
+ select g.user_id into v_user from app.inventory_count_staff_access g
+ where g.tenant_id=p_tenant and g.employee_id=p_employee and g.location_id=p_location for update;
+ if not found then raise exception using errcode='HCPC1',message='Access assignment not found'; end if;
+ end if;
  v_time:=clock_timestamp();
  insert into app.inventory_count_staff_access(tenant_id,employee_id,location_id,user_id,enabled,updated_at)
  values(p_tenant,p_employee,p_location,v_user,p_enabled,v_time)

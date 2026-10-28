@@ -30,6 +30,7 @@ import {
   inventoryCountDecisionSchema,
   inventoryCountPostSchema,
   inventoryCountCancelSchema,
+  inventoryCountStaffAccessSchema,
 } from '@hcs/contracts'
 import {
   createInventoryCountInPostgres,
@@ -37,12 +38,14 @@ import {
   loadInventoryCountFromPostgres,
   listInventoryCountsFromPostgres,
   commandInventoryCountInPostgres,
+  setInventoryCountStaffAccessInPostgres,
   type InventoryCountCreator,
   type InventoryCountEnterer,
   type InventoryCountLoader,
   type InventoryCountListLoader,
   type InventoryCountActionCommander,
   type InventoryCountAction,
+  type InventoryCountStaffAccessCommander,
 } from './inventory-count-repository'
 import { z } from 'zod'
 import {
@@ -515,6 +518,7 @@ interface AppDependencies {
   loadInventoryCount: InventoryCountLoader
   listInventoryCounts: InventoryCountListLoader
   commandInventoryCount: InventoryCountActionCommander
+  setInventoryCountStaffAccess: InventoryCountStaffAccessCommander
   manageCatalogCategory: CatalogCategoryCommander
   loadRetailDiscounts: RetailDiscountLoader
   manageRetailDiscount: RetailDiscountCommander
@@ -642,6 +646,7 @@ const defaultDependencies: AppDependencies = {
   loadInventoryCount: loadInventoryCountFromPostgres,
   listInventoryCounts: listInventoryCountsFromPostgres,
   commandInventoryCount: commandInventoryCountInPostgres,
+  setInventoryCountStaffAccess: setInventoryCountStaffAccessInPostgres,
   manageCatalogCategory: manageCatalogCategoryInPostgres,
   loadRetailDiscounts: loadRetailDiscountsFromPostgres,
   manageRetailDiscount: manageRetailDiscountInPostgres,
@@ -2487,6 +2492,45 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
     return tenant ? { userId: user.userId, tenantId: tenant.tenantId } : null
   }
 
+  app.post('/v1/inventory/count-staff-access', bodyLimit({ maxSize: 4096 }), async (context) => {
+    context.header('Cache-Control', 'private, no-store')
+    const fail = (code: string, message: string, status: 400 | 401 | 403 | 404 | 409) =>
+      context.json(
+        apiErrorResponseSchema.parse({ error: { code, message, requestId: context.get('requestId') } }),
+        status,
+      )
+    if (!readBearerToken(context.req.header('authorization')))
+      return fail('AUTHENTICATION_REQUIRED', 'Sign in to manage count access.', 401)
+    const scope = await resolveWholesaleTenant(context)
+    if (!scope) return fail('INVENTORY_COUNT_ACCESS_DENIED', 'Select an authorized business.', 403)
+    const key = context.req.header('idempotency-key')
+    if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+      return fail('IDEMPOTENCY_KEY_REQUIRED', 'A valid request key is required.', 400)
+    const parsed = inventoryCountStaffAccessSchema.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success) return fail('INVALID_INVENTORY_COUNT', 'Check employee, branch and access.', 400)
+    try {
+      return context.json(
+        inventoryCountStaffAccessSchema.parse(
+          await dependencies.setInventoryCountStaffAccess(
+            scope.userId,
+            scope.tenantId,
+            parsed.data,
+            key,
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+      )
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCPC0') return fail('INVENTORY_COUNT_ACCESS_DENIED', 'Owner access is required.', 403)
+      if (code === 'HCPC1')
+        return fail('INVENTORY_COUNT_NOT_FOUND', 'An active linked employee and assigned branch are required.', 404)
+      if (code === 'HCPC2') return fail('INVALID_INVENTORY_COUNT', 'Check employee, branch and access.', 400)
+      if (code === 'HCS08') return fail('IDEMPOTENCY_KEY_CONFLICT', 'Request key belongs to a different command.', 409)
+      throw error
+    }
+  })
   app.use('/v1/inventory/counts', async (context, next) => {
     context.header('Cache-Control', 'private, no-store')
     await next()

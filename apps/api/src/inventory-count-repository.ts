@@ -2,6 +2,7 @@ import { Client } from 'pg'
 import {
   inventoryCountDraftSchema,
   inventoryCountListSchema,
+  inventoryCountStaffAccessSchema,
   type InventoryCountCreate,
   type InventoryCountEntryCommand,
   type InventoryCountDraft,
@@ -9,6 +10,7 @@ import {
   type InventoryCountSubmit,
   type InventoryCountDecision,
   type InventoryCountPost,
+  type InventoryCountStaffAccess,
 } from '@hcs/contracts'
 import type { Bindings } from './env'
 
@@ -40,6 +42,14 @@ export type InventoryCountListLoader = (
   tenant: string,
   bindings: Bindings,
 ) => Promise<InventoryCountList>
+export type InventoryCountStaffAccessCommander = (
+  actor: string,
+  tenant: string,
+  command: InventoryCountStaffAccess,
+  key: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<InventoryCountStaffAccess>
 export type InventoryCountAction = 'submit' | 'approval' | 'post' | 'cancel'
 export type InventoryCountActionCommander = (
   actor: string,
@@ -102,6 +112,21 @@ export const loadInventoryCountFromPostgres: InventoryCountLoader = async (actor
 export const listInventoryCountsFromPostgres: InventoryCountListLoader = async (actor, tenant, bindings) =>
   inventoryCountListSchema.parse(
     await query(bindings, 'select app.list_inventory_counts($1::uuid,$2::uuid) response', [actor, tenant]),
+  )
+export const setInventoryCountStaffAccessInPostgres: InventoryCountStaffAccessCommander = async (
+  actor,
+  tenant,
+  command,
+  key,
+  requestId,
+  bindings,
+) =>
+  inventoryCountStaffAccessSchema.parse(
+    await query(
+      bindings,
+      'select app.set_inventory_count_staff_access($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5::boolean,$6::text,$7::text) response',
+      [actor, tenant, command.employeeId, command.locationId, command.enabled, key, requestId],
+    ),
   )
 export const commandInventoryCountInPostgres: InventoryCountActionCommander = async (
   actor,

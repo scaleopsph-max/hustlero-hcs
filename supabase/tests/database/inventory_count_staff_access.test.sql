@@ -49,7 +49,9 @@ select throws_ok($$select app.lock_inventory_count_access('ab000000-0000-4000-80
 select throws_ok($$select app.lock_inventory_count_access('ab000000-0000-4000-8000-000000000003','ab100000-0000-4000-8000-000000000001','ab200000-0000-4000-8000-000000000002','enter')$$,'HCPC1',null,'grant does not authorize another branch');
 select is(app.set_inventory_count_staff_access('ab000000-0000-4000-8000-000000000001','ab100000-0000-4000-8000-000000000001','ab300000-0000-4000-8000-000000000003','ab200000-0000-4000-8000-000000000001',true,'count-grant-owner-0001','uat'),(select result from grant_result),'same key returns original grant');
 select is((select count(*)::integer from audit.audit_events where action='inventory_count.staff_access_changed'),1,'retry produces one audit event');
+update app.employees set status='suspended' where id='ab300000-0000-4000-8000-000000000003';
 select app.set_inventory_count_staff_access('ab000000-0000-4000-8000-000000000001','ab100000-0000-4000-8000-000000000001','ab300000-0000-4000-8000-000000000003','ab200000-0000-4000-8000-000000000001',false,'count-revoke-owner-001','uat');
+update app.employees set status='active' where id='ab300000-0000-4000-8000-000000000003';
 select throws_ok($$select app.lock_inventory_count_access('ab000000-0000-4000-8000-000000000003','ab100000-0000-4000-8000-000000000001','ab200000-0000-4000-8000-000000000001','enter')$$,'HCPC0',null,'revoke denies count entry');
 select * from finish();
 rollback;

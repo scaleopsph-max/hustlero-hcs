@@ -44,6 +44,12 @@ function setup(code?: string) {
     if (code) throw Object.assign(new Error('Private database detail'), { code })
     return fixture
   })
+  const staffAccess = vi.fn(
+    async (_actor: string, _tenant: string, command: { employeeId: string; locationId: string; enabled: boolean }) => {
+      if (code) throw Object.assign(new Error('Private database detail'), { code })
+      return command
+    },
+  )
   const app = createApp({
     verifyAccessToken: async (token) => (token === 'synthetic' ? { userId: actor } : null),
     loadSessionAccess: async () => [
@@ -64,6 +70,7 @@ function setup(code?: string) {
     loadInventoryCount: read,
     listInventoryCounts: list,
     commandInventoryCount: action,
+    setInventoryCountStaffAccess: staffAccess,
   })
   return {
     app: { request: (path: string, init?: RequestInit) => app.request(path, init, { ENVIRONMENT: 'test' }) },
@@ -72,8 +79,44 @@ function setup(code?: string) {
     read,
     list,
     action,
+    staffAccess,
   }
 }
+it('binds staff access to authenticated tenant, validates scope and returns sanitized denials', async () => {
+  const { app, staffAccess } = setup()
+  const body = { employeeId: variant, locationId: branch, enabled: true }
+  const response = await app.request('/v1/inventory/count-staff-access', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  })
+  expect(response.status).toBe(200)
+  expect(staffAccess).toHaveBeenCalledWith(
+    actor,
+    tenant,
+    body,
+    headers['idempotency-key'],
+    expect.any(String),
+    expect.anything(),
+  )
+  expect(
+    (
+      await app.request('/v1/inventory/count-staff-access', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ...body, tenantId: count }),
+      })
+    ).status,
+  ).toBe(400)
+  const denied = setup('HCPC0')
+  const result = await denied.app.request('/v1/inventory/count-staff-access', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  })
+  expect(result.status).toBe(403)
+  expect(await result.text()).not.toContain('Private database detail')
+})
 it('requires authentication and verifies the selected tenant', async () => {
   const { app, create } = setup()
   expect((await app.request('/v1/inventory/counts', { method: 'POST' })).status).toBe(401)
