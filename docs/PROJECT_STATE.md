@@ -1,5 +1,24 @@
 # Project State
 
+October 28 discounted-cash reversal integration source candidate: atomic original
+snapshot net refunds/voids, guarded replay/current branch authority, cash/stock/
+loyalty effects and immutable receipt breakdown implemented. Back Office uses
+original-key/body session recovery and verified receipt history before clearing.
+62 focused tests passed. Full local check and disposable SQL/concurrency/exact CI
+pending at this checkpoint. Single-cash/open-original-register only; unsupported
+tax, online/split payout, zero-cent and incoherent history remain denied. No hosted
+action. See qa/POS_DISCOUNT_CASH_REVERSALS_2026-10-28.md.
+
+October 28 next source increment: pure original-snapshot discounted-return
+valuation added, with cumulative net-cent rounding and complete header/line/
+history reconciliation. Payout and physical-quantity exhaustion are distinct;
+zero-cent selections remain denied. No SQL/API/UI reversal guard was loosened.
+Final full regression passed 1,424 app tests plus 47 simulated harness cases;
+workspace-wide typechecks and lint passed, as did changed-source formatting.
+See qa/RETAIL_DISCOUNT_RETURN_VALUATION_2026-10-28.md. Refund/void posting and
+receipt/report integration remain next, not implemented by this pure helper.
+No hosted action. Prior POS sale exact candidate 2c3a4ca passed both CI workflows.
+
 POS retail discount sale source candidate: actual cashier authorization, server
 net computation, immutable definition/line snapshots, online reference evidence
 and original-command checkout recovery implemented for QA. 79 focused tests and

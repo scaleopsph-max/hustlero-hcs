@@ -1,5 +1,10 @@
 export { canUseCapability, type ActorType, type RequestContext } from './request-context'
 export {
+  quoteRetailDiscountReturn,
+  type RetailDiscountReturnSnapshot,
+  type RetailDiscountReturnSelection,
+} from './retail-discount-returns'
+export {
   quoteRetailTicketDiscount,
   type RetailDiscountValue,
   type RetailDiscountDefinition,

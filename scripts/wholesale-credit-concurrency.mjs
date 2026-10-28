@@ -2462,6 +2462,100 @@ try {
   console.log(
     'POS discount concurrency passed: same-key single net sale, queued definition edit, revoked cashier replay, expired register-lock waiter and suspended tenant all preserve exact financial/stock effects.',
   )
+  await observer.query("update app.tenants set status='active' where id=$1", [tenant])
+  const reversePos = (client, key, saleId = firstPos.saleId) =>
+    client.query(
+      "select app.reverse_sale($1,$2,$3,'void',null,'Disposable net discount reversal',$4,'ignored-client-hash',$4) response",
+      [actor, tenant, saleId, key],
+    )
+  const refundSnapshot = async () =>
+    (
+      await observer.query(
+        `select jsonb_build_object(
+    'refunds',(select count(*) from app.refunds where tenant_id=$1),
+    'refundAmount',(select coalesce(sum(amount),0) from app.refunds where tenant_id=$1),
+    'reversals',(select count(*) from app.payment_reversals where tenant_id=$1),
+    'cash',(select coalesce(sum(amount),0) from app.cash_movements where tenant_id=$1 and movement_type='cash_refund'),
+    'stock',(select on_hand from app.inventory_balances where tenant_id=$1 and location_id=$2 and variant_id=$3),
+    'stockMovements',(select count(*) from app.inventory_movements where tenant_id=$1 and variant_id=$3),
+    'requests',(select count(*) from app.idempotency_records where tenant_id=$1 and operation='sale.void')
+  ) state`,
+        [tenant, location, posVariant],
+      )
+    ).rows[0].state
+  const beforeRefund = await refundSnapshot()
+  await first.query('begin')
+  const firstRefund = (await reversePos(first, 'pos-refund-same-key')).rows[0].response
+  const sameRefund = reversePos(second, 'pos-refund-same-key')
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await sameRefund).rows[0].response, firstRefund)
+  assert.equal(firstRefund.amountCentavos, 9900)
+  const afterRefund = await refundSnapshot()
+  assert.equal(afterRefund.refunds, beforeRefund.refunds + 1)
+  assert.equal(afterRefund.reversals, beforeRefund.reversals + 1)
+  assert.equal(afterRefund.stock, beforeRefund.stock + 1)
+  assert.equal(afterRefund.cash, beforeRefund.cash - 99)
+  const secondRefundSale = (
+    await posSale(observer, 'pos-refund-race-second-sale', { ...posSelection, expectedRevision: 2 })
+  ).rows[0].response
+  await first.query('begin')
+  await reversePos(first, 'pos-refund-distinct-first', secondRefundSale.saleId)
+  const competingRefund = reversePos(second, 'pos-refund-distinct-second', secondRefundSale.saleId).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await competingRefund, 'HCSA3')
+  const afterCompetition = await refundSnapshot()
+  assert.equal(afterCompetition.refunds, afterRefund.refunds + 1)
+  assert.equal(afterCompetition.stock, afterRefund.stock)
+  await first.query('begin')
+  await first.query("update app.tenants set status='suspended' where id=$1", [tenant])
+  const suspendedRefund = reversePos(second, 'pos-refund-same-key').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await suspendedRefund, 'HCSA0')
+  assert.deepEqual(await refundSnapshot(), afterCompetition)
+  await observer.query("update app.tenants set status='active' where id=$1", [tenant])
+  const closingRefundSale = (
+    await posSale(observer, 'pos-refund-register-sale', { ...posSelection, expectedRevision: 2 })
+  ).rows[0].response
+  const beforeClose = await refundSnapshot()
+  await first.query('begin')
+  await first.query("update app.register_sessions set status='closed' where tenant_id=$1 and id=$2", [
+    tenant,
+    posOpen.registerSessionId,
+  ])
+  const closingRefund = reversePos(second, 'pos-refund-closing-denial', closingRefundSale.saleId).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await closingRefund, 'HCSA6')
+  assert.deepEqual(await refundSnapshot(), beforeClose)
+  assert.deepEqual((await reversePos(observer, 'pos-refund-same-key')).rows[0].response, firstRefund)
+  await first.query('begin')
+  await first.query("update app.tenant_memberships set status='suspended' where tenant_id=$1 and user_id=$2", [
+    tenant,
+    actor,
+  ])
+  const revokedRefund = reversePos(second, 'pos-refund-same-key').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await revokedRefund, 'HCSA0')
+  assert.deepEqual(await refundSnapshot(), beforeClose)
+  console.log(
+    'Discounted refund concurrency passed: same-key single payout/restock, competing distinct-key denial, queued tenant suspension, closing-register denial, and revoked-membership replay denial.',
+  )
 } finally {
   // Release any held fixture transaction before closing another session waiting on it.
   await first.query('rollback').catch(() => {})

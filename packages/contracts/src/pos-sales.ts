@@ -169,6 +169,29 @@ export const salesContextSchema = z.object({
 })
 
 export const saleReceiptDetailSchema = z.object({
+  discountReturnSnapshot: z
+    .object({
+      subtotalMinor: z.number().int().positive(),
+      discountMinor: z.number().int().positive(),
+      totalMinor: z.number().int().positive(),
+      refundedMinor: z.number().int().nonnegative(),
+      lines: z
+        .array(
+          z.object({
+            saleLineId: id,
+            quantityMilli: z.number().int().positive(),
+            grossMinor: z.number().int().nonnegative(),
+            discountMinor: z.number().int().nonnegative(),
+            netMinor: z.number().int().nonnegative(),
+            refundedQuantityMilli: z.number().int().nonnegative(),
+            refundedMinor: z.number().int().nonnegative(),
+          }),
+        )
+        .min(1)
+        .max(200),
+    })
+    .optional(),
+  discountDefinitionSnapshot: retailDiscountSchema.optional(),
   id,
   receiptNumber: z.string(),
   channel: z.enum(['pos', 'wholesale']).default('pos'),

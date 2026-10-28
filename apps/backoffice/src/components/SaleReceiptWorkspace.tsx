@@ -5,7 +5,16 @@ import { selectActiveTenant } from '@/lib/active-tenant'
 import { createClient } from '@/lib/supabase-browser'
 import { ArrowLeft, Printer, RotateCcw, XCircle } from 'lucide-react'
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  SaleReversalError,
+  canDiscardRejectedReversal,
+  decodePendingReversal,
+  pendingSaleReversalSchema,
+  quantityToMilli,
+  quoteSaleReversal,
+  type PendingSaleReversal,
+} from '@/lib/sale-reversal'
 import {
   saleReceiptDetailSchema,
   saleReversalResponseSchema,
@@ -24,6 +33,7 @@ async function request(path: string, token: string, tenantId: string, init?: Req
   if (!apiUrl) throw new Error('Back Office API URL is not configured.')
   const response = await fetch(`${apiUrl.replace(/\/$/, '')}${path}`, {
     ...init,
+    cache: 'no-store',
     headers: {
       Authorization: `Bearer ${token}`,
       'X-Tenant-Id': tenantId,
@@ -32,7 +42,10 @@ async function request(path: string, token: string, tenantId: string, init?: Req
     },
   })
   const data: unknown = await response.json()
-  if (!response.ok) throw new Error((data as { error?: { message?: string } }).error?.message ?? 'Request failed.')
+  if (!response.ok) {
+    const error = (data as { error?: { message?: string; code?: string } }).error
+    throw new SaleReversalError(error?.message ?? 'Request failed.', error?.code ?? 'UNKNOWN')
+  }
   return data
 }
 
@@ -46,6 +59,13 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
   const [receipt, setReceipt] = useState<SaleReceiptDetail | null>(null)
   const [token, setToken] = useState('')
   const [tenantId, setTenantId] = useState('')
+  const [actorId, setActorId] = useState('')
+  const [pending, setPending] = useState<PendingSaleReversal | null>(null)
+  const [recoveryBlocked, setRecoveryBlocked] = useState(false)
+  const [discardable, setDiscardable] = useState(false)
+  const commandLock = useRef(false)
+  const mounted = useRef(true)
+  const storage = `hcs-sale-reversal-v1:${tenantId}:${actorId}:${saleId}`
   const [mode, setMode] = useState<Mode>(null)
   const [reason, setReason] = useState('')
   const [quantities, setQuantities] = useState<Record<string, string>>({})
@@ -57,10 +77,19 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
 
   const load = useCallback(
     async (accessToken: string, selectedTenantId: string) => {
-      setReceipt(saleReceiptDetailSchema.parse(await request(`/v1/sales/${saleId}`, accessToken, selectedTenantId)))
+      const loaded = saleReceiptDetailSchema.parse(await request(`/v1/sales/${saleId}`, accessToken, selectedTenantId))
+      if (mounted.current) setReceipt(loaded)
+      return loaded
     },
     [saleId],
   )
+
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
 
   useEffect(() => {
     if (!supabaseUrl || !supabaseKey) {
@@ -78,7 +107,16 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
         const tenant = selectActiveTenant(session.tenants)
         if (!tenant) throw new Error('Create a business first.')
         setToken(accessToken)
+        setActorId(session.userId)
         setTenantId(tenant.tenantId)
+        const scope = { actorId: session.userId, tenantId: tenant.tenantId, saleId }
+        try {
+          const raw = sessionStorage.getItem(`hcs-sale-reversal-v1:${tenant.tenantId}:${session.userId}:${saleId}`)
+          if (raw) setPending(decodePendingReversal(raw, scope))
+        } catch {
+          setRecoveryBlocked(true)
+          throw new Error('Pending reversal storage needs reconciliation before another command.')
+        }
         await load(accessToken, tenant.tenantId)
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : 'Could not load the receipt.')
@@ -86,74 +124,117 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
         setLoading(false)
       }
     })
-  }, [load])
+  }, [load, saleId])
 
-  const selectedRefundCentavos = useMemo(() => {
-    if (!receipt) return 0
-    return receipt.lines.reduce((sum, line) => {
-      const milli = Number(quantities[line.id] ?? 0)
-      return sum + Math.round((milli / 1000) * line.unitPriceCentavos)
-    }, 0)
-  }, [quantities, receipt])
+  const selections = useMemo(
+    () =>
+      receipt?.lines
+        .map((line) => ({
+          saleLineId: line.id,
+          quantityMilli: Number(quantities[line.id] ?? 0),
+          returnToStock: returnToStock[line.id] ?? true,
+        }))
+        .filter((line) => line.quantityMilli > 0) ?? [],
+    [receipt, quantities, returnToStock],
+  )
 
-  async function submitRefund() {
-    if (!receipt) return
-    const lines = receipt.lines
-      .map((line) => ({
-        saleLineId: line.id,
-        quantityMilli: Number(quantities[line.id] ?? 0),
-        returnToStock: returnToStock[line.id] ?? true,
-      }))
-      .filter((line) => Number.isInteger(line.quantityMilli) && line.quantityMilli > 0)
-    if (!lines.length || reason.trim().length < 3) {
-      setError('Select at least one refund quantity and enter a reason.')
-      return
+  const preview = useMemo(() => {
+    if (!receipt) return { amount: 0, error: null }
+    try {
+      const selected =
+        mode === 'void'
+          ? receipt.lines
+              .filter((line) => line.refundableQuantityMilli > 0)
+              .map((line) => ({
+                saleLineId: line.id,
+                quantityMilli: line.refundableQuantityMilli,
+                returnToStock: true,
+              }))
+          : selections
+      return { amount: quoteSaleReversal(receipt, selected), error: null }
+    } catch (cause) {
+      return { amount: 0, error: cause instanceof Error ? cause.message : 'Invalid refund selection.' }
     }
+  }, [receipt, selections, mode])
+
+  async function executeReversal(command: PendingSaleReversal) {
+    if (commandLock.current) return
+    commandLock.current = true
     setBusy(true)
     setError(null)
+    setDiscardable(false)
     try {
+      const original = JSON.stringify(command)
+      const restored = decodePendingReversal(sessionStorage.getItem(storage) ?? '', { actorId, tenantId, saleId })
+      if (JSON.stringify(restored) !== original) throw new Error('Pending reversal changed; reconciliation required.')
       const response = saleReversalResponseSchema.parse(
-        await request(`/v1/sales/${saleId}/refunds`, token, tenantId, {
+        await request(`/v1/sales/${saleId}/${command.mode === 'refund' ? 'refunds' : 'void'}`, token, tenantId, {
           method: 'POST',
-          headers: { 'Idempotency-Key': crypto.randomUUID() },
-          body: JSON.stringify({ reason: reason.trim(), lines }),
+          headers: { 'Idempotency-Key': command.key },
+          body: command.body,
         }),
       )
-      setNotice(`Refund recorded: ${formatPeso(response.amountCentavos)}.`)
+      if (
+        response.saleId !== saleId ||
+        response.type !== command.mode ||
+        response.amountCentavos !== command.expectedAmountMinor
+      )
+        throw new Error('Reversal response does not match the original request; keep it for reconciliation.')
+      if (!mounted.current) return
+      const refreshed = await load(token, tenantId)
+      if (!mounted.current) return
+      if (
+        !refreshed.reversals.some(
+          (row) =>
+            row.id === response.reversalId &&
+            row.type === command.mode &&
+            row.amountCentavos === response.amountCentavos,
+        )
+      )
+        throw new Error('Reversal was not verified in receipt history; retry only the original request.')
+      if (sessionStorage.getItem(storage) !== original) throw new Error('Pending reversal storage changed.')
+      sessionStorage.removeItem(storage)
+      setPending(null)
       setMode(null)
       setReason('')
       setQuantities({})
-      await load(token, tenantId)
+      setNotice(
+        `${command.mode === 'refund' ? 'Refund recorded' : 'Receipt voided'}: ${formatPeso(response.amountCentavos)}.`,
+      )
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not record the refund.')
+      if (mounted.current) {
+        setError(cause instanceof Error ? cause.message : 'Unknown reversal outcome. Retry only the original request.')
+        setDiscardable(canDiscardRejectedReversal(cause))
+      }
     } finally {
-      setBusy(false)
+      commandLock.current = false
+      if (mounted.current) setBusy(false)
     }
   }
 
-  async function submitVoid() {
-    if (reason.trim().length < 3) {
-      setError('Enter a void reason.')
-      return
-    }
-    setBusy(true)
-    setError(null)
+  async function submitReversal() {
+    if (!receipt || receipt.id !== saleId || !mode || pending || recoveryBlocked || commandLock.current) return
     try {
-      const response = saleReversalResponseSchema.parse(
-        await request(`/v1/sales/${saleId}/void`, token, tenantId, {
-          method: 'POST',
-          headers: { 'Idempotency-Key': crypto.randomUUID() },
-          body: JSON.stringify({ reason: reason.trim() }),
-        }),
-      )
-      setNotice(`Receipt voided: ${formatPeso(response.amountCentavos)} reversed.`)
-      setMode(null)
-      setReason('')
-      await load(token, tenantId)
+      if (!receipt.canReverse || reason.trim().length < 3 || preview.error)
+        throw new Error(preview.error ?? 'Enter a reason and select an eligible receipt.')
+      const command = pendingSaleReversalSchema.parse({
+        version: 1,
+        actorId,
+        tenantId,
+        saleId,
+        key: crypto.randomUUID(),
+        mode,
+        expectedAmountMinor: preview.amount,
+        body: JSON.stringify(
+          mode === 'refund' ? { reason: reason.trim(), lines: selections } : { reason: reason.trim() },
+        ),
+      })
+      if (sessionStorage.getItem(storage)) throw new Error('An earlier reversal needs reconciliation.')
+      sessionStorage.setItem(storage, JSON.stringify(command))
+      setPending(command)
+      await executeReversal(command)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not void the receipt.')
-    } finally {
-      setBusy(false)
+      setError(cause instanceof Error ? cause.message : 'Could not prepare reversal.')
     }
   }
 
@@ -189,7 +270,7 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
           <Button
             variant="secondary"
             size="sm"
-            disabled={!receipt.canReverse || receipt.channel === 'wholesale'}
+            disabled={busy || !!pending || recoveryBlocked || !receipt.canReverse || receipt.channel === 'wholesale'}
             onClick={() => {
               setMode('refund')
               setError(null)
@@ -200,7 +281,14 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
           <Button
             variant="danger"
             size="sm"
-            disabled={!receipt.canReverse || receipt.channel === 'wholesale' || receipt.status !== 'completed'}
+            disabled={
+              busy ||
+              !!pending ||
+              recoveryBlocked ||
+              !receipt.canReverse ||
+              receipt.channel === 'wholesale' ||
+              receipt.status !== 'completed'
+            }
             onClick={() => {
               setMode('void')
               setError(null)
@@ -297,7 +385,21 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
                   <td className="px-4 py-4">{line.sku}</td>
                   <td className="px-4 py-4 text-right">{line.quantityMilli / 1000}</td>
                   <td className="px-4 py-4 text-right">{formatPeso(line.unitPriceCentavos)}</td>
-                  <td className="px-6 py-4 text-right font-semibold">{formatPeso(line.lineTotalCentavos)}</td>
+                  <td className="px-6 py-4 text-right font-semibold">
+                    {formatPeso(
+                      receipt.discountReturnSnapshot?.lines.find((row) => row.saleLineId === line.id)?.netMinor ??
+                        line.lineTotalCentavos,
+                    )}
+                    {receipt.discountReturnSnapshot ? (
+                      <div className="text-xs font-normal text-ink-500">
+                        Gross {formatPeso(line.lineTotalCentavos)} · Discount{' '}
+                        {formatPeso(
+                          receipt.discountReturnSnapshot.lines.find((row) => row.saleLineId === line.id)
+                            ?.discountMinor ?? 0,
+                        )}
+                      </div>
+                    ) : null}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -319,7 +421,12 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
           <dl className="grid grid-cols-2 gap-x-5 gap-y-2 text-sm sm:justify-self-end sm:min-w-72">
             <dt>Subtotal</dt>
             <dd className="text-right">{formatPeso(receipt.subtotalCentavos)}</dd>
-            <dt>Discount</dt>
+            <dt>
+              Discount{' '}
+              {receipt.discountDefinitionSnapshot
+                ? `· ${receipt.discountDefinitionSnapshot.name} (v${receipt.discountDefinitionSnapshot.revision})`
+                : ''}
+            </dt>
             <dd className="text-right">{formatPeso(receipt.discountCentavos)}</dd>
             <dt>Tax</dt>
             <dd className="text-right">{formatPeso(receipt.taxCentavos)}</dd>
@@ -337,7 +444,35 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
         </div>
       </Glass>
 
-      {mode ? (
+      {pending ? (
+        <section className="border border-amber-600 p-5 print:hidden" role="status">
+          <p>
+            Pending {pending.mode}: {formatPeso(pending.expectedAmountMinor)}. Retry only the original request; do not
+            pay again.
+          </p>
+          <Button disabled={busy} onClick={() => void executeReversal(pending)}>
+            Retry original reversal
+          </Button>
+          {discardable ? (
+            <Button
+              disabled={busy}
+              variant="secondary"
+              onClick={() => {
+                if (sessionStorage.getItem(storage) !== JSON.stringify(pending)) {
+                  setError('Pending storage changed.')
+                  return
+                }
+                sessionStorage.removeItem(storage)
+                setPending(null)
+                setDiscardable(false)
+              }}
+            >
+              Discard rejected request
+            </Button>
+          ) : null}
+        </section>
+      ) : null}
+      {mode && !pending && !recoveryBlocked ? (
         <section className="border border-ink-900/15 bg-white p-6 print:hidden">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -378,12 +513,15 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
                         max={line.refundableQuantityMilli / 1000}
                         step="0.001"
                         value={Number(quantities[line.id] ?? 0) / 1000 || ''}
-                        onChange={(event) =>
-                          setQuantities((current) => ({
-                            ...current,
-                            [line.id]: String(Math.round(Number(event.target.value) * 1000)),
-                          }))
-                        }
+                        onChange={(event) => {
+                          try {
+                            const value = quantityToMilli(event.target.value)
+                            setQuantities((current) => ({ ...current, [line.id]: String(value) }))
+                            setError(null)
+                          } catch (cause) {
+                            setError(cause instanceof Error ? cause.message : 'Invalid quantity.')
+                          }
+                        }}
                         className="mt-1 w-full border border-ink-900/20 px-3 py-2"
                       />
                     </label>
@@ -420,7 +558,7 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
             <strong>
               {mode === 'refund'
-                ? `Refund total ${formatPeso(selectedRefundCentavos)}`
+                ? `Refund total ${formatPeso(preview.amount)}`
                 : `Reverse ${formatPeso(receipt.refundableCentavos)}`}
             </strong>
             <div className="flex gap-2">
@@ -429,8 +567,8 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
               </Button>
               <Button
                 variant="danger"
-                onClick={() => void (mode === 'refund' ? submitRefund() : submitVoid())}
-                disabled={busy}
+                onClick={() => void submitReversal()}
+                disabled={busy || !!preview.error || reason.trim().length < 3}
               >
                 {busy ? 'Recording...' : mode === 'refund' ? 'Confirm refund' : 'Confirm void'}
               </Button>
