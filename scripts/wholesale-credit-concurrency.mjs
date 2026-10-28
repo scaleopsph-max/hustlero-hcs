@@ -2285,6 +2285,183 @@ try {
   console.log(
     'Retail discount concurrency passed: same-key create emits once, stale competing edit denied, queued suspension and row-lock expiry deny completed replay/new effects.',
   )
+  // Real discounted POS commands on the same disposable loopback database.
+  const [posEmployee, posRegister, posDevice, posProduct, posVariant] = Array.from({ length: 5 }, () => randomUUID())
+  const posHash = randomUUID().replaceAll('-', '').repeat(2)
+  const deviceHash = randomUUID().replaceAll('-', '').repeat(2)
+  await observer.query(
+    "insert into app.employees(id,tenant_id,employee_code,display_name) values($1,$2,'DISCOUNT-RACE','Discount race cashier')",
+    [posEmployee, tenant],
+  )
+  await observer.query('insert into app.employee_locations(tenant_id,employee_id,location_id) values($1,$2,$3)', [
+    tenant,
+    posEmployee,
+    location,
+  ])
+  const posRole = (await observer.query("select id from app.roles where tenant_id=$1 and code='cashier'", [tenant]))
+    .rows[0].id
+  await observer.query('insert into app.employee_roles(tenant_id,employee_id,role_id) values($1,$2,$3)', [
+    tenant,
+    posEmployee,
+    posRole,
+  ])
+  await observer.query(
+    "insert into app.registers(id,tenant_id,location_id,name,code) values($1,$2,$3,'Discount race register','DISCOUNT-RACE')",
+    [posRegister, tenant, location],
+  )
+  await observer.query(
+    "insert into app.pos_devices(id,tenant_id,register_id,location_id,name,status,token_hash,activated_at,created_by_user_id) values($1,$2,$3,$4,'Discount race device','active',$5,clock_timestamp(),$6)",
+    [posDevice, tenant, posRegister, location, deviceHash, actor],
+  )
+  await observer.query(
+    "insert into app.pos_employee_sessions(tenant_id,device_id,register_id,location_id,employee_id,token_hash,expires_at) values($1,$2,$3,$4,$5,$6,clock_timestamp()+interval '1 hour')",
+    [tenant, posDevice, posRegister, location, posEmployee, posHash],
+  )
+  await observer.query(
+    "insert into app.products(id,tenant_id,name,created_by) values($1,$2,'Discount race stock',$3)",
+    [posProduct, tenant, actor],
+  )
+  await observer.query(
+    "insert into app.product_variants(id,tenant_id,product_id,name,sku,retail_price,unit_cost,track_inventory,created_by) values($1,$2,$3,'Each','POS-DISCOUNT-RACE',100,50,true,$4)",
+    [posVariant, tenant, posProduct, actor],
+  )
+  await observer.query(
+    'insert into app.inventory_balances(tenant_id,location_id,variant_id,on_hand,average_unit_cost) values($1,$2,$3,10,50)',
+    [tenant, location, posVariant],
+  )
+  const posConfig = (
+    await observer.query(
+      'select app.manage_retail_discount($1,$2,\'{"action":"create","name":"POS Race Discount","value":{"kind":"fixed","amountMinor":100},"status":"active"}\', \'pos-discount-race-config\',\'pos-race\') response',
+      [actor, tenant],
+    )
+  ).rows[0].response
+  const posOpen = (
+    await observer.query('select app.open_pos_register_session($1,100000,$2,$2,$2) response', [
+      posHash,
+      'pos-discount-race-open',
+    ])
+  ).rows[0].response
+  const cashMethod = (
+    await observer.query(
+      "select id from app.payment_methods where tenant_id=$1 and method_type='cash' and is_active limit 1",
+      [tenant],
+    )
+  ).rows[0].id
+  const posSelection = { discountId: posConfig.id, expectedRevision: 1 }
+  const posSale = (client, key, selection = posSelection) =>
+    client.query(
+      "select app.complete_pos_discounted_sale($1,$2::jsonb,$3::jsonb,null,'retail',$4::jsonb,$5,$5) response",
+      [
+        posHash,
+        JSON.stringify([{ variantId: posVariant, quantityMilli: 1000 }]),
+        JSON.stringify([{ paymentMethodId: cashMethod, amountCentavos: 9900, tenderedCentavos: 10000 }]),
+        JSON.stringify(selection),
+        key,
+      ],
+    )
+  const posSnapshot = async () =>
+    (
+      await observer.query(
+        `select jsonb_build_object(
+    'sales',(select count(*) from app.sales where tenant_id=$1),
+    'snapshots',(select count(*) from app.pos_sale_discount_snapshots where tenant_id=$1),
+    'payments',(select count(*) from app.sale_payments where tenant_id=$1),
+    'cash',(select coalesce(sum(amount),0) from app.cash_movements where tenant_id=$1 and movement_type='cash_sale'),
+    'stock',(select round(on_hand*1000) from app.inventory_balances where tenant_id=$1 and location_id=$2 and variant_id=$3),
+    'movements',(select count(*) from app.inventory_movements where tenant_id=$1 and variant_id=$3),
+    'requests',(select count(*) from app.idempotency_records where tenant_id=$1 and operation='pos-sale.complete'),
+    'receiptSequence',(select coalesce(sum(last_number),0) from app.receipt_counters where tenant_id=$1)
+  ) state`,
+        [tenant, location, posVariant],
+      )
+    ).rows[0].state
+  const beforePos = await posSnapshot()
+  await first.query('begin')
+  const firstPos = (await posSale(first, 'pos-discount-race-sale')).rows[0].response
+  const posReplay = posSale(second, 'pos-discount-race-sale')
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await posReplay).rows[0].response, firstPos)
+  const afterPos = await posSnapshot()
+  assert.equal(afterPos.sales, beforePos.sales + 1)
+  assert.equal(afterPos.snapshots, beforePos.snapshots + 1)
+  assert.equal(afterPos.stock, 9000)
+  assert.equal(firstPos.totalCentavos, 9900)
+  await first.query('begin')
+  await first.query('select app.manage_retail_discount($1,$2,$3::jsonb,$4,$4)', [
+    actor,
+    tenant,
+    JSON.stringify({
+      action: 'update',
+      discountId: posConfig.id,
+      expectedRevision: 1,
+      name: 'POS Race Updated',
+      value: { kind: 'fixed', amountMinor: 100 },
+      status: 'active',
+    }),
+    'pos-discount-race-edit',
+  ])
+  const stalePos = posSale(second, 'pos-discount-race-stale').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await stalePos, 'HCDP1')
+  assert.deepEqual(await posSnapshot(), afterPos)
+  await first.query('begin')
+  await first.query(
+    "delete from app.role_permissions where tenant_id=$1 and role_id=$2 and permission_code='discounts.apply'",
+    [tenant, posRole],
+  )
+  const revokedPos = posSale(second, 'pos-discount-race-sale').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await revokedPos, 'HCS93')
+  assert.deepEqual(await posSnapshot(), afterPos)
+  await observer.query(
+    "insert into app.role_permissions(tenant_id,role_id,permission_code) values($1,$2,'discounts.apply')",
+    [tenant, posRole],
+  )
+  assert.deepEqual((await posSale(observer, 'pos-discount-race-sale')).rows[0].response, firstPos)
+  await observer.query(
+    "update app.pos_employee_sessions set expires_at=clock_timestamp()+interval '1 second' where token_hash=$1",
+    [posHash],
+  )
+  await first.query('begin')
+  await first.query('select 1 from app.register_sessions where tenant_id=$1 and id=$2 for update', [
+    tenant,
+    posOpen.registerSessionId,
+  ])
+  const expiredPos = posSale(second, 'pos-discount-race-expired', { ...posSelection, expectedRevision: 2 }).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await delay(1100)
+  await first.query('commit')
+  assert.equal(await expiredPos, 'HCS90')
+  assert.deepEqual(await posSnapshot(), afterPos)
+  await observer.query(
+    "update app.pos_employee_sessions set expires_at=clock_timestamp()+interval '1 hour' where token_hash=$1",
+    [posHash],
+  )
+  await first.query('begin')
+  await first.query("update app.tenants set status='suspended' where id=$1", [tenant])
+  const suspendedPos = posSale(second, 'pos-discount-race-sale').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await suspendedPos, 'HCS90')
+  assert.deepEqual(await posSnapshot(), afterPos)
+  console.log(
+    'POS discount concurrency passed: same-key single net sale, queued definition edit, revoked cashier replay, expired register-lock waiter and suspended tenant all preserve exact financial/stock effects.',
+  )
 } finally {
   // Release any held fixture transaction before closing another session waiting on it.
   await first.query('rollback').catch(() => {})

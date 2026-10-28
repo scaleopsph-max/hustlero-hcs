@@ -42,3 +42,14 @@ explicitly defined, never converted to a fake positive payout.
 
 All work is source/isolated QA only. No hosted migration, deployment, credential,
 access grant, financial UAT, Production change or policy workaround is authorized.
+
+## Checkout Source Increment
+
+The POS integration candidate adds active predefined selection under actual
+employee apply/create permissions, integer preview, authoritative discounted
+sale posting and immutable definition/per-line allocations. Net payment and
+cash movements, net-spend loyalty and shared stock are atomic. Normal legacy SQL
+checkout remains unchanged. Session-scoped original-key/body recovery prevents
+new local attempts while a result is unknown; it is not durable offline storage
+or a cross-device work queue. See the POS sale QA checkpoint. Discounted reversal
+and Back Office report/detail integration remain required before live acceptance.

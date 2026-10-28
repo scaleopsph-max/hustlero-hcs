@@ -81,6 +81,7 @@ export async function posRequest(path: string, init: RequestInit = {}) {
   const session = readPosSession()
   if (!apiUrl || !session) throw new Error('POS session is unavailable. Sign in again.')
   const response = await fetch(`${apiUrl.replace(/\/$/, '')}${path}`, {
+    cache: 'no-store',
     ...init,
     headers: {
       'Content-Type': 'application/json',
@@ -94,7 +95,10 @@ export async function posRequest(path: string, init: RequestInit = {}) {
     throw new Error('Your POS session expired. Sign in again.')
   }
   if (!response.ok) {
-    throw new Error((data as { error?: { message?: string } } | null)?.error?.message ?? 'Request failed.')
+    throw Object.assign(
+      new Error((data as { error?: { message?: string } } | null)?.error?.message ?? 'Request failed.'),
+      { code: (data as { error?: { code?: string } } | null)?.error?.code, status: response.status },
+    )
   }
   return data
 }

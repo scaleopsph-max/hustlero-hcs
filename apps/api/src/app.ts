@@ -2454,6 +2454,10 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
     return tenant ? { userId: user.userId, tenantId: tenant.tenantId } : null
   }
 
+  app.use('/v1/pos/*', async (context, next) => {
+    context.header('Cache-Control', 'private, no-store')
+    await next()
+  })
   app.use('/v1/discounts', async (context, next) => {
     context.header('Cache-Control', 'private, no-store')
     await next()
@@ -5376,6 +5380,50 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
   const posError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
     const code = postgresErrorCode(error)
     const requestId = context.get('requestId')
+    if (code === 'HCDP4')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'POS_PAYMENT_REFERENCE_REQUIRED',
+            message: 'Enter exactly four transaction reference digits for online payments.',
+            requestId,
+          },
+        }),
+        400,
+      )
+    if (code === 'HCDP0')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'POS_DISCOUNT_ACCESS_DENIED',
+            message: 'POS discounts are unavailable for this business.',
+            requestId,
+          },
+        }),
+        403,
+      )
+    if (code === 'HCDP1')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'POS_DISCOUNT_CHANGED',
+            message: 'Selected discount changed or is unavailable. Refresh checkout before selecting it again.',
+            requestId,
+          },
+        }),
+        409,
+      )
+    if (code === 'HCDP2')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'POS_DISCOUNT_INELIGIBLE',
+            message: 'Choose one eligible discount for an untaxed retail-only ticket with a positive payable amount.',
+            requestId,
+          },
+        }),
+        400,
+      )
     if (code === 'HCS90')
       return context.json(
         apiErrorResponseSchema.parse({

@@ -1,5 +1,13 @@
 # Project State
 
+POS retail discount sale source candidate: actual cashier authorization, server
+net computation, immutable definition/line snapshots, online reference evidence
+and original-command checkout recovery implemented for QA. 79 focused tests and
+mocked desktop/mobile browser checks passed. Full local checks and isolated SQL/
+concurrency/exact CI pending. Normal SQL checkout entry is unchanged. Discounted
+refunds/voids and Back Office reports/detail remain gated and next. No hosted
+action. See qa/POS_RETAIL_DISCOUNT_SALES_2026-10-27.md.
+
 October 27 discount configuration source candidate: versioned definitions/private
 API, dedicated permissions and Back Office manager with original-command recovery
 implemented for QA. 55 API/helper and 13 DOM tests passed, mocked desktop/mobile

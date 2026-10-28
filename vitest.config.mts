@@ -17,6 +17,11 @@ export default defineConfig({
         resolve: { alias: { '@': fileURLToPath(new URL('./apps/backoffice/src', import.meta.url)) } },
         test: { name: 'backoffice-dom', environment: 'jsdom', include: ['apps/backoffice/**/*.dom.test.ts'] },
       },
+      {
+        extends: true,
+        resolve: { alias: { '@': fileURLToPath(new URL('./apps/pos/src', import.meta.url)) } },
+        test: { name: 'pos-dom', environment: 'jsdom', include: ['apps/pos/**/*.dom.test.ts'] },
+      },
     ],
   },
 })
