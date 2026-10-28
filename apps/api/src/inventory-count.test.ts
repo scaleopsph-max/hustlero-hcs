@@ -35,6 +35,14 @@ function setup(code?: string) {
     if (code) throw Object.assign(new Error('Private database detail'), { code })
     return fixture
   })
+  const list = vi.fn(async () => ({
+    counts: [{ id: count, locationId: branch, status: 'draft' as const, revision: 1, createdAt: fixture.createdAt }],
+  }))
+  const action = vi.fn(async (...args: unknown[]) => {
+    void args
+    if (code) throw Object.assign(new Error('Private database detail'), { code })
+    return fixture
+  })
   const app = createApp({
     verifyAccessToken: async (token) => (token === 'synthetic' ? { userId: actor } : null),
     loadSessionAccess: async () => [
@@ -53,12 +61,16 @@ function setup(code?: string) {
     createInventoryCount: create,
     enterInventoryCount: enter,
     loadInventoryCount: read,
+    listInventoryCounts: list,
+    commandInventoryCount: action,
   })
   return {
     app: { request: (path: string, init?: RequestInit) => app.request(path, init, { ENVIRONMENT: 'test' }) },
     create,
     enter,
     read,
+    list,
+    action,
   }
 }
 it('requires authentication and verifies the selected tenant', async () => {
@@ -74,6 +86,34 @@ it('requires authentication and verifies the selected tenant', async () => {
     ).status,
   ).toBe(403)
   expect(create).not.toHaveBeenCalled()
+})
+it('lists only server-scoped counts and passes validated actions without client authority', async () => {
+  const { app, list, action } = setup()
+  expect((await app.request('/v1/inventory/counts', { headers })).status).toBe(200)
+  expect(list.mock.calls[0]?.slice(0, 2)).toEqual([actor, tenant])
+  const response = await app.request(`/v1/inventory/counts/${count}/approval`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ expectedRevision: 3, decision: 'approved', note: null }),
+  })
+  expect(response.status).toBe(200)
+  expect(action.mock.calls[0]?.slice(0, 5)).toEqual([
+    actor,
+    tenant,
+    count,
+    'approval',
+    { expectedRevision: 3, decision: 'approved', note: null },
+  ])
+  expect(
+    (
+      await app.request(`/v1/inventory/counts/${count}/post`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ expectedRevision: 4, reason: 'Count completed', tenantId: count }),
+      })
+    ).status,
+  ).toBe(400)
+  expect(action).toHaveBeenCalledOnce()
 })
 it('passes server-derived actor/tenant and original key to the draft command', async () => {
   const { app, create } = setup()

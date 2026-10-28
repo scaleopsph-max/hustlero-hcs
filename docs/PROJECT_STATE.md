@@ -1,5 +1,14 @@
 # Project State
 
+October 28 PCOUNT continuation: source candidate adds whole-count approval,
+current-policy recheck, guarded atomic variance posting and cancellation, plus
+private list/action APIs. Recount currently requires cancelling the stale count
+and creating a fresh count. Focused domain/contracts/API tests pass; disposable
+database and multi-session validation, Back Office UI and release are pending.
+Initial draft CI 40615847279 passed app checks but failed a test fixture query
+that selected a variant from two different counts; the assertion now scopes
+the count ID. No security assertion was relaxed and no hosted change occurred.
+
 October 28 PCOUNT draft candidate on `codex/inventory-count-workflow`: owner
 selected one whole-count approval when any variance exceeds the existing
 threshold; approval does not post stock, and Owner/Manager posts separately.

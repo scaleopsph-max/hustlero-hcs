@@ -24,3 +24,12 @@ explicitly authorized staff entry. SQL and API contain no posting action.
 31 focused domain/contracts/API tests passed; domain/contracts/API typechecks and
 targeted lint passed. SQL tests have been written but not executed. Full project
 CI has not run for this local, uncommitted candidate.
+
+Continuation adds whole-count submission/approval/posting/cancellation source.
+Approval snapshots are immutable and separate from actual stock movements;
+current threshold and locked stock versions are checked before posting. A stale
+count is cancelled and a new count created for recount. This continuation has
+not yet passed disposable SQL or concurrency QA. First draft CI 40615847279
+passed application checks but a fixture lookup returned two count rows for one
+variant; the assertion now scopes its count ID. The failure is retained here;
+no permission or business rule was weakened.

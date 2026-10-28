@@ -83,7 +83,7 @@ select throws_ok($$select pg_temp.enter_count('ab000000-0000-4000-8000-000000000
  '[{"variantId":"ab500000-0000-4000-8000-000000000001","countedMilli":9000,"expectedMilli":0}]','count-spoofed-data-001')$$,'HCPC2',null,'client cannot replace expected stock');
 select throws_ok($$select pg_temp.enter_count('ab000000-0000-4000-8000-000000000003',2,
  '[{"variantId":"ab500000-0000-4000-8000-000000000001","countedMilli":9000},{"variantId":"ab500000-0000-4000-8000-000000000099","countedMilli":1}]','count-foreign-item-001')$$,'HCPC1',null,'foreign item denies entire entry');
-select is((select counted from app.inventory_count_lines where variant_id='ab500000-0000-4000-8000-000000000001'),8.5::numeric,'rejected mixed entry rolls back earlier row');
+select is((select counted from app.inventory_count_lines where count_id=(select (result->>'id')::uuid from created) and variant_id='ab500000-0000-4000-8000-000000000001'),8.5::numeric,'rejected mixed entry rolls back earlier row');
 select is((select count(*)::integer from app.inventory_count_events where count_id=(select (result->>'id')::uuid from created)),2,'draft and first count produce append-only history');
 select throws_ok($$delete from app.inventory_count_events$$,'HCPC5',null,'count history cannot be deleted');
 select is((select sum(on_hand) from app.inventory_balances),15::numeric,'entry does not change stock');

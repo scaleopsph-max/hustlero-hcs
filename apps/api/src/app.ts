@@ -21,14 +21,28 @@ import {
   wholesaleReturnsContextSchema,
 } from '@hcs/contracts'
 import { quoteWholesaleReturn, wholesaleReturnSettlement, planCatalogImport } from '@hcs/domain'
-import { inventoryCountCreateSchema, inventoryCountEntrySchema, inventoryCountDraftSchema } from '@hcs/contracts'
+import {
+  inventoryCountCreateSchema,
+  inventoryCountEntrySchema,
+  inventoryCountDraftSchema,
+  inventoryCountListSchema,
+  inventoryCountSubmitSchema,
+  inventoryCountDecisionSchema,
+  inventoryCountPostSchema,
+  inventoryCountCancelSchema,
+} from '@hcs/contracts'
 import {
   createInventoryCountInPostgres,
   enterInventoryCountInPostgres,
   loadInventoryCountFromPostgres,
+  listInventoryCountsFromPostgres,
+  commandInventoryCountInPostgres,
   type InventoryCountCreator,
   type InventoryCountEnterer,
   type InventoryCountLoader,
+  type InventoryCountListLoader,
+  type InventoryCountActionCommander,
+  type InventoryCountAction,
 } from './inventory-count-repository'
 import { z } from 'zod'
 import {
@@ -499,6 +513,8 @@ interface AppDependencies {
   createInventoryCount: InventoryCountCreator
   enterInventoryCount: InventoryCountEnterer
   loadInventoryCount: InventoryCountLoader
+  listInventoryCounts: InventoryCountListLoader
+  commandInventoryCount: InventoryCountActionCommander
   manageCatalogCategory: CatalogCategoryCommander
   loadRetailDiscounts: RetailDiscountLoader
   manageRetailDiscount: RetailDiscountCommander
@@ -624,6 +640,8 @@ const defaultDependencies: AppDependencies = {
   createInventoryCount: createInventoryCountInPostgres,
   enterInventoryCount: enterInventoryCountInPostgres,
   loadInventoryCount: loadInventoryCountFromPostgres,
+  listInventoryCounts: listInventoryCountsFromPostgres,
+  commandInventoryCount: commandInventoryCountInPostgres,
   manageCatalogCategory: manageCatalogCategoryInPostgres,
   loadRetailDiscounts: loadRetailDiscountsFromPostgres,
   manageRetailDiscount: manageRetailDiscountInPostgres,
@@ -2479,7 +2497,7 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
   })
   app.on(
     ['GET', 'POST'],
-    ['/v1/inventory/counts', '/v1/inventory/counts/:countId', '/v1/inventory/counts/:countId/entries'],
+    ['/v1/inventory/counts', '/v1/inventory/counts/:countId', '/v1/inventory/counts/:countId/:action'],
     bodyLimit({
       maxSize: 64 * 1024,
       onError: (context) =>
@@ -2507,22 +2525,29 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
       const countId = context.req.param('countId')
       if (countId && !z.uuid().safeParse(countId).success)
         return fail('INVENTORY_COUNT_NOT_FOUND', 'Inventory count not found.', 404)
-      const isEntry = context.req.path.endsWith('/entries')
+      const action = context.req.param('action')
       try {
         if (context.req.method === 'GET') {
-          if (!countId || isEntry) return fail('INVENTORY_COUNT_NOT_FOUND', 'Inventory count not found.', 404)
+          if (!countId)
+            return context.json(
+              inventoryCountListSchema.parse(
+                await dependencies.listInventoryCounts(scope.userId, scope.tenantId, context.env),
+              ),
+            )
+          if (action) return fail('INVENTORY_COUNT_NOT_FOUND', 'Inventory count not found.', 404)
           return context.json(
             inventoryCountDraftSchema.parse(
               await dependencies.loadInventoryCount(scope.userId, scope.tenantId, countId, context.env),
             ),
           )
         }
-        if (countId && !isEntry) return fail('INVENTORY_COUNT_NOT_FOUND', 'Inventory count not found.', 404)
+        if (countId && !['entries', 'submit', 'approval', 'post', 'cancel'].includes(action ?? ''))
+          return fail('INVENTORY_COUNT_NOT_FOUND', 'Inventory count not found.', 404)
         const key = context.req.header('idempotency-key')
         if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
           return fail('IDEMPOTENCY_KEY_REQUIRED', 'A valid request key is required.', 400)
         const body: unknown = await context.req.json().catch(() => null)
-        if (isEntry && countId) {
+        if (action === 'entries' && countId) {
           const parsed = inventoryCountEntrySchema.safeParse(body)
           if (!parsed.success) return fail('INVALID_INVENTORY_COUNT', 'Check the count entries.', 400)
           return context.json(
@@ -2531,6 +2556,32 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
                 scope.userId,
                 scope.tenantId,
                 countId,
+                parsed.data,
+                key,
+                context.get('requestId'),
+                context.env,
+              ),
+            ),
+          )
+        }
+        if (countId && action && ['submit', 'approval', 'post', 'cancel'].includes(action)) {
+          const schema =
+            action === 'submit'
+              ? inventoryCountSubmitSchema
+              : action === 'approval'
+                ? inventoryCountDecisionSchema
+                : action === 'post'
+                  ? inventoryCountPostSchema
+                  : inventoryCountCancelSchema
+          const parsed = schema.safeParse(body)
+          if (!parsed.success) return fail('INVALID_INVENTORY_COUNT', 'Check the count action.', 400)
+          return context.json(
+            inventoryCountDraftSchema.parse(
+              await dependencies.commandInventoryCount(
+                scope.userId,
+                scope.tenantId,
+                countId,
+                action as InventoryCountAction,
                 parsed.data,
                 key,
                 context.get('requestId'),
@@ -2561,6 +2612,8 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
         if (code === 'HCPC2' || code === '22P02')
           return fail('INVALID_INVENTORY_COUNT', 'Check the count details.', 400)
         if (code === 'HCPC3') return fail('INVENTORY_COUNT_CHANGED', 'Count changed; refresh before entering.', 409)
+        if (code === 'HCPC4')
+          return fail('INVENTORY_COUNT_CONFLICT', 'Stock or cost changed; review the count before posting.', 409)
         if (code === 'HCS08')
           return fail('IDEMPOTENCY_KEY_CONFLICT', 'Request key belongs to a different command.', 409)
         throw error
