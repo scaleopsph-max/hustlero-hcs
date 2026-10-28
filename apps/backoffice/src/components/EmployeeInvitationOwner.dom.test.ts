@@ -76,3 +76,26 @@ it('recovers an interrupted invitation with the original key and clearly states 
   expect(calls[1]).toEqual(calls[0])
   expect(await screen.findByText(/No email was sent/)).toBeTruthy()
 })
+it('does not report success when the invitation is no longer pending during reconciliation', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (new URL(String(input)).pathname === '/v1/workforce')
+        return Response.json({ ...data, pendingEmployeeInvitations: [] })
+      return Response.json({
+        ...JSON.parse(String(init?.body)),
+        invitationId: invitation,
+        expiresAt: '2026-11-01T00:00:00Z',
+      })
+    }),
+  )
+  const refresh = vi.fn(async () => {})
+  render(createElement(Component, { actor, tenant, token: 'synthetic', data, refresh }))
+  fireEvent.change(screen.getByLabelText('Employee'), { target: { value: employee } })
+  fireEvent.change(screen.getByLabelText('Employee email'), { target: { value: 'staff@example.invalid' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Record invitation' }))
+  expect((await screen.findByRole('alert')).textContent).toContain('Invitation status changed')
+  expect(screen.getByRole('button', { name: 'Retry invitation request' })).toBeTruthy()
+  expect(refresh).not.toHaveBeenCalled()
+  expect(sessionStorage.length).toBe(1)
+})
