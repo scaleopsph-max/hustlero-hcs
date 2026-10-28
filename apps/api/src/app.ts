@@ -49,6 +49,14 @@ import {
 } from './inventory-count-repository'
 import { z } from 'zod'
 import {
+  employeeInvitationCreateSchema,
+  employeeInvitationIssuedSchema,
+  employeeInvitationListSchema,
+  employeeInvitationAcceptedSchema,
+  employeeInvitationRevokedSchema,
+} from '@hcs/contracts'
+import { employeeInvitationsInPostgres, type EmployeeInvitationRepository } from './employee-invitations-repository'
+import {
   saveCatalogImportJobInPostgres,
   loadCatalogImportJobsFromPostgres,
   loadCatalogImportJobFromPostgres,
@@ -501,6 +509,7 @@ import {
 } from './workforce-repository'
 
 interface AppDependencies {
+  employeeInvitations: EmployeeInvitationRepository
   verifyAccessToken: AccessTokenVerifier
   loadSessionAccess: SessionAccessLoader
   bootstrapTenant: TenantBootstrapper
@@ -704,6 +713,7 @@ const defaultDependencies: AppDependencies = {
   receiveTransfer: receiveTransferInPostgres,
   loadWorkforce: loadWorkforceFromPostgres,
   linkEmployeeAccount: linkEmployeeAccountInPostgres,
+  employeeInvitations: employeeInvitationsInPostgres,
   createLocation: createLocationInPostgres,
   createEmployee: createEmployeeInPostgres,
   createRegister: createRegisterInPostgres,
@@ -2497,6 +2507,88 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
     return tenant ? { userId: user.userId, tenantId: tenant.tenantId } : null
   }
 
+  app.on(
+    ['GET', 'POST'],
+    ['/v1/employee-invitations', '/v1/employee-invitations/:id/:action'],
+    bodyLimit({ maxSize: 4096 }),
+    async (context) => {
+      context.header('Cache-Control', 'private, no-store')
+      const fail = (code: string, message: string, status: 400 | 401 | 403 | 404 | 409) =>
+        context.json(
+          apiErrorResponseSchema.parse({ error: { code, message, requestId: context.get('requestId') } }),
+          status,
+        )
+      const token = readBearerToken(context.req.header('authorization'))
+      if (!token) return fail('AUTHENTICATION_REQUIRED', 'Sign in to use invitations.', 401)
+      const user = await dependencies.verifyAccessToken(token, context.env)
+      if (!user) return fail('AUTHENTICATION_REQUIRED', 'Sign in to use invitations.', 401)
+      const id = context.req.param('id'),
+        action = context.req.param('action')
+      if (id && !z.uuid().safeParse(id).success) return fail('INVITATION_NOT_FOUND', 'Invitation not found.', 404)
+      try {
+        if (context.req.method === 'GET' && !id)
+          return context.json(
+            employeeInvitationListSchema.parse(await dependencies.employeeInvitations.list(user.userId, context.env)),
+          )
+        if (context.req.method !== 'POST') return fail('INVITATION_NOT_FOUND', 'Invitation not found.', 404)
+        const key = context.req.header('idempotency-key')
+        if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+          return fail('IDEMPOTENCY_KEY_REQUIRED', 'A valid request key is required.', 400)
+        if (id && action === 'accept')
+          return context.json(
+            employeeInvitationAcceptedSchema.parse(
+              await dependencies.employeeInvitations.accept(
+                user.userId,
+                id,
+                key,
+                context.get('requestId'),
+                context.env,
+              ),
+            ),
+          )
+        const scope = await resolveWholesaleTenant(context)
+        if (!scope) return fail('INVITATION_ACCESS_DENIED', 'Select an authorized business.', 403)
+        if (id && action === 'revoke')
+          return context.json(
+            employeeInvitationRevokedSchema.parse(
+              await dependencies.employeeInvitations.revoke(
+                scope.userId,
+                scope.tenantId,
+                id,
+                key,
+                context.get('requestId'),
+                context.env,
+              ),
+            ),
+          )
+        if (id) return fail('INVITATION_NOT_FOUND', 'Invitation not found.', 404)
+        const command = employeeInvitationCreateSchema.safeParse(await context.req.json().catch(() => null))
+        if (!command.success) return fail('INVALID_INVITATION', 'Check employee and email.', 400)
+        return context.json(
+          employeeInvitationIssuedSchema.parse(
+            await dependencies.employeeInvitations.create(
+              scope.userId,
+              scope.tenantId,
+              command.data,
+              key,
+              context.get('requestId'),
+              context.env,
+            ),
+          ),
+          201,
+        )
+      } catch (error) {
+        const code = postgresErrorCode(error)
+        if (code === 'HCPC0')
+          return fail('INVITATION_ACCESS_DENIED', 'Owner access or a verified email is required.', 403)
+        if (code === 'HCPC1') return fail('INVITATION_NOT_FOUND', 'Invitation or employee not found.', 404)
+        if (code === 'HCPC2') return fail('INVALID_INVITATION', 'Check invitation details.', 400)
+        if (code === 'HCPC3' || code === 'HCS08')
+          return fail('INVITATION_CONFLICT', 'Invitation is unavailable or conflicts with an existing request.', 409)
+        throw error
+      }
+    },
+  )
   app.post('/v1/workforce/employee-account-link', bodyLimit({ maxSize: 4096 }), async (context) => {
     context.header('Cache-Control', 'private, no-store')
     const fail = (code: string, message: string, status: 400 | 401 | 403 | 404 | 409) =>

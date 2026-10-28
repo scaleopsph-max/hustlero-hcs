@@ -413,6 +413,7 @@ export * from './payment-references'
 export * from './wholesale-returns'
 export * from './catalog-import-execution'
 export * from './retail-discounts'
+export * from './employee-invitations'
 export { posDiscountSelectionSchema, posDiscountLineSnapshotSchema } from './pos-sales'
 export {
   inventoryCountCreateSchema,
