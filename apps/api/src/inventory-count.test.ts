@@ -50,6 +50,12 @@ function setup(code?: string) {
       return command
     },
   )
+  const linkAccount = vi.fn(
+    async (_actor: string, _tenant: string, command: { employeeId: string; userId: string }) => {
+      if (code) throw Object.assign(new Error('Private database detail'), { code })
+      return command
+    },
+  )
   const app = createApp({
     verifyAccessToken: async (token) => (token === 'synthetic' ? { userId: actor } : null),
     loadSessionAccess: async () => [
@@ -71,6 +77,7 @@ function setup(code?: string) {
     listInventoryCounts: list,
     commandInventoryCount: action,
     setInventoryCountStaffAccess: staffAccess,
+    linkEmployeeAccount: linkAccount,
   })
   return {
     app: { request: (path: string, init?: RequestInit) => app.request(path, init, { ENVIRONMENT: 'test' }) },
@@ -80,8 +87,44 @@ function setup(code?: string) {
     list,
     action,
     staffAccess,
+    linkAccount,
   }
 }
+it('links only with verified business context and a strict employee/account payload', async () => {
+  const { app, linkAccount } = setup(),
+    body = { employeeId: variant, userId: count }
+  expect(
+    (await app.request('/v1/workforce/employee-account-link', { method: 'POST', headers, body: JSON.stringify(body) }))
+      .status,
+  ).toBe(200)
+  expect(linkAccount).toHaveBeenCalledWith(
+    actor,
+    tenant,
+    body,
+    headers['idempotency-key'],
+    expect.any(String),
+    expect.anything(),
+  )
+  expect(
+    (
+      await app.request('/v1/workforce/employee-account-link', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ...body, isOwner: true }),
+      })
+    ).status,
+  ).toBe(400)
+  const denied = setup('HCPC0')
+  expect(
+    (
+      await denied.app.request('/v1/workforce/employee-account-link', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      })
+    ).status,
+  ).toBe(403)
+})
 it('binds staff access to authenticated tenant, validates scope and returns sanitized denials', async () => {
   const { app, staffAccess } = setup()
   const body = { employeeId: variant, locationId: branch, enabled: true }

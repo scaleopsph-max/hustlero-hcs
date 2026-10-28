@@ -110,12 +110,52 @@ begin
  v_result:=app.workforce_count_access_core(p_actor,p_tenant);
  if not exists(select 1 from app.tenant_memberships where tenant_id=p_tenant and user_id=p_actor and status='active' and is_owner) then return v_result; end if;
  select coalesce(jsonb_agg(item.value || jsonb_build_object(
+  'accountLinked',exists(select 1 from app.employees e where e.tenant_id=p_tenant and e.id=(item.value->>'id')::uuid and e.user_id is not null),
   'hasBackOfficeAccount',exists(select 1 from app.employees e join app.tenant_memberships m on m.tenant_id=e.tenant_id and m.user_id=e.user_id and m.status='active' and not m.is_owner where e.tenant_id=p_tenant and e.id=(item.value->>'id')::uuid and e.status='active'),
   'countAccessLocationIds',coalesce((select jsonb_agg(g.location_id order by g.location_id) from app.inventory_count_staff_access g where g.tenant_id=p_tenant and g.employee_id=(item.value->>'id')::uuid and g.enabled),'[]'::jsonb)
  ) order by item.ordinality),'[]'::jsonb) into v_employees from jsonb_array_elements(v_result->'employees') with ordinality item(value,ordinality);
- return v_result || jsonb_build_object('employees',v_employees,'canManageCountAccess',true);
+ return v_result || jsonb_build_object('employees',v_employees,'canManageCountAccess',true,
+  'unlinkedAccounts',coalesce((select jsonb_agg(jsonb_build_object('userId',m.user_id,'email',u.email) order by u.email,m.user_id)
+   from app.tenant_memberships m join auth.users u on u.id=m.user_id
+   where m.tenant_id=p_tenant and m.status='active' and not m.is_owner and u.email is not null
+   and not exists(select 1 from app.employees e where e.tenant_id=m.tenant_id and e.user_id=m.user_id)),'[]'::jsonb));
 end; $$;
 revoke all on function app.list_workforce_context(uuid,uuid) from public,anon,authenticated;
 grant execute on function app.list_workforce_context(uuid,uuid) to hcs_hyperdrive;
+
+-- Only an existing active member can be linked; no account, role or membership is created.
+create function app.link_existing_employee_account(p_actor uuid,p_tenant uuid,p_employee uuid,p_user uuid,p_key text,p_request_id text)
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare v_old app.idempotency_records%rowtype;v_hash text;v_result jsonb;v_time timestamptz;v_link uuid;
+begin
+ perform 1 from app.tenants where id=p_tenant and status='active' for share;
+ if not found then raise exception using errcode='HCPC0',message='Access denied'; end if;
+ perform 1 from app.tenant_memberships where tenant_id=p_tenant and user_id=p_actor and status='active' and is_owner for share;
+ if not found then raise exception using errcode='HCPC0',message='Access denied'; end if;
+ if p_employee is null or p_user is null or p_key is null or p_key !~ '^[A-Za-z0-9_-]{16,128}$' then raise exception using errcode='HCPC2',message='Invalid account link'; end if;
+ v_hash:=encode(extensions.digest(jsonb_build_object('actor',p_actor,'tenant',p_tenant,'employee',p_employee,'user',p_user)::text,'sha256'),'hex');
+ perform pg_advisory_xact_lock(hashtextextended(p_tenant::text||':employee.link:'||p_key,0));
+ select * into v_old from app.idempotency_records where tenant_id=p_tenant and operation='employee.link' and idempotency_key=p_key;
+ if found then
+  if v_old.request_hash<>v_hash then raise exception using errcode='HCS08',message='Request key conflict'; end if;
+  if v_old.completed_at is not null then return v_old.response_body; end if;
+ end if;
+ perform 1 from app.tenant_memberships where tenant_id=p_tenant and user_id=p_user and status='active' and not is_owner for update;
+ if not found then raise exception using errcode='HCPC1',message='Active business member required'; end if;
+ select user_id into v_link from app.employees where tenant_id=p_tenant and id=p_employee and status='active' for update;
+ if not found then raise exception using errcode='HCPC1',message='Active employee required'; end if;
+ if v_link is not null or exists(select 1 from app.employees where tenant_id=p_tenant and user_id=p_user) then raise exception using errcode='HCPC3',message='Account or employee already linked'; end if;
+ v_time:=clock_timestamp();
+ update app.employees set user_id=p_user,updated_at=v_time where tenant_id=p_tenant and id=p_employee;
+ v_result:=jsonb_build_object('employeeId',p_employee,'userId',p_user);
+ insert into audit.audit_events(tenant_id,request_id,actor_type,actor_id,action,entity_type,entity_id,metadata,occurred_at)
+ values(p_tenant,p_request_id,'tenant_user',p_actor,'employee.account_linked','employee',p_employee,jsonb_build_object('userId',p_user),v_time);
+ insert into app.idempotency_records(tenant_id,operation,idempotency_key,request_hash,response_status,response_body,completed_at,expires_at)
+ values(p_tenant,'employee.link',p_key,v_hash,200,v_result,v_time,v_time+interval '24 hours');
+ return v_result;
+exception when unique_violation then raise exception using errcode='HCPC3',message='Account or employee already linked';
+end; $$;
+revoke all on function app.link_existing_employee_account(uuid,uuid,uuid,uuid,text,text) from public,anon,authenticated;
+grant execute on function app.link_existing_employee_account(uuid,uuid,uuid,uuid,text,text) to hcs_hyperdrive;
 
 commit;

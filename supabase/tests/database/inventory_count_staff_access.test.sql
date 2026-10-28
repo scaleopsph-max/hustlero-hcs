@@ -55,5 +55,14 @@ update app.employees set status='suspended' where id='ab300000-0000-4000-8000-00
 select app.set_inventory_count_staff_access('ab000000-0000-4000-8000-000000000001','ab100000-0000-4000-8000-000000000001','ab300000-0000-4000-8000-000000000003','ab200000-0000-4000-8000-000000000001',false,'count-revoke-owner-001','uat');
 update app.employees set status='active' where id='ab300000-0000-4000-8000-000000000003';
 select throws_ok($$select app.lock_inventory_count_access('ab000000-0000-4000-8000-000000000003','ab100000-0000-4000-8000-000000000001','ab200000-0000-4000-8000-000000000001','enter')$$,'HCPC0',null,'revoke denies count entry');
+insert into auth.users(id,email,aud,role) values ('ab000000-0000-4000-8000-000000000005','unlinked-count@example.invalid','authenticated','authenticated');
+insert into app.tenant_memberships(tenant_id,user_id,status,is_owner) values ('ab100000-0000-4000-8000-000000000001','ab000000-0000-4000-8000-000000000005','active',false);
+insert into app.employees(id,tenant_id,employee_code,display_name) values ('ab300000-0000-4000-8000-000000000005','ab100000-0000-4000-8000-000000000001','LINK','Link employee');
+select throws_ok($$select app.link_existing_employee_account('ab000000-0000-4000-8000-000000000003','ab100000-0000-4000-8000-000000000001','ab300000-0000-4000-8000-000000000005','ab000000-0000-4000-8000-000000000005','employee-link-denied-01','uat')$$,'HCPC0',null,'staff cannot link account');
+select throws_ok($$select app.link_existing_employee_account('ab000000-0000-4000-8000-000000000001','ab100000-0000-4000-8000-000000000001','ab300000-0000-4000-8000-000000000005','ab000000-0000-4000-8000-000000000004','employee-link-foreign-1','uat')$$,'HCPC1',null,'foreign member cannot be linked');
+create temp table link_result as select app.link_existing_employee_account('ab000000-0000-4000-8000-000000000001','ab100000-0000-4000-8000-000000000001','ab300000-0000-4000-8000-000000000005','ab000000-0000-4000-8000-000000000005','employee-link-owner-001','uat') result;
+select is((select user_id::text from app.employees where id='ab300000-0000-4000-8000-000000000005'),'ab000000-0000-4000-8000-000000000005','owner links existing member');
+select is(app.link_existing_employee_account('ab000000-0000-4000-8000-000000000001','ab100000-0000-4000-8000-000000000001','ab300000-0000-4000-8000-000000000005','ab000000-0000-4000-8000-000000000005','employee-link-owner-001','uat'),(select result from link_result),'link retry is idempotent');
+select is((select count(*)::integer from audit.audit_events where action='employee.account_linked'),1,'retry creates one link audit');
 select * from finish();
 rollback;

@@ -109,6 +109,7 @@ import {
   transferReceiveResponseSchema,
   employeeCreateRequestSchema,
   employeeCreateResponseSchema,
+  employeeAccountLinkSchema,
   locationCreateRequestSchema,
   locationCreateResponseSchema,
   registerCreateRequestSchema,
@@ -491,10 +492,12 @@ import {
   createLocationInPostgres,
   createRegisterInPostgres,
   loadWorkforceFromPostgres,
+  linkEmployeeAccountInPostgres,
   type EmployeeCreator,
   type LocationCreator,
   type RegisterCreator,
   type WorkforceLoader,
+  type EmployeeAccountLinker,
 } from './workforce-repository'
 
 interface AppDependencies {
@@ -571,6 +574,7 @@ interface AppDependencies {
   dispatchTransfer: TransferDispatcher
   receiveTransfer: TransferReceiver
   loadWorkforce: WorkforceLoader
+  linkEmployeeAccount: EmployeeAccountLinker
   createLocation: LocationCreator
   createEmployee: EmployeeCreator
   createRegister: RegisterCreator
@@ -699,6 +703,7 @@ const defaultDependencies: AppDependencies = {
   dispatchTransfer: dispatchTransferInPostgres,
   receiveTransfer: receiveTransferInPostgres,
   loadWorkforce: loadWorkforceFromPostgres,
+  linkEmployeeAccount: linkEmployeeAccountInPostgres,
   createLocation: createLocationInPostgres,
   createEmployee: createEmployeeInPostgres,
   createRegister: createRegisterInPostgres,
@@ -2492,6 +2497,46 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
     return tenant ? { userId: user.userId, tenantId: tenant.tenantId } : null
   }
 
+  app.post('/v1/workforce/employee-account-link', bodyLimit({ maxSize: 4096 }), async (context) => {
+    context.header('Cache-Control', 'private, no-store')
+    const fail = (code: string, message: string, status: 400 | 401 | 403 | 404 | 409) =>
+      context.json(
+        apiErrorResponseSchema.parse({ error: { code, message, requestId: context.get('requestId') } }),
+        status,
+      )
+    if (!readBearerToken(context.req.header('authorization')))
+      return fail('AUTHENTICATION_REQUIRED', 'Sign in to link an account.', 401)
+    const scope = await resolveWholesaleTenant(context)
+    if (!scope) return fail('WORKFORCE_ACCESS_DENIED', 'Select an authorized business.', 403)
+    const key = context.req.header('idempotency-key')
+    if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+      return fail('IDEMPOTENCY_KEY_REQUIRED', 'A valid request key is required.', 400)
+    const parsed = employeeAccountLinkSchema.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success) return fail('INVALID_EMPLOYEE_LINK', 'Check employee and account.', 400)
+    try {
+      return context.json(
+        employeeAccountLinkSchema.parse(
+          await dependencies.linkEmployeeAccount(
+            scope.userId,
+            scope.tenantId,
+            parsed.data,
+            key,
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+      )
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCPC0') return fail('WORKFORCE_ACCESS_DENIED', 'Owner access is required.', 403)
+      if (code === 'HCPC1')
+        return fail('WORKFORCE_REFERENCE_NOT_FOUND', 'Active employee and business member are required.', 404)
+      if (code === 'HCPC2') return fail('INVALID_EMPLOYEE_LINK', 'Check employee and account.', 400)
+      if (code === 'HCPC3' || code === 'HCS08')
+        return fail('WORKFORCE_CONFLICT', 'Account or employee is already linked, or request key conflicts.', 409)
+      throw error
+    }
+  })
   app.post('/v1/inventory/count-staff-access', bodyLimit({ maxSize: 4096 }), async (context) => {
     context.header('Cache-Control', 'private, no-store')
     const fail = (code: string, message: string, status: 400 | 401 | 403 | 404 | 409) =>

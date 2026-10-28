@@ -373,6 +373,7 @@ export {
 export {
   employeeCreateRequestSchema,
   employeeCreateResponseSchema,
+  employeeAccountLinkSchema,
   locationCreateRequestSchema,
   locationCreateResponseSchema,
   registerCreateRequestSchema,
