@@ -30,8 +30,7 @@ insert into app.membership_roles(tenant_id,user_id,role_id)
 insert into app.membership_roles(tenant_id,user_id,role_id)
  select 'ab100000-0000-4000-8000-000000000001','ab000000-0000-4000-8000-000000000003',id from app.roles
  where tenant_id='ab100000-0000-4000-8000-000000000001' and code='cashier';
-insert into app.role_permissions(tenant_id,role_id,permission_code)
- select tenant_id,id,'inventory_counts.enter' from app.roles where tenant_id='ab100000-0000-4000-8000-000000000001' and code='cashier';
+insert into app.inventory_count_staff_access(tenant_id,employee_id,location_id,user_id,enabled) values ('ab100000-0000-4000-8000-000000000001','ab300000-0000-4000-8000-000000000003','ab200000-0000-4000-8000-000000000001','ab000000-0000-4000-8000-000000000003',true);
 update app.tenant_entitlements set entitled=true,enabled=true where tenant_id='ab100000-0000-4000-8000-000000000001' and feature_code='inventory';
 insert into app.products(id,tenant_id,name,created_by) values
  ('ab400000-0000-4000-8000-000000000001','ab100000-0000-4000-8000-000000000001','Count product','ab000000-0000-4000-8000-000000000001');
@@ -88,7 +87,7 @@ select is((select count(*)::integer from app.inventory_count_events where count_
 select throws_ok($$delete from app.inventory_count_events$$,'HCPC5',null,'count history cannot be deleted');
 select is((select sum(on_hand) from app.inventory_balances),15::numeric,'entry does not change stock');
 select is((select count(*)::integer from app.inventory_movements),0,'entry does not create stock movements');
-delete from app.role_permissions where tenant_id='ab100000-0000-4000-8000-000000000001' and permission_code='inventory_counts.enter';
+update app.inventory_count_staff_access set enabled=false where tenant_id='ab100000-0000-4000-8000-000000000001' and employee_id='ab300000-0000-4000-8000-000000000003';
 select throws_ok($$select pg_temp.enter_count('ab000000-0000-4000-8000-000000000003',1,
  '[{"variantId":"ab500000-0000-4000-8000-000000000001","countedMilli":8500}]','count-entry-staff-001')$$,'HCPC0',null,'revoked staff cannot replay old result');
 update app.tenants set status='suspended' where id='ab100000-0000-4000-8000-000000000001';

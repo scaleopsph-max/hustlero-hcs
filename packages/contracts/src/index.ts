@@ -420,6 +420,7 @@ export {
   inventoryCountDecisionSchema,
   inventoryCountPostSchema,
   inventoryCountCancelSchema,
+  inventoryCountStaffAccessSchema,
   inventoryCountDraftSchema,
   inventoryCountListSchema,
   type InventoryCountCreate,
@@ -429,4 +430,5 @@ export {
   type InventoryCountSubmit,
   type InventoryCountDecision,
   type InventoryCountPost,
+  type InventoryCountStaffAccess,
 } from './inventory-count'

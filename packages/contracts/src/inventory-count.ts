@@ -31,6 +31,12 @@ export const inventoryCountDecisionSchema = z.strictObject({
 })
 export const inventoryCountPostSchema = z.strictObject({ expectedRevision: revision, reason })
 export const inventoryCountCancelSchema = z.strictObject({ expectedRevision: revision, reason })
+/** A count-only grant for one existing employee and branch; identity and authority are server-derived. */
+export const inventoryCountStaffAccessSchema = z.strictObject({
+  employeeId: id,
+  locationId: id,
+  enabled: z.boolean(),
+})
 export const inventoryCountDraftSchema = z.object({
   id,
   locationId: id,
@@ -82,3 +88,4 @@ export type InventoryCountList = z.infer<typeof inventoryCountListSchema>
 export type InventoryCountSubmit = z.infer<typeof inventoryCountSubmitSchema>
 export type InventoryCountDecision = z.infer<typeof inventoryCountDecisionSchema>
 export type InventoryCountPost = z.infer<typeof inventoryCountPostSchema>
+export type InventoryCountStaffAccess = z.infer<typeof inventoryCountStaffAccessSchema>

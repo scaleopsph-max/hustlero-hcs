@@ -30,8 +30,7 @@ insert into app.membership_roles(tenant_id,user_id,role_id)
 insert into app.membership_roles(tenant_id,user_id,role_id)
  select 'ab100000-0000-4000-8000-000000000001','ab000000-0000-4000-8000-000000000003',id from app.roles
  where tenant_id='ab100000-0000-4000-8000-000000000001' and code='cashier';
-insert into app.role_permissions(tenant_id,role_id,permission_code)
- select tenant_id,id,'inventory_counts.enter' from app.roles where tenant_id='ab100000-0000-4000-8000-000000000001' and code='cashier';
+insert into app.inventory_count_staff_access(tenant_id,employee_id,location_id,user_id,enabled) values ('ab100000-0000-4000-8000-000000000001','ab300000-0000-4000-8000-000000000003','ab200000-0000-4000-8000-000000000001','ab000000-0000-4000-8000-000000000003',true);
 update app.tenant_entitlements set entitled=true,enabled=true where tenant_id='ab100000-0000-4000-8000-000000000001' and feature_code='inventory';
 insert into app.products(id,tenant_id,name,created_by) values
  ('ab400000-0000-4000-8000-000000000001','ab100000-0000-4000-8000-000000000001','Count product','ab000000-0000-4000-8000-000000000001');
