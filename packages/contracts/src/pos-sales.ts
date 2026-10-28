@@ -267,6 +267,7 @@ export const saleRefundRequestSchema = z.object({
         saleLineId: id,
         quantityMilli: z.number().int().positive(),
         returnToStock: z.boolean(),
+        expectedAmountCentavos: z.number().int().min(1).max(99_999_999_999).optional(),
       }),
     )
     .min(1)

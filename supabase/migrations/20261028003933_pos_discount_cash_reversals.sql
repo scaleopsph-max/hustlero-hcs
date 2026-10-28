@@ -114,6 +114,11 @@ begin
   if v_quantity>(v_original->>'quantityMilli')::numeric-(v_original->>'refundedQuantityMilli')::numeric then raise exception using errcode='HCSA5',message='Refund quantity exceeds the remaining quantity'; end if;
   v_amount:=round((v_original->>'netMinor')::numeric*((v_original->>'refundedQuantityMilli')::numeric+v_quantity)/(v_original->>'quantityMilli')::numeric)-(v_original->>'refundedMinor')::numeric;
   if v_amount<=0 then raise exception using errcode='HCSA7',message='Selected quantity has no refundable centavo'; end if;
+  if v_line?'expectedAmountCentavos' then
+   if jsonb_typeof(v_line->'expectedAmountCentavos') is distinct from 'number' or (v_line->>'expectedAmountCentavos') !~ '^[1-9][0-9]*$'
+   then raise exception using errcode='HCSA2',message='Sale reversal lines are invalid'; end if;
+   if (v_line->>'expectedAmountCentavos')::numeric<>v_amount then raise exception using errcode='HCSA3',message='Refund quote changed; refresh the receipt before another request'; end if;
+  end if;
   v_total:=v_total+v_amount;v_rows:=v_rows||jsonb_build_array(v_line||jsonb_build_object('amountMinor',v_amount));
  end loop;
  if v_total<=0 or v_total>(v_snapshot->>'totalMinor')::numeric-v_prior then raise exception using errcode='HCSA5',message='Refund amount exceeds the remaining payment'; end if;

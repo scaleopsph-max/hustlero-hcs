@@ -78,6 +78,7 @@ select throws_ok($$select pg_temp.reverse_discount('refund-duplicate-line',pg_te
 select throws_ok($$select pg_temp.reverse_discount('refund-empty-lines','[]')$$,'HCSA2',null,'empty selection denied');
 select is((select count(*)::integer from app.refunds),0,'denied attempts post no refund');
 select is((select count(*)::integer from app.cash_movements where movement_type='cash_refund'),0,'denied attempts pay no cash');
+select throws_ok($$select pg_temp.reverse_discount('refund-stale-quote',jsonb_build_array((pg_temp.refund_line()->0)||jsonb_build_object('expectedAmountCentavos',4961)))$$,'HCSA3',null,'stale expected net amount is a rejection, never a manual payout override');
 create temp table partial_refund as select pg_temp.reverse_discount('refund-half-001',pg_temp.refund_line()) result;
 select is((select result->>'amountCentavos' from partial_refund),'4960','partial refund uses allocated net, never gross unit price');
 select is((select result->>'saleStatus' from partial_refund),'partially_refunded','partial status');

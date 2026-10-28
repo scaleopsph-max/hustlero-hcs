@@ -77,6 +77,14 @@ Review also separated POST rejection from a failed subsequent history GET: a
 successful payout followed by a read conflict can never offer no-effect discard.
 The added DOM regression passes; current focused helper/DOM suite passes 29 cases.
 
+Discounted form requests include an optional per-line expected net amount as a
+staleness precondition, never a payout override. The server recomputes original
+net entitlement under locks and rejects any mismatch before posting, so another
+partial refund cannot silently move the displayed rounding remainder. Exact
+original replay still precedes new-effect validation. Older bodies without this
+optional precondition retain server-authoritative valuation. A new SQL denial
+and actual-form payload assertion cover this boundary.
+
 Actual-component loopback-only mocked browser checks passed at 1440x1000 and
 390x844: 53-cent original-net refund, discarded first response, reload and identical
 key/body replay, one effect, no external requests/page errors/document overflow.

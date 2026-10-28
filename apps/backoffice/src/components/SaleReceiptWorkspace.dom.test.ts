@@ -122,6 +122,7 @@ it('preserves a lost successful response, reloads and retries the identical key/
   const saved = sessionStorage.getItem(storage)
   expect(saved).not.toBeNull()
   expect(posts).toHaveLength(1)
+  expect(JSON.parse(posts[0]!.body).lines[0].expectedAmountCentavos).toBe(53)
   cleanup()
   commit = async () => Response.json(result)
   render(createElement(Workspace, { saleId: ids.sale }))

@@ -237,7 +237,17 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
         mode,
         expectedAmountMinor: preview.amount,
         body: JSON.stringify(
-          mode === 'refund' ? { reason: reason.trim(), lines: selections } : { reason: reason.trim() },
+          mode === 'refund'
+            ? {
+                reason: reason.trim(),
+                lines: selections.map((line) => ({
+                  ...line,
+                  ...(receipt.discountReturnSnapshot
+                    ? { expectedAmountCentavos: quoteSaleReversal(receipt, [line]) }
+                    : {}),
+                })),
+              }
+            : { reason: reason.trim() },
         ),
       })
       if (sessionStorage.getItem(storage)) throw new Error('An earlier reversal needs reconciliation.')
