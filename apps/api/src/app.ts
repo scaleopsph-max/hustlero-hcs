@@ -21,6 +21,15 @@ import {
   wholesaleReturnsContextSchema,
 } from '@hcs/contracts'
 import { quoteWholesaleReturn, wholesaleReturnSettlement, planCatalogImport } from '@hcs/domain'
+import { inventoryCountCreateSchema, inventoryCountEntrySchema, inventoryCountDraftSchema } from '@hcs/contracts'
+import {
+  createInventoryCountInPostgres,
+  enterInventoryCountInPostgres,
+  loadInventoryCountFromPostgres,
+  type InventoryCountCreator,
+  type InventoryCountEnterer,
+  type InventoryCountLoader,
+} from './inventory-count-repository'
 import { z } from 'zod'
 import {
   saveCatalogImportJobInPostgres,
@@ -487,6 +496,9 @@ interface AppDependencies {
   loadCatalogImportExecution: CatalogImportExecutionLoader
   executeCatalogImport: CatalogImportExecutor
   loadCatalogCategories: CatalogCategoriesLoader
+  createInventoryCount: InventoryCountCreator
+  enterInventoryCount: InventoryCountEnterer
+  loadInventoryCount: InventoryCountLoader
   manageCatalogCategory: CatalogCategoryCommander
   loadRetailDiscounts: RetailDiscountLoader
   manageRetailDiscount: RetailDiscountCommander
@@ -609,6 +621,9 @@ const defaultDependencies: AppDependencies = {
   loadCatalogImportExecution: loadCatalogImportExecutionFromPostgres,
   executeCatalogImport: executeCatalogImportInPostgres,
   loadCatalogCategories: loadCatalogCategoriesFromPostgres,
+  createInventoryCount: createInventoryCountInPostgres,
+  enterInventoryCount: enterInventoryCountInPostgres,
+  loadInventoryCount: loadInventoryCountFromPostgres,
   manageCatalogCategory: manageCatalogCategoryInPostgres,
   loadRetailDiscounts: loadRetailDiscountsFromPostgres,
   manageRetailDiscount: manageRetailDiscountInPostgres,
@@ -2453,6 +2468,105 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
         : undefined
     return tenant ? { userId: user.userId, tenantId: tenant.tenantId } : null
   }
+
+  app.use('/v1/inventory/counts', async (context, next) => {
+    context.header('Cache-Control', 'private, no-store')
+    await next()
+  })
+  app.use('/v1/inventory/counts/*', async (context, next) => {
+    context.header('Cache-Control', 'private, no-store')
+    await next()
+  })
+  app.on(
+    ['GET', 'POST'],
+    ['/v1/inventory/counts', '/v1/inventory/counts/:countId', '/v1/inventory/counts/:countId/entries'],
+    bodyLimit({
+      maxSize: 64 * 1024,
+      onError: (context) =>
+        context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVENTORY_COUNT_TOO_LARGE',
+              message: 'Inventory count request exceeds 64 KB.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          413,
+        ),
+    }),
+    async (context) => {
+      const fail = (code: string, message: string, status: 400 | 401 | 403 | 404 | 409) =>
+        context.json(
+          apiErrorResponseSchema.parse({ error: { code, message, requestId: context.get('requestId') } }),
+          status,
+        )
+      if (!readBearerToken(context.req.header('authorization')))
+        return fail('AUTHENTICATION_REQUIRED', 'Sign in to use inventory counts.', 401)
+      const scope = await resolveWholesaleTenant(context)
+      if (!scope) return fail('INVENTORY_COUNT_ACCESS_DENIED', 'Select an authorized business.', 403)
+      const countId = context.req.param('countId')
+      if (countId && !z.uuid().safeParse(countId).success)
+        return fail('INVENTORY_COUNT_NOT_FOUND', 'Inventory count not found.', 404)
+      const isEntry = context.req.path.endsWith('/entries')
+      try {
+        if (context.req.method === 'GET') {
+          if (!countId || isEntry) return fail('INVENTORY_COUNT_NOT_FOUND', 'Inventory count not found.', 404)
+          return context.json(
+            inventoryCountDraftSchema.parse(
+              await dependencies.loadInventoryCount(scope.userId, scope.tenantId, countId, context.env),
+            ),
+          )
+        }
+        if (countId && !isEntry) return fail('INVENTORY_COUNT_NOT_FOUND', 'Inventory count not found.', 404)
+        const key = context.req.header('idempotency-key')
+        if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+          return fail('IDEMPOTENCY_KEY_REQUIRED', 'A valid request key is required.', 400)
+        const body: unknown = await context.req.json().catch(() => null)
+        if (isEntry && countId) {
+          const parsed = inventoryCountEntrySchema.safeParse(body)
+          if (!parsed.success) return fail('INVALID_INVENTORY_COUNT', 'Check the count entries.', 400)
+          return context.json(
+            inventoryCountDraftSchema.parse(
+              await dependencies.enterInventoryCount(
+                scope.userId,
+                scope.tenantId,
+                countId,
+                parsed.data,
+                key,
+                context.get('requestId'),
+                context.env,
+              ),
+            ),
+          )
+        }
+        const parsed = inventoryCountCreateSchema.safeParse(body)
+        if (!parsed.success) return fail('INVALID_INVENTORY_COUNT', 'Check the count location and products.', 400)
+        return context.json(
+          inventoryCountDraftSchema.parse(
+            await dependencies.createInventoryCount(
+              scope.userId,
+              scope.tenantId,
+              parsed.data,
+              key,
+              context.get('requestId'),
+              context.env,
+            ),
+          ),
+          201,
+        )
+      } catch (error) {
+        const code = postgresErrorCode(error)
+        if (code === 'HCPC0') return fail('INVENTORY_COUNT_ACCESS_DENIED', 'Inventory count access denied.', 403)
+        if (code === 'HCPC1') return fail('INVENTORY_COUNT_NOT_FOUND', 'Inventory count or item not found.', 404)
+        if (code === 'HCPC2' || code === '22P02')
+          return fail('INVALID_INVENTORY_COUNT', 'Check the count details.', 400)
+        if (code === 'HCPC3') return fail('INVENTORY_COUNT_CHANGED', 'Count changed; refresh before entering.', 409)
+        if (code === 'HCS08')
+          return fail('IDEMPOTENCY_KEY_CONFLICT', 'Request key belongs to a different command.', 409)
+        throw error
+      }
+    },
+  )
 
   app.use('/v1/pos/*', async (context, next) => {
     context.header('Cache-Control', 'private, no-store')

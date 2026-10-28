@@ -1,5 +1,14 @@
 # Decision Register
 
+## PCOUNT whole-count approval — 2026-10-28
+
+Owner confirmed: when any PCOUNT variance exceeds the existing adjustment
+threshold, request one approval for the entire count. Approval itself does not
+change stock; an Owner or Manager separately posts the complete count atomically.
+Authorized staff may enter counts. Existing adjustment approval authority and
+threshold semantics continue to apply. A changed stock snapshot or changed
+count must not reuse a stale approval; revalidation and fresh approval are needed.
+
 ## Retail Ticket Discounts V1 2026-10-27
 
 Owner selected whole-retail-ticket predefined discounts, dedicated manage/apply

@@ -413,3 +413,14 @@ export * from './wholesale-returns'
 export * from './catalog-import-execution'
 export * from './retail-discounts'
 export { posDiscountSelectionSchema, posDiscountLineSnapshotSchema } from './pos-sales'
+export {
+  inventoryCountCreateSchema,
+  inventoryCountEntrySchema,
+  inventoryCountSubmitSchema,
+  inventoryCountPostSchema,
+  inventoryCountCancelSchema,
+  inventoryCountDraftSchema,
+  type InventoryCountCreate,
+  type InventoryCountEntryCommand,
+  type InventoryCountDraft,
+} from './inventory-count'
