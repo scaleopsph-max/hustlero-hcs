@@ -136,10 +136,10 @@ export function SupplierManagement({
         key: crypto.randomUUID(),
         body: {
           expectedRevision: supplier.revision,
-          name: name.trim(),
-          contactName: contact.trim() || null,
-          contactPhone: phone.trim() || null,
-          contactEmail: email.trim() || null,
+          name: archive ? supplier.name : name.trim(),
+          contactName: archive ? supplier.contactName : contact.trim() || null,
+          contactPhone: archive ? supplier.contactPhone : phone.trim() || null,
+          contactEmail: archive ? supplier.contactEmail : email.trim() || null,
           archive,
         },
       })

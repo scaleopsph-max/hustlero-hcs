@@ -66,3 +66,30 @@ it('retries an uncertain update with the original request and verifies supplier 
   expect(calls[1]).toEqual(calls[0])
   expect(sessionStorage.length).toBe(0)
 })
+it('archives the saved supplier without applying unsaved field edits', async () => {
+  let sent: unknown
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (new URL(String(input)).pathname === '/v1/purchasing')
+        return Response.json({ ...data, suppliers: [{ ...data.suppliers[0], status: 'archived', revision: 2 }] })
+      sent = JSON.parse(String(init?.body))
+      return Response.json({
+        supplierId: supplier,
+        revision: 2,
+        name: 'Supplier',
+        contactName: null,
+        contactPhone: null,
+        contactEmail: null,
+        status: 'archived',
+      })
+    }),
+  )
+  const refresh = vi.fn(async () => {})
+  render(createElement(Component, { actor, tenant, token: 'synthetic', data, refresh }))
+  fireEvent.click(screen.getByRole('button', { name: 'Supplier · active' }))
+  fireEvent.change(screen.getByLabelText('Supplier name'), { target: { value: 'Unsaved name' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Archive supplier' }))
+  await waitFor(() => expect(refresh).toHaveBeenCalledOnce())
+  expect(sent).toMatchObject({ name: 'Supplier', archive: true })
+})

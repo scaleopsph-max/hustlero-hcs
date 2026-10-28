@@ -52,6 +52,7 @@ begin
  select * into s from app.suppliers where tenant_id=p_tenant and id=p_supplier for update;
  if not found then raise exception using errcode='HCS34',message='Supplier not found'; end if;
  if s.status<>'active' or s.revision<>p_revision then raise exception using errcode='HCS35',message='Supplier changed or archived'; end if;
+ if p_archive and (s.name is distinct from btrim(p_name) or s.contact_name is distinct from nullif(btrim(p_contact_name),'') or s.contact_phone is distinct from nullif(btrim(p_contact_phone),'') or s.contact_email is distinct from nullif(btrim(p_contact_email),'')) then raise exception using errcode='HCS31',message='Save changes before archiving'; end if;
  perform app.lock_supplier_manager(p_actor,p_tenant);v_time:=clock_timestamp();
  update app.suppliers set name=btrim(p_name),contact_name=nullif(btrim(p_contact_name),''),contact_phone=nullif(btrim(p_contact_phone),''),contact_email=nullif(btrim(p_contact_email),''),status=case when p_archive then 'archived' else 'active' end,revision=revision+1 where tenant_id=p_tenant and id=p_supplier returning * into s;
  v_result:=jsonb_build_object('supplierId',s.id,'revision',s.revision,'name',s.name,'contactName',s.contact_name,'contactPhone',s.contact_phone,'contactEmail',s.contact_email,'status',s.status);
