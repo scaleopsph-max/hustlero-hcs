@@ -6,7 +6,7 @@ export default async function SaleReceiptPage({ params }: { params: Promise<{ sa
   return (
     <>
       <Topbar title="Receipt" subtitle="Review the original sale and record linked reversals." />
-      <SaleReceiptWorkspace saleId={saleId} />
+      <SaleReceiptWorkspace key={saleId} saleId={saleId} />
     </>
   )
 }

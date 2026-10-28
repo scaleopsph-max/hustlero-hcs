@@ -102,7 +102,7 @@ jsonb_build_array(jsonb_build_object('saleLineId',(select id from app.sale_lines
 select is((select result->>'amountCentavos' from final_refund),'2482','remaining fractional line exact net cents');
 select is((select result->>'saleStatus' from final_refund),'refunded','full refund only after all original units selected');
 select is((select sum(amount) from app.refunds),124.02::numeric,'all refunds equal original net payment exactly');
-select is((select sum(points_delta) from app.loyalty_transactions),0::bigint,'full original net-spend loyalty reversed');
+select is((select sum(points_delta)::bigint from app.loyalty_transactions),0::bigint,'full original net-spend loyalty reversed');
 select is((select on_hand from app.inventory_balances where variant_id='dc700000-0000-4000-8000-000000000002'),10::numeric,'fractional shared stock restored');
 select throws_ok($$select pg_temp.reverse_discount('refund-exhausted',pg_temp.refund_line())$$,'HCSA3',null,'cannot refund exhausted sale');
 select is(pg_temp.reverse_discount('refund-half-001',pg_temp.refund_line()),(select result from partial_refund),'historical exact replay survives later full refund');
