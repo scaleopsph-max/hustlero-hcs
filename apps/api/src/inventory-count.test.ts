@@ -37,6 +37,7 @@ function setup(code?: string) {
   })
   const list = vi.fn(async () => ({
     counts: [{ id: count, locationId: branch, status: 'draft' as const, revision: 1, createdAt: fixture.createdAt }],
+    locations: [],
   }))
   const action = vi.fn(async (...args: unknown[]) => {
     void args
