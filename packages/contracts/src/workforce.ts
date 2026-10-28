@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 const id = z.uuid()
 export const workforceContextSchema = z.object({
+  canManageCountAccess: z.boolean().optional(),
   locations: z.array(
     z.object({
       id,
@@ -30,6 +31,8 @@ export const workforceContextSchema = z.object({
       hasPosPin: z.boolean(),
       roleIds: z.array(id),
       locationIds: z.array(id),
+      hasBackOfficeAccount: z.boolean().optional(),
+      countAccessLocationIds: z.array(id).optional(),
     }),
   ),
   registers: z.array(

@@ -100,4 +100,22 @@ begin
  if v_ent.starts_at>clock_timestamp() or v_ent.ends_at<=clock_timestamp() then raise exception using errcode='HCPC0',message='Inventory count access denied'; end if;
 end; $$;
 
+-- Preserve existing branch filtering; only the Owner receives access-management details.
+alter function app.list_workforce_context(uuid,uuid) rename to workforce_count_access_core;
+revoke all on function app.workforce_count_access_core(uuid,uuid) from public,anon,authenticated,hcs_hyperdrive;
+create function app.list_workforce_context(p_actor uuid,p_tenant uuid) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare v_result jsonb;v_employees jsonb;
+begin
+ v_result:=app.workforce_count_access_core(p_actor,p_tenant);
+ if not exists(select 1 from app.tenant_memberships where tenant_id=p_tenant and user_id=p_actor and status='active' and is_owner) then return v_result; end if;
+ select coalesce(jsonb_agg(item.value || jsonb_build_object(
+  'hasBackOfficeAccount',exists(select 1 from app.employees e join app.tenant_memberships m on m.tenant_id=e.tenant_id and m.user_id=e.user_id and m.status='active' and not m.is_owner where e.tenant_id=p_tenant and e.id=(item.value->>'id')::uuid and e.status='active'),
+  'countAccessLocationIds',coalesce((select jsonb_agg(g.location_id order by g.location_id) from app.inventory_count_staff_access g where g.tenant_id=p_tenant and g.employee_id=(item.value->>'id')::uuid and g.enabled),'[]'::jsonb)
+ ) order by item.ordinality),'[]'::jsonb) into v_employees from jsonb_array_elements(v_result->'employees') with ordinality item(value,ordinality);
+ return v_result || jsonb_build_object('employees',v_employees,'canManageCountAccess',true);
+end; $$;
+revoke all on function app.list_workforce_context(uuid,uuid) from public,anon,authenticated;
+grant execute on function app.list_workforce_context(uuid,uuid) to hcs_hyperdrive;
+
 commit;
