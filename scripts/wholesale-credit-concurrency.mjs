@@ -2691,6 +2691,45 @@ try {
   console.log(
     'Employee invitation concurrency passed: revocation-first denies waiting acceptance without membership or link.',
   )
+  const supplierRace = randomUUID()
+  await first.query("insert into app.suppliers(id,tenant_id,name,created_by) values($1,$2,'Supplier race',$3)", [
+    supplierRace,
+    countTenant,
+    countActor,
+  ])
+  await first.query('begin')
+  await first.query('select app.update_supplier($1,$2,$3,1,$4,null,null,null,true,$5,$5)', [
+    countActor,
+    countTenant,
+    supplierRace,
+    'Supplier race',
+    'supplier-race-archive01',
+  ])
+  const waitingOrder = second
+    .query('select app.create_purchase_order($1,$2,$3,$4,$5,null,null,$6::jsonb,$7,$7,$7)', [
+      countActor,
+      countTenant,
+      supplierRace,
+      countLocation,
+      'RACE-SUPPLIER-PO',
+      JSON.stringify([{ variantId: countVariant, quantityMilli: 1000, unitCostMinor: 5000 }]),
+      'supplier-race-order-001',
+    ])
+    .then(
+      () => null,
+      (error) => error,
+    )
+  await waitForLock()
+  await first.query('commit')
+  const orderDenial = await waitingOrder
+  assert.equal(orderDenial?.code, 'HCS34')
+  const supplierState = await observer.query(
+    'select (select status from app.suppliers where tenant_id=$1 and id=$2) status,(select count(*)::integer from app.purchase_orders where tenant_id=$1 and supplier_id=$2) orders',
+    [countTenant, supplierRace],
+  )
+  assert.equal(supplierState.rows[0].status, 'archived')
+  assert.equal(supplierState.rows[0].orders, 0)
+  console.log('Supplier concurrency passed: archive-first prevents a waiting purchase order.')
 } finally {
   // Release any held fixture transaction before closing another session waiting on it.
   await first.query('rollback').catch(() => {})

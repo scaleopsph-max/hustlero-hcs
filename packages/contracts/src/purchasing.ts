@@ -11,6 +11,23 @@ export const supplierCreateRequestSchema = z.strictObject({
   contactEmail: z.string().trim().email().max(254).nullable().default(null),
 })
 export const supplierCreateResponseSchema = z.object({ supplierId: id, status: z.literal('created') })
+export const supplierUpdateRequestSchema = z.strictObject({
+  expectedRevision: z.number().int().positive().max(2_147_483_647),
+  name: z.string().trim().min(2).max(160),
+  contactName: z.string().trim().max(160).nullable(),
+  contactPhone: z.string().trim().max(40).nullable(),
+  contactEmail: z.string().trim().email().max(254).nullable(),
+  archive: z.boolean(),
+})
+export const supplierUpdateResponseSchema = z.object({
+  supplierId: id,
+  revision: z.number().int().positive(),
+  name: z.string(),
+  contactName: z.string().nullable(),
+  contactPhone: z.string().nullable(),
+  contactEmail: z.string().nullable(),
+  status: z.enum(['active', 'archived']),
+})
 
 const purchaseOrderLineSchema = z.object({
   id: id,
@@ -62,6 +79,7 @@ export const purchasingContextSchema = z.object({
       contactPhone: z.string().nullable(),
       contactEmail: z.string().nullable(),
       status: z.enum(['active', 'archived']),
+      revision: z.number().int().positive().optional(),
     }),
   ),
   locations: z.array(z.object({ id, code: z.string(), name: z.string() })),
@@ -79,6 +97,7 @@ export const purchasingContextSchema = z.object({
       id,
       supplierId: id,
       supplierName: z.string(),
+      supplierSnapshotSource: z.enum(['order_created', 'migration_baseline']).optional(),
       locationId: id,
       locationName: z.string(),
       orderNumber: z.string(),
@@ -93,6 +112,7 @@ export const purchasingContextSchema = z.object({
 
 export type SupplierCreateRequest = z.infer<typeof supplierCreateRequestSchema>
 export type SupplierCreateResponse = z.infer<typeof supplierCreateResponseSchema>
+export type SupplierUpdateRequest = z.infer<typeof supplierUpdateRequestSchema>
 export type PurchaseOrderCreateRequest = z.infer<typeof purchaseOrderCreateRequestSchema>
 export type PurchaseOrderCreateResponse = z.infer<typeof purchaseOrderCreateResponseSchema>
 export type PurchaseOrderSendResponse = z.infer<typeof purchaseOrderSendResponseSchema>

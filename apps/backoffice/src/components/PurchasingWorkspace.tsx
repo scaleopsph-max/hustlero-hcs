@@ -15,6 +15,7 @@ import {
   type PurchasingContext,
 } from '@hcs/contracts'
 import { Button, Chip, Glass } from '@hcs/ui'
+import { SupplierManagement } from './SupplierManagement'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
@@ -80,6 +81,7 @@ export function PurchasingWorkspace() {
   const [auth] = useState(client)
   const [token, setToken] = useState<string | null>(null)
   const [tenantId, setTenantId] = useState<string | null>(null)
+  const [actorId, setActorId] = useState<string | null>(null)
   const [context, setContext] = useState<PurchasingContext>({ suppliers: [], locations: [], variants: [], orders: [] })
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -103,7 +105,11 @@ export function PurchasingWorkspace() {
         await apiRequest('/v1/purchasing', nextToken, nextTenantId, {}, auth ?? undefined, setToken),
       )
       setContext(next)
-      setSupplierId((current) => current || next.suppliers[0]?.id || '')
+      setSupplierId((current) =>
+        next.suppliers.some((row) => row.id === current && row.status === 'active')
+          ? current
+          : (next.suppliers.find((row) => row.status === 'active')?.id ?? ''),
+      )
       setLocationId((current) => current || next.locations[0]?.id || '')
       setDraftLines((current) =>
         current.map((line, index) => {
@@ -136,6 +142,7 @@ export function PurchasingWorkspace() {
           await apiRequest('/v1/me', data.session.access_token, '', {}, auth, setToken),
         )
         const tenant = selectActiveTenant(session.tenants)
+        setActorId(session.userId)
         if (!tenant) throw new Error('Create a business before using purchasing.')
         setTenantId(tenant.tenantId)
         await load(data.session.access_token, tenant.tenantId)
@@ -361,6 +368,15 @@ export function PurchasingWorkspace() {
               </div>
             ))}
           </div>
+          {actorId && tenantId && token ? (
+            <SupplierManagement
+              actor={actorId}
+              tenant={tenantId}
+              token={token}
+              data={context}
+              refresh={() => load(token, tenantId)}
+            />
+          ) : null}
         </Glass>
         <Glass variant="light" className="p-5">
           <div className="mb-4 flex items-center gap-3">
@@ -379,11 +395,13 @@ export function PurchasingWorkspace() {
                 required
               >
                 <option value="">Select supplier</option>
-                {context.suppliers.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
+                {context.suppliers
+                  .filter((item) => item.status === 'active')
+                  .map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
               </select>
               <select
                 className={inputClass}
@@ -521,7 +539,12 @@ export function PurchasingWorkspace() {
               type="submit"
               variant="primary"
               size="sm"
-              disabled={busy || !context.suppliers.length || !context.locations.length || !context.variants.length}
+              disabled={
+                busy ||
+                !context.suppliers.some((row) => row.status === 'active') ||
+                !context.locations.length ||
+                !context.variants.length
+              }
             >
               <Plus size={17} className="mr-2" />
               Create draft PO

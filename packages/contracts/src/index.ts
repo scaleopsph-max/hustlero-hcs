@@ -336,6 +336,8 @@ export {
   purchasingContextSchema,
   supplierCreateRequestSchema,
   supplierCreateResponseSchema,
+  supplierUpdateRequestSchema,
+  supplierUpdateResponseSchema,
   type PurchaseOrderCreateRequest,
   type PurchaseOrderCreateResponse,
   type PurchaseOrderSendResponse,
@@ -344,6 +346,7 @@ export {
   type PurchasingContext,
   type SupplierCreateRequest,
   type SupplierCreateResponse,
+  type SupplierUpdateRequest,
 } from './purchasing'
 export {
   transferContextSchema,
