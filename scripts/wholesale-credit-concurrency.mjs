@@ -2562,6 +2562,85 @@ try {
   console.log(
     'Discounted refund concurrency passed: same-key single payout/restock, competing distinct-key denial, queued tenant suspension, closing-register denial, and revoked-membership replay denial.',
   )
+
+  // Independent sessions test a single physical-count posting, not merely a sequential replay.
+  const [countActor, countTenant, countLocation, countProduct, countVariant] = Array.from({ length: 5 }, () =>
+    randomUUID(),
+  )
+  await first.query("insert into auth.users(id,email,aud,role) values($1,$2,'authenticated','authenticated')", [
+    countActor,
+    `${countActor}@example.invalid`,
+  ])
+  await first.query('insert into app.tenants(id,slug,name) values($1,$2,$3)', [
+    countTenant,
+    `count-race-${countTenant}`,
+    'Count race',
+  ])
+  await first.query(
+    "insert into app.tenant_memberships(tenant_id,user_id,status,is_owner) values($1,$2,'active',true)",
+    [countTenant, countActor],
+  )
+  await first.query(
+    "update app.tenant_entitlements set entitled=true,enabled=true where tenant_id=$1 and feature_code='inventory'",
+    [countTenant],
+  )
+  await first.query("insert into app.locations(id,tenant_id,code,name) values($1,$2,'MAIN','Main')", [
+    countLocation,
+    countTenant,
+  ])
+  await first.query("insert into app.products(id,tenant_id,name,created_by) values($1,$2,'Count race',$3)", [
+    countProduct,
+    countTenant,
+    countActor,
+  ])
+  await first.query(
+    "insert into app.product_variants(id,tenant_id,product_id,name,sku,retail_price,unit_cost,track_inventory,created_by) values($1,$2,$3,'Each','COUNT-RACE',100,50,true,$4)",
+    [countVariant, countTenant, countProduct, countActor],
+  )
+  await first.query(
+    'insert into app.inventory_balances(tenant_id,location_id,variant_id,on_hand,average_unit_cost,version) values($1,$2,$3,10,50,1)',
+    [countTenant, countLocation, countVariant],
+  )
+  const createdCount = (
+    await first.query('select app.create_inventory_count($1,$2,$3,$4::jsonb,$5,$5) response', [
+      countActor,
+      countTenant,
+      countLocation,
+      JSON.stringify([countVariant]),
+      'count-race-create-0001',
+    ])
+  ).rows[0].response
+  await first.query('select app.enter_inventory_count($1,$2,$3,1,$4::jsonb,$5,$5)', [
+    countActor,
+    countTenant,
+    createdCount.id,
+    JSON.stringify([{ variantId: countVariant, countedMilli: 8000 }]),
+    'count-race-entry-00001',
+  ])
+  await first.query('select app.submit_inventory_count($1,$2,$3,2,$4,$4)', [
+    countActor,
+    countTenant,
+    createdCount.id,
+    'count-race-submit-0001',
+  ])
+  const postCount = 'select app.post_inventory_count($1,$2,$3,3,$4,$5,$5) response'
+  const postArgs = [countActor, countTenant, createdCount.id, 'Physical count', 'count-race-post-000001']
+  await first.query('begin')
+  const postedCount = await first.query(postCount, postArgs)
+  const waitingPost = second.query(postCount, postArgs)
+  await waitForLock()
+  await first.query('commit')
+  const replayedCount = await waitingPost
+  assert.deepEqual(replayedCount.rows[0].response, postedCount.rows[0].response)
+  const countState = await observer.query(
+    "select b.on_hand::text on_hand,(select count(*)::integer from app.inventory_movements m where m.tenant_id=b.tenant_id and m.source_type='physical_inventory_count') movements from app.inventory_balances b where b.tenant_id=$1 and b.variant_id=$2",
+    [countTenant, countVariant],
+  )
+  assert.equal(Number(countState.rows[0].on_hand), 8)
+  assert.equal(countState.rows[0].movements, 1)
+  console.log(
+    'Inventory count concurrency passed: simultaneous same-key post returns one result and creates one stock movement.',
+  )
 } finally {
   // Release any held fixture transaction before closing another session waiting on it.
   await first.query('rollback').catch(() => {})
