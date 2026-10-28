@@ -41,6 +41,7 @@ begin
  end if;
  perform 1 from app.employees where tenant_id=p_tenant and id=p_employee and status='active' and user_id is null for update;
  if not found then raise exception using errcode='HCPC1',message='Active unlinked employee required'; end if;
+ if exists(select 1 from app.tenant_memberships m join auth.users u on u.id=m.user_id where m.tenant_id=p_tenant and lower(btrim(u.email::text))=v_email) then raise exception using errcode='HCPC3',message='Existing business member needs owner linking'; end if;
  -- Expired requests are retained and closed before a replacement can be issued.
  update app.employee_membership_invitations set status='revoked',updated_at=clock_timestamp() where tenant_id=p_tenant and employee_id=p_employee and status='pending' and expires_at<=clock_timestamp();
  v_time:=clock_timestamp();

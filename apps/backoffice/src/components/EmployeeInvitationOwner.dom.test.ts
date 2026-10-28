@@ -40,7 +40,19 @@ it('recovers an interrupted invitation with the original key and clearly states 
   let first = true
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (new URL(String(input)).pathname === '/v1/workforce')
+        return Response.json({
+          ...data,
+          pendingEmployeeInvitations: [
+            {
+              invitationId: invitation,
+              employeeId: employee,
+              email: 'staff@example.invalid',
+              expiresAt: '2026-11-01T00:00:00Z',
+            },
+          ],
+        })
       calls.push({ key: (init?.headers as Record<string, string>)['Idempotency-Key']!, body: String(init?.body) })
       if (first) {
         first = false

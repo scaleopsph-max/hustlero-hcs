@@ -4,6 +4,7 @@ import {
   employeeInvitationCreateSchema,
   employeeInvitationIssuedSchema,
   employeeInvitationRevokedSchema,
+  workforceContextSchema,
   type WorkforceContext,
 } from '@hcs/contracts'
 import { Button } from '@hcs/ui'
@@ -86,15 +87,29 @@ export function EmployeeInvitationOwner({
       const result: unknown = await response.json()
       if (!response.ok)
         throw new Error((result as { error?: { message?: string } }).error?.message ?? 'Invitation request failed.')
+      let invitationId: string
       if (value.action === 'create') {
         const issued = employeeInvitationIssuedSchema.parse(result)
         if (issued.employeeId !== value.body.employeeId || issued.email !== value.body.email)
           throw new Error('Invitation response does not match the request.')
+        invitationId = issued.invitationId
       } else {
         const revoked = employeeInvitationRevokedSchema.parse(result)
         if (revoked.invitationId !== value.invitationId)
           throw new Error('Invitation response does not match the request.')
+        invitationId = revoked.invitationId
       }
+      const proofResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/v1/workforce`, {
+        cache: 'no-store',
+        headers: { Authorization: `Bearer ${token}`, 'X-Tenant-Id': tenant },
+      })
+      if (!proofResponse.ok) throw new Error('Invitation status could not be verified; retry the original request.')
+      const proof = workforceContextSchema.parse(await proofResponse.json())
+      if (!proof.canManageCountAccess || !proof.pendingEmployeeInvitations)
+        throw new Error('Invitation status could not be verified; retry the original request.')
+      const isPending = proof.pendingEmployeeInvitations.some((row) => row.invitationId === invitationId)
+      if ((value.action === 'create') !== isPending)
+        throw new Error('Invitation status changed; reconcile before retrying.')
       await refresh()
       if (sessionStorage.getItem(storage) !== JSON.stringify(value))
         throw new Error('Saved invitation request changed; reconciliation required.')
