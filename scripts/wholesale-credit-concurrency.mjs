@@ -2527,10 +2527,10 @@ try {
   ).rows[0].response
   const beforeClose = await refundSnapshot()
   await first.query('begin')
-  await first.query("update app.register_sessions set status='closed' where tenant_id=$1 and id=$2", [
-    tenant,
-    posOpen.registerSessionId,
-  ])
+  await first.query(
+    "update app.register_sessions set status='closed',expected_cash=0,counted_cash=0,variance=0,closed_at=clock_timestamp() where tenant_id=$1 and id=$2",
+    [tenant, posOpen.registerSessionId],
+  )
   const closingRefund = reversePos(second, 'pos-refund-closing-denial', closingRefundSale.saleId).then(
     () => 'unexpected-success',
     (error) => error.code,

@@ -37,7 +37,7 @@ insert into app.payment_methods(id,tenant_id,code,name,method_type) values
  ('dc800000-0000-4000-8000-000000000001','dc100000-0000-4000-8000-000000000001','disc-fixture-wallet','Ref Wallet','e_wallet'),
  ('dc800000-0000-4000-8000-000000000002','dc100000-0000-4000-8000-000000000001','disc-fixture-bank','Ref Bank','bank_transfer');
 select app.open_pos_register_session(repeat('f',64),0,'disc-fixture-open','disc-fixture-open-hash','disc-fixture-open-request');
-update app.product_variants set retail_price=100.01,track_inventory=true where id='dc700000-0000-4000-8000-000000000001';
+update app.product_variants set retail_price=100.01,unit_cost=50,track_inventory=true where id='dc700000-0000-4000-8000-000000000001';
 insert into app.product_variants(id,tenant_id,product_id,name,sku,retail_price,unit_cost,track_inventory,created_by) values
  ('dc700000-0000-4000-8000-000000000002','dc100000-0000-4000-8000-000000000001','dc600000-0000-4000-8000-000000000001','Second','DISCOUNT-SECOND',50.03,20,true,'dc000000-0000-4000-8000-000000000001');
 insert into app.inventory_balances(tenant_id,location_id,variant_id,on_hand,average_unit_cost) values
@@ -121,8 +121,14 @@ create temp table bank_sale as select pg_temp.discount_pos_sale('discount-bank-r
 select throws_ok($$select pg_temp.reverse_discount('discount-bank-denied',null,'void',(select (result->>'saleId')::uuid from bank_sale))$$,'HCSA7',null,'bank payout still denied');
 select is((select count(*)::integer from app.refunds),4,'bank rejection creates no refund');
 create temp table closed_sale as select pg_temp.discount_pos_sale('discount-closed-sale') result;
-update app.register_sessions set status='closed' where tenant_id='dc100000-0000-4000-8000-000000000001';
+update app.register_sessions set status='closed',expected_cash=0,counted_cash=0,variance=0,closed_at=clock_timestamp() where tenant_id='dc100000-0000-4000-8000-000000000001';
 select throws_ok($$select pg_temp.reverse_discount('discount-closed-denied',null,'void',(select (result->>'saleId')::uuid from closed_sale))$$,'HCSA6',null,'closed original register denied');
 select is(pg_temp.reverse_discount('discount-void-001',null,'void',(select (result->>'saleId')::uuid from void_sale)),(select result from void_result),'exact success replay still works after register close');
+create temp table discount_report as select app.load_reporting('dc000000-0000-4000-8000-000000000001','dc100000-0000-4000-8000-000000000001',current_date,current_date,null,'pos') result;
+select is((select result->'summary'->>'netSalesCentavos' from discount_report),'24804','report net revenue subtracts exact cash reversals');
+select is((select sum((value->>'netSalesCentavos')::numeric) from discount_report,jsonb_array_elements(result->'byItem')),24804::numeric,'item totals use original discounted net, matching summary');
+select is((select sum((value->>'netSalesCentavos')::numeric) from discount_report,jsonb_array_elements(result->'byCategory')),24804::numeric,'category totals use original discounted net, matching summary');
+select is((select sum((value->>'netSalesCentavos')::numeric) from discount_report,jsonb_array_elements(result->'byPaymentType')),24804::numeric,'payment totals reconcile exact net sales/refunds');
+select ok(not has_function_privilege('hcs_hyperdrive','app.wholesale_reporting_line_payable(uuid,uuid)','execute'),'private report helper cannot bypass report scope');
 select * from finish();
 rollback;

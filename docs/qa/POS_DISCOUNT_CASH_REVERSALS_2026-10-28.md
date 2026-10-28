@@ -38,8 +38,11 @@ the stock effect. New entries share an explicit effective timestamp.
 
 The original definition name/version, gross/discount/net per line and net return
 preview appear in receipt detail. The existing summary/report truth continues to
-read the original sale header and actual net refund ledgers; no historical data
-is repriced. A separate discount-definition analytics report is still later work.
+read original sale headers and actual net refund ledgers. Migration `20261028004951`
+extends the private item/category payable helper to original POS net snapshots,
+so breakdowns reconcile with summary/payment totals without repricing history.
+Ordinary and wholesale valuations keep their existing path. A separate
+discount-definition analytics report is still later work.
 
 The form persists actor/tenant/sale/key/body/expected amount in sessionStorage
 before POST, without credentials. Unknown responses, auth denial, conflicting key,
@@ -58,6 +61,13 @@ checkpoint. New pgTAP cases and five actual multi-session refund races are writt
 disposable migration/reset/SQL/concurrency execution and exact CI remain pending.
 No hosted database, transaction, credential/access grant, paid resource or frozen
 AW3 runner was changed.
+
+First isolated CI 40611014099 passed app/security/build checks and migration reset,
+then correctly rejected the positive stock-return fixture's missing original unit
+cost. The positive fixture now supplies explicit original cost; the earlier POS
+sale suite retains a dedicated assertion that unknown-cost restock is denied.
+No guard was relaxed. A bigint aggregate assertion and complete closed-register
+fixture fields were also corrected during review. Final exact CI is pending.
 
 ## Rollback
 
