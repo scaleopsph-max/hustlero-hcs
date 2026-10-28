@@ -90,6 +90,46 @@ begin
  return v_result;
 exception when unique_violation then raise exception using errcode='HCPC3',message='Membership or employee already linked';
 end; $$;
-revoke all on function app.create_employee_membership_invitation(uuid,uuid,uuid,text,text,text),app.accept_employee_membership_invitation(uuid,uuid,text,text) from public,anon,authenticated;
-grant execute on function app.create_employee_membership_invitation(uuid,uuid,uuid,text,text,text),app.accept_employee_membership_invitation(uuid,uuid,text,text) to hcs_hyperdrive;
+create function app.list_employee_membership_invitations(p_actor uuid) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare v_email text;
+begin
+ select lower(btrim(email::text)) into v_email from auth.users where id=p_actor and email_confirmed_at is not null for share;
+ if not found then raise exception using errcode='HCPC0',message='Verified email required'; end if;
+ return coalesce((select jsonb_agg(jsonb_build_object('invitationId',i.id,'businessName',t.name,'employeeName',e.display_name,'expiresAt',i.expires_at) order by i.created_at,i.id)
+ from app.employee_membership_invitations i join app.tenants t on t.id=i.tenant_id and t.status='active'
+ join app.employees e on e.tenant_id=i.tenant_id and e.id=i.employee_id and e.status='active' and e.user_id is null
+ where i.email=v_email::extensions.citext and i.status='pending' and i.expires_at>clock_timestamp()),'[]'::jsonb);
+end; $$;
+
+create function app.revoke_employee_membership_invitation(p_actor uuid,p_tenant uuid,p_invitation uuid,p_key text,p_request_id text) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare v_inv app.employee_membership_invitations%rowtype;v_old app.idempotency_records%rowtype;v_hash text;v_result jsonb;v_time timestamptz;
+begin
+ perform 1 from app.tenants where id=p_tenant and status='active' for share;
+ if not found then raise exception using errcode='HCPC0',message='Access denied'; end if;
+ perform 1 from app.tenant_memberships where tenant_id=p_tenant and user_id=p_actor and status='active' and is_owner for share;
+ if not found then raise exception using errcode='HCPC0',message='Access denied'; end if;
+ if p_invitation is null or p_key is null or p_key !~ '^[A-Za-z0-9_-]{16,128}$' then raise exception using errcode='HCPC2',message='Invalid request'; end if;
+ v_hash:=encode(extensions.digest(jsonb_build_object('actor',p_actor,'tenant',p_tenant,'invitation',p_invitation)::text,'sha256'),'hex');
+ perform pg_advisory_xact_lock(hashtextextended(p_tenant::text||':employee.revoke_invitation:'||p_key,0));
+ select * into v_old from app.idempotency_records where tenant_id=p_tenant and operation='employee.revoke_invitation' and idempotency_key=p_key;
+ if found then
+  if v_old.request_hash<>v_hash then raise exception using errcode='HCS08',message='Request key conflict'; end if;
+  if v_old.completed_at is not null then return v_old.response_body; end if;
+ end if;
+ select * into v_inv from app.employee_membership_invitations where tenant_id=p_tenant and id=p_invitation for update;
+ if not found then raise exception using errcode='HCPC1',message='Invitation not found'; end if;
+ if v_inv.status<>'pending' then raise exception using errcode='HCPC3',message='Invitation unavailable'; end if;
+ v_time:=clock_timestamp();
+ update app.employee_membership_invitations set status='revoked',updated_at=v_time where id=v_inv.id;
+ v_result:=jsonb_build_object('invitationId',v_inv.id,'status','revoked');
+ insert into audit.audit_events(tenant_id,request_id,actor_type,actor_id,action,entity_type,entity_id,metadata,occurred_at)
+ values(p_tenant,p_request_id,'tenant_user',p_actor,'employee.invitation_revoked','employee',v_inv.employee_id,jsonb_build_object('invitationId',v_inv.id),v_time);
+ insert into app.idempotency_records(tenant_id,operation,idempotency_key,request_hash,response_status,response_body,completed_at,expires_at)
+ values(p_tenant,'employee.revoke_invitation',p_key,v_hash,200,v_result,v_time,v_time+interval '24 hours');
+ return v_result;
+end; $$;
+revoke all on function app.create_employee_membership_invitation(uuid,uuid,uuid,text,text,text),app.accept_employee_membership_invitation(uuid,uuid,text,text),app.list_employee_membership_invitations(uuid),app.revoke_employee_membership_invitation(uuid,uuid,uuid,text,text) from public,anon,authenticated;
+grant execute on function app.create_employee_membership_invitation(uuid,uuid,uuid,text,text,text),app.accept_employee_membership_invitation(uuid,uuid,text,text),app.list_employee_membership_invitations(uuid),app.revoke_employee_membership_invitation(uuid,uuid,uuid,text,text) to hcs_hyperdrive;
 commit;
