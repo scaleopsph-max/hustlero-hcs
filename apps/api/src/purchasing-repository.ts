@@ -4,6 +4,7 @@ import {
   purchaseReceiptResponseSchema,
   purchasingContextSchema,
   supplierCreateResponseSchema,
+  supplierUpdateResponseSchema,
   type PurchaseOrderCreateRequest,
   type PurchaseOrderSendResponse,
   type PurchaseReceiptRequest,
@@ -11,11 +12,21 @@ import {
   type PurchasingContext,
   type SupplierCreateRequest,
   type SupplierCreateResponse,
+  type SupplierUpdateRequest,
 } from '@hcs/contracts'
 import { Client } from 'pg'
 import type { Bindings } from './env'
 
 export type PurchasingLoader = (userId: string, tenantId: string, bindings: Bindings) => Promise<PurchasingContext>
+export type SupplierUpdater = (
+  userId: string,
+  tenantId: string,
+  id: string,
+  request: SupplierUpdateRequest,
+  key: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<unknown>
 export type SupplierCreator = (
   userId: string,
   tenantId: string,
@@ -75,6 +86,36 @@ export const loadPurchasingFromPostgres: PurchasingLoader = async (userId, tenan
   ])
   return purchasingContextSchema.parse(result.rows[0]?.context)
 }
+export const updateSupplierInPostgres: SupplierUpdater = async (
+  userId,
+  tenantId,
+  id,
+  request,
+  key,
+  requestId,
+  bindings,
+) =>
+  supplierUpdateResponseSchema.parse(
+    (
+      await query(
+        bindings,
+        'select app.update_supplier($1::uuid,$2::uuid,$3::uuid,$4::integer,$5::text,$6::text,$7::text,$8::text,$9::boolean,$10::text,$11::text) response',
+        [
+          userId,
+          tenantId,
+          id,
+          request.expectedRevision,
+          request.name,
+          request.contactName,
+          request.contactPhone,
+          request.contactEmail,
+          request.archive,
+          key,
+          requestId,
+        ],
+      )
+    ).rows[0]?.response,
+  )
 export const createSupplierInPostgres: SupplierCreator = async (
   userId,
   tenantId,

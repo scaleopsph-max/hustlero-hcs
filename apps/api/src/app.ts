@@ -109,6 +109,8 @@ import {
   purchasingContextSchema,
   supplierCreateRequestSchema,
   supplierCreateResponseSchema,
+  supplierUpdateRequestSchema,
+  supplierUpdateResponseSchema,
   transferContextSchema,
   transferCreateRequestSchema,
   transferCreateResponseSchema,
@@ -476,6 +478,7 @@ import {
 import {
   createPurchaseOrderInPostgres,
   createSupplierInPostgres,
+  updateSupplierInPostgres,
   loadPurchasingFromPostgres,
   receivePurchaseOrderInPostgres,
   sendPurchaseOrderInPostgres,
@@ -484,6 +487,7 @@ import {
   type PurchaseOrderSender,
   type PurchasingLoader,
   type SupplierCreator,
+  type SupplierUpdater,
 } from './purchasing-repository'
 import {
   createTransferInPostgres,
@@ -575,6 +579,7 @@ interface AppDependencies {
   decideApprovalRequest: ApprovalRequestDecider
   loadPurchasing: PurchasingLoader
   createSupplier: SupplierCreator
+  updateSupplier: SupplierUpdater
   createPurchaseOrder: PurchaseOrderCreator
   sendPurchaseOrder: PurchaseOrderSender
   receivePurchaseOrder: PurchaseOrderReceiver
@@ -704,6 +709,7 @@ const defaultDependencies: AppDependencies = {
   decideApprovalRequest: decideApprovalRequestInPostgres,
   loadPurchasing: loadPurchasingFromPostgres,
   createSupplier: createSupplierInPostgres,
+  updateSupplier: updateSupplierInPostgres,
   createPurchaseOrder: createPurchaseOrderInPostgres,
   sendPurchaseOrder: sendPurchaseOrderInPostgres,
   receivePurchaseOrder: receivePurchaseOrderInPostgres,
@@ -4442,6 +4448,46 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
     }
   })
 
+  app.post('/v1/purchasing/suppliers/:supplierId', bodyLimit({ maxSize: 4096 }), async (context) => {
+    context.header('Cache-Control', 'private, no-store')
+    const fail = (code: string, message: string, status: 400 | 403 | 404 | 409) =>
+      context.json(
+        apiErrorResponseSchema.parse({ error: { code, message, requestId: context.get('requestId') } }),
+        status,
+      )
+    const scope = await resolvePurchasingTenant(context)
+    if (!scope) return fail('PURCHASING_ACCESS_DENIED', 'Sign in and select an authorized business.', 403)
+    const id = context.req.param('supplierId')
+    if (!z.uuid().safeParse(id).success) return fail('SUPPLIER_NOT_FOUND', 'Supplier not found.', 404)
+    const key = context.req.header('idempotency-key')
+    if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+      return fail('IDEMPOTENCY_KEY_REQUIRED', 'A valid request key is required.', 400)
+    const command = supplierUpdateRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!command.success) return fail('INVALID_SUPPLIER', 'Check the supplier details.', 400)
+    try {
+      return context.json(
+        supplierUpdateResponseSchema.parse(
+          await dependencies.updateSupplier(
+            scope.userId,
+            scope.tenantId,
+            id,
+            command.data,
+            key,
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+      )
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS30') return fail('PURCHASING_ACCESS_DENIED', 'Purchasing management access is required.', 403)
+      if (code === 'HCS31') return fail('INVALID_SUPPLIER', 'Check supplier details.', 400)
+      if (code === 'HCS34') return fail('SUPPLIER_NOT_FOUND', 'Supplier not found.', 404)
+      if (code === 'HCS32' || code === 'HCS35' || code === 'HCS08')
+        return fail('SUPPLIER_CONFLICT', 'Supplier changed, is archived, or the request conflicts.', 409)
+      throw error
+    }
+  })
   app.post('/v1/purchasing/suppliers', async (context) => {
     const resolved = await resolvePurchasingTenant(context)
     const key = context.req.header('idempotency-key')
