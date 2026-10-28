@@ -47,6 +47,11 @@ create function pg_temp.create_count(p_actor uuid,p_key text,p_location uuid def
  '["ab500000-0000-4000-8000-000000000001","ab500000-0000-4000-8000-000000000002"]',p_key,'count-test');
 $$;
 
+select is(app.list_inventory_counts('ab000000-0000-4000-8000-000000000003','ab100000-0000-4000-8000-000000000001')->'locations'->0->>'canCreate','false','staff cannot create from the assigned branch');
+select is(app.list_inventory_counts('ab000000-0000-4000-8000-000000000003','ab100000-0000-4000-8000-000000000001')->'locations'->0->>'canEnter','true','explicitly permitted staff can enter counts');
+select is(app.list_inventory_counts('ab000000-0000-4000-8000-000000000003','ab100000-0000-4000-8000-000000000001')->'locations'->0->>'canPost','false','staff cannot post');
+select is(app.list_inventory_counts('ab000000-0000-4000-8000-000000000002','ab100000-0000-4000-8000-000000000001')->'locations'->0->>'canPost','true','assigned manager with inventory permission can post');
+select is(jsonb_array_length(app.list_inventory_counts('ab000000-0000-4000-8000-000000000002','ab100000-0000-4000-8000-000000000001')->'locations'),1,'manager does not see unassigned location capabilities');
 select app.update_inventory_adjustment_approval_policy('ab000000-0000-4000-8000-000000000001','ab100000-0000-4000-8000-000000000001',1,'count-policy-update-001','policy-hash','pcount-test');
 create temp table target as select pg_temp.create_count('ab000000-0000-4000-8000-000000000002','count-approval-create-01') result;
 create function pg_temp.count_enter(p_revision integer,p_key text) returns jsonb language sql as $$

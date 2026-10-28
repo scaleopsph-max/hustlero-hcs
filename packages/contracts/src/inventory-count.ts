@@ -44,6 +44,9 @@ export const inventoryCountDraftSchema = z.object({
     .array(
       z.object({
         variantId: id,
+        productName: z.string().min(1).optional(),
+        variantName: z.string().min(1).optional(),
+        sku: z.string().min(1).optional(),
         expectedMilli: quantityMilli,
         balanceVersion: z.number().int().nonnegative(),
         countedMilli: quantityMilli.nullable(),
@@ -58,6 +61,18 @@ export const inventoryCountListSchema = z.object({
   counts: z
     .array(z.object({ id, locationId: id, status: countStatus, revision, createdAt: z.iso.datetime({ offset: true }) }))
     .max(100),
+  locations: z
+    .array(
+      z.object({
+        id,
+        name: z.string().min(1).optional(),
+        canCreate: z.boolean(),
+        canEnter: z.boolean(),
+        canApprove: z.boolean(),
+        canPost: z.boolean(),
+      }),
+    )
+    .default([]),
 })
 
 export type InventoryCountCreate = z.infer<typeof inventoryCountCreateSchema>

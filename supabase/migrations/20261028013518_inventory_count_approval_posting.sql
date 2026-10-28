@@ -33,11 +33,13 @@ create or replace function app.inventory_count_json(p_tenant uuid,p_count uuid) 
 language sql volatile security definer set search_path='' as $$
  select jsonb_build_object('id',c.id,'locationId',c.location_id,'status',c.status,'revision',c.revision,'createdAt',c.created_at,
  'approvalRequestId',(select r.id from app.inventory_count_approval_requests r where r.tenant_id=c.tenant_id and r.count_id=c.id order by r.count_revision desc limit 1),
- 'lines',coalesce((select jsonb_agg(jsonb_build_object('variantId',l.variant_id,'expectedMilli',round(l.expected_on_hand*1000)::bigint,
+ 'lines',coalesce((select jsonb_agg(jsonb_build_object('variantId',l.variant_id,'productName',p.name,'variantName',v.name,'sku',v.sku::text,'expectedMilli',round(l.expected_on_hand*1000)::bigint,
  'balanceVersion',l.balance_version,'countedMilli',case when l.counted is null then null else round(l.counted*1000)::bigint end,
  'currentOnHandMilli',case when b.variant_id is null then null else round(b.on_hand*1000)::bigint end,
  'currentBalanceVersion',b.version) order by l.variant_id)
- from app.inventory_count_lines l left join app.inventory_balances b on b.tenant_id=l.tenant_id and b.location_id=c.location_id and b.variant_id=l.variant_id
+ from app.inventory_count_lines l join app.product_variants v on v.tenant_id=l.tenant_id and v.id=l.variant_id
+ join app.products p on p.tenant_id=v.tenant_id and p.id=v.product_id
+ left join app.inventory_balances b on b.tenant_id=l.tenant_id and b.location_id=c.location_id and b.variant_id=l.variant_id
  where l.tenant_id=c.tenant_id and l.count_id=c.id),'[]'::jsonb))
  from app.inventory_counts c where c.tenant_id=p_tenant and c.id=p_count;
 $$;
@@ -55,22 +57,34 @@ begin
  return app.adjustment_policy_before_inventory_count(p_actor_user_id,p_tenant_id,p_threshold,p_idempotency_key,p_request_hash,p_request_id);
 end; $$;
 
+create function app.inventory_count_can(p_actor uuid,p_tenant uuid,p_location uuid,p_action text) returns boolean
+language plpgsql security definer set search_path='' as $$
+begin
+ perform app.lock_inventory_count_access(p_actor,p_tenant,p_location,p_action);return true;
+exception when sqlstate 'HCPC0' or sqlstate 'HCPC1' then return false;
+end; $$;
+revoke all on function app.inventory_count_can(uuid,uuid,uuid,text) from public,anon,authenticated,hcs_hyperdrive;
 create function app.list_inventory_counts(p_actor uuid,p_tenant uuid) returns jsonb
 language plpgsql security definer set search_path='' as $$
-declare c record;v_rows jsonb:='[]';
+declare c record;v_rows jsonb:='[]';v_locations jsonb:='[]';
 begin
  if not exists(select 1 from app.tenants t join app.tenant_memberships m on m.tenant_id=t.id and m.user_id=p_actor and m.status='active'
  join app.tenant_entitlements e on e.tenant_id=t.id and e.feature_code='inventory' and e.entitled and e.enabled
  join app.features f on f.code=e.feature_code and f.platform_available
  where t.id=p_tenant and t.status='active' and (e.starts_at is null or e.starts_at<=clock_timestamp()) and (e.ends_at is null or e.ends_at>clock_timestamp()))
  then raise exception using errcode='HCPC0',message='Inventory count access denied'; end if;
+ for c in select id,name from app.locations where tenant_id=p_tenant and is_active and app.can_read_wholesale_location(p_actor,p_tenant,id) order by id loop
+  v_locations:=v_locations||jsonb_build_array(jsonb_build_object('id',c.id,'name',c.name,'canCreate',app.inventory_count_can(p_actor,p_tenant,c.id,'create'),
+  'canEnter',app.inventory_count_can(p_actor,p_tenant,c.id,'enter'),'canApprove',app.inventory_count_can(p_actor,p_tenant,c.id,'approve'),
+  'canPost',app.inventory_count_can(p_actor,p_tenant,c.id,'post')));
+ end loop;
  for c in select id,location_id,status,revision,created_at from app.inventory_counts
  where tenant_id=p_tenant and app.can_read_wholesale_location(p_actor,p_tenant,location_id)
  order by created_at desc,id limit 100 loop
   perform app.lock_inventory_count_access(p_actor,p_tenant,c.location_id,'read');
   v_rows:=v_rows||jsonb_build_array(jsonb_build_object('id',c.id,'locationId',c.location_id,'status',c.status,'revision',c.revision,'createdAt',c.created_at));
  end loop;
- return jsonb_build_object('counts',v_rows);
+ return jsonb_build_object('counts',v_rows,'locations',v_locations);
 end; $$;
 revoke all on function app.update_inventory_adjustment_approval_policy(uuid,uuid,numeric,text,text,text) from public,anon,authenticated;
 grant execute on function app.update_inventory_adjustment_approval_policy(uuid,uuid,numeric,text,text,text) to hcs_hyperdrive;
