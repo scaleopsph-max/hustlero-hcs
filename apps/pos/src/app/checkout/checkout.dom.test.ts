@@ -218,6 +218,16 @@ it('resets allocation to the exact new payable when rapidly switching a predefin
   expect((screen.getByLabelText('Amount to apply') as HTMLInputElement).value).toBe('9.00')
   expect((screen.getByLabelText('Cash received') as HTMLInputElement).value).toBe('9.00')
 })
+it('keeps explicitly cleared allocation and tender fields empty instead of a delayed automatic refill', async () => {
+  await mount()
+  fireEvent.change(screen.getByLabelText('Ticket discount'), { target: { value: id('8') } })
+  fireEvent.change(screen.getByLabelText('Amount to apply'), { target: { value: '' } })
+  fireEvent.change(screen.getByLabelText('Cash received'), { target: { value: '' } })
+  await waitFor(() => expect((screen.getByLabelText('Amount to apply') as HTMLInputElement).value).toBe(''))
+  expect((screen.getByLabelText('Cash received') as HTMLInputElement).value).toBe('')
+  expect((screen.getByRole('button', { name: /^Add Cash/ }) as HTMLButtonElement).disabled).toBe(true)
+  expect(posts).toHaveLength(0)
+})
 it('retains recovery for altered receipt proof', async () => {
   await mount()
   await cash()

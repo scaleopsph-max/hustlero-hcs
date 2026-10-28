@@ -64,8 +64,10 @@ export default function Checkout() {
   const [customer, setCustomer] = useState<PosCustomer | null>(null)
   const [pricingType, setPricingType] = useState<PosPricingMode>('auto')
   const [selectedMethodId, setSelectedMethodId] = useState('')
-  const [amount, setAmount] = useState('')
-  const [received, setReceived] = useState('')
+  // Null means untouched: derive the initial value from this render's payable.
+  // An explicit empty string is user input and must never be refilled by an effect.
+  const [amount, setAmount] = useState<string | null>(null)
+  const [received, setReceived] = useState<string | null>(null)
   const [referenceLastFour, setReferenceLastFour] = useState('')
   const [payments, setPayments] = useState<PaymentAllocation[]>([])
   const [busy, setBusy] = useState(false)
@@ -133,8 +135,14 @@ export default function Checkout() {
   const allocated = pending ? total : payments.reduce((sum, payment) => sum + payment.amountCentavos, 0)
   const remaining = Math.max(total - allocated, 0)
   const selectedMethod = context?.paymentMethods.find((method) => method.id === selectedMethodId)
-  const amountCentavos = parsePeso(amount)
-  const tenderedCentavos = selectedMethod?.type === 'cash' ? parsePeso(received) : amountCentavos
+  const inputMinor = (value: number) => {
+    const minor = BigInt(value)
+    return `${minor / 100n}.${String(minor % 100n).padStart(2, '0')}`
+  }
+  const amountText = amount ?? inputMinor(remaining)
+  const receivedText = received ?? inputMinor(remaining)
+  const amountCentavos = parsePeso(amountText)
+  const tenderedCentavos = selectedMethod?.type === 'cash' ? parsePeso(receivedText) : amountCentavos
   const canAdd =
     discountQuote.eligible &&
     !pending &&
@@ -144,13 +152,6 @@ export default function Checkout() {
     tenderedCentavos >= amountCentavos &&
     (!selectedMethod || !requiresPaymentReference(selectedMethod.type) || /^[0-9]{4}$/.test(referenceLastFour)) &&
     !payments.some((payment) => payment.paymentMethodId === selectedMethodId)
-
-  useEffect(() => {
-    if (!context || total <= 0 || amount) return
-    setAmount((total / 100).toFixed(2))
-    const method = context.paymentMethods.find((candidate) => candidate.id === selectedMethodId)
-    if (method?.type === 'cash') setReceived((total / 100).toFixed(2))
-  }, [amount, context, selectedMethodId, total])
 
   function selectMethod(method: PaymentMethod) {
     setReferenceLastFour('')
@@ -162,7 +163,8 @@ export default function Checkout() {
 
   function onKey(key: string) {
     const update = selectedMethod?.type === 'cash' ? setReceived : setAmount
-    update((value) => {
+    update((stored) => {
+      const value = stored ?? (selectedMethod?.type === 'cash' ? receivedText : amountText)
       if (key === 'back') return value.slice(0, -1)
       if (key === 'clear') return ''
       if (key === '.' && value.includes('.')) return value
@@ -564,7 +566,7 @@ export default function Checkout() {
                     Amount to apply
                     <input
                       inputMode="decimal"
-                      value={amount}
+                      value={amountText}
                       onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ''))}
                       className="h-16 border-2 border-gold-500 bg-white/[0.08] px-4 font-display text-3xl font-bold text-white"
                     />
@@ -575,7 +577,7 @@ export default function Checkout() {
                         Cash received
                         <input
                           inputMode="decimal"
-                          value={received}
+                          value={receivedText}
                           onChange={(event) => setReceived(event.target.value.replace(/[^0-9.]/g, ''))}
                           className="h-16 border border-white/20 bg-white/[0.08] px-4 font-display text-3xl font-bold text-white"
                         />

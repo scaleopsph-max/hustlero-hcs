@@ -77,6 +77,15 @@ Review also separated POST rejection from a failed subsequent history GET: a
 successful payout followed by a read conflict can never offer no-effect discard.
 The added DOM regression passes; current focused helper/DOM suite passes 29 cases.
 
+Candidate 542c66a passed both exact CI runs (40611918566/40611923390), including
+2,246 SQL assertions / 61 files, migration reset, all concurrency and cleanup.
+The later stale-preview candidate exposed an existing POS allocation race in
+full app CI: delayed initial amount filling could overwrite an already selected
+discount's payable. Untouched fields now derive defaults from the current render;
+explicitly cleared fields stay empty. No delayed initialization effect remains.
+The new empty-field regression and existing rapid-discount test remain enabled;
+23 focused POS/receipt DOM cases pass. Final source CI must reverify all checks.
+
 Discounted form requests include an optional per-line expected net amount as a
 staleness precondition, never a payout override. The server recomputes original
 net entitlement under locks and rejects any mismatch before posting, so another
