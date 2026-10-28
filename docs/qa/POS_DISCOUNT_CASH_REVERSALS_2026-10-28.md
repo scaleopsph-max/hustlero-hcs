@@ -69,6 +69,15 @@ sale suite retains a dedicated assertion that unknown-cost restock is denied.
 No guard was relaxed. A bigint aggregate assertion and complete closed-register
 fixture fields were also corrected during review. Final exact CI is pending.
 
+Cost review additionally reconciled the never-hosted discounted-sale candidate's
+line cost with its own original SALE movement: tracked lines now snapshot the
+locked weighted inventory cost, falling back to the configured cost only when
+that is the original sale basis. Untracked lines keep configured cost. This
+amends an unmerged/never-hosted candidate migration, not installed history or
+existing sale records. A catalog-cost-5/stock-cost-50 regression verifies original
+line COGS and restock valuation both remain 50. The unknown-cost sale fixture now
+explicitly has neither a stock nor catalog cost, preserving the fail-closed test.
+
 Follow-up CI 40611472403 reached 36 new reversal assertions before correctly
 rejecting reuse of a POS session invalidated by tenant suspension. Positive
 fixtures now create fresh synthetic sessions; an explicit regression asserts

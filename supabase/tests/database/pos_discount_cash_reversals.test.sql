@@ -37,7 +37,7 @@ insert into app.payment_methods(id,tenant_id,code,name,method_type) values
  ('dc800000-0000-4000-8000-000000000001','dc100000-0000-4000-8000-000000000001','disc-fixture-wallet','Ref Wallet','e_wallet'),
  ('dc800000-0000-4000-8000-000000000002','dc100000-0000-4000-8000-000000000001','disc-fixture-bank','Ref Bank','bank_transfer');
 select app.open_pos_register_session(repeat('f',64),0,'disc-fixture-open','disc-fixture-open-hash','disc-fixture-open-request');
-update app.product_variants set retail_price=100.01,unit_cost=50,track_inventory=true where id='dc700000-0000-4000-8000-000000000001';
+update app.product_variants set retail_price=100.01,unit_cost=5,track_inventory=true where id='dc700000-0000-4000-8000-000000000001';
 insert into app.product_variants(id,tenant_id,product_id,name,sku,retail_price,unit_cost,track_inventory,created_by) values
  ('dc700000-0000-4000-8000-000000000002','dc100000-0000-4000-8000-000000000001','dc600000-0000-4000-8000-000000000001','Second','DISCOUNT-SECOND',50.03,20,true,'dc000000-0000-4000-8000-000000000001');
 insert into app.inventory_balances(tenant_id,location_id,variant_id,on_hand,average_unit_cost) values
@@ -61,6 +61,7 @@ returns jsonb language sql as $$
 $$;
 
 create temp table refund_sale as select pg_temp.discount_pos_sale('discount-reversal-sale-001') result;
+select is((select unit_cost from app.sale_lines where sale_id=(select (result->>'saleId')::uuid from refund_sale) and variant_id='dc700000-0000-4000-8000-000000000001'),50::numeric,'tracked sale snapshots original weighted cost, not catalog cost');
 create function pg_temp.reverse_discount(p_key text,p_lines jsonb default null,p_type text default 'refund',p_sale uuid default null,p_actor uuid default 'dc000000-0000-4000-8000-000000000001')
 returns jsonb language sql as $$
 select app.reverse_sale(p_actor,'dc100000-0000-4000-8000-000000000001',coalesce(p_sale,(select (result->>'saleId')::uuid from refund_sale)),p_type,p_lines,'Original net snapshot refund',p_key,p_key,'discount-reversal-test');
@@ -83,6 +84,7 @@ create temp table partial_refund as select pg_temp.reverse_discount('refund-half
 select is((select result->>'amountCentavos' from partial_refund),'4960','partial refund uses allocated net, never gross unit price');
 select is((select result->>'saleStatus' from partial_refund),'partially_refunded','partial status');
 select is((select on_hand from app.inventory_balances where variant_id='dc700000-0000-4000-8000-000000000001'),99.5::numeric,'restock actual half unit');
+select is((select average_unit_cost from app.inventory_balances where variant_id='dc700000-0000-4000-8000-000000000001'),50::numeric,'restock retains original stock valuation despite different catalog cost');
 select is((select amount from app.cash_movements where source_id=(select (result->>'reversalId')::uuid from partial_refund)),-49.60::numeric,'cash payout exact net');
 select is((select amount from app.refund_items where refund_id=(select (result->>'reversalId')::uuid from partial_refund)),49.60::numeric,'refund line exact net');
 select is((select occurred_at from app.cash_movements where source_id=(select (result->>'reversalId')::uuid from partial_refund)),(select completed_at from app.refunds where id=(select (result->>'reversalId')::uuid from partial_refund)),'cash uses same effective timestamp');

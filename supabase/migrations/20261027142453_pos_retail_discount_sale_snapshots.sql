@@ -317,7 +317,8 @@ begin
     insert into app.sale_lines (id, tenant_id, sale_id, variant_id, product_name, variant_name, sku, quantity, unit_price, unit_cost, line_total,
       pricing_type,pricing_basis,pricing_category_id,pricing_group_id,pricing_quantity,pricing_threshold_quantity,pricing_price_list_id)
     values (gen_random_uuid(), v_pos.tenant_id, v_sale_id, v_variant.id, v_variant.product_name, v_variant.variant_name,
-      v_variant.sku, v_quantity, v_unit_price, v_variant.unit_cost, v_line_total,
+      v_variant.sku, v_quantity, v_unit_price,
+      case when v_variant.track_inventory then coalesce(v_balance.average_unit_cost,v_variant.unit_cost) else v_variant.unit_cost end, v_line_total,
       v_line_pricing_type,case when p_pricing_type='auto' then 'category' else 'manual' end,
       case when p_pricing_type='auto' then v_variant.category_id else null end,
       case when v_line_pricing_type<>'retail' then v_entry.pricing_group_id else null end,

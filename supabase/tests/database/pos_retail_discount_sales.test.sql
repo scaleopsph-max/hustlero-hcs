@@ -41,7 +41,8 @@ update app.product_variants set retail_price=100.01,track_inventory=true where i
 insert into app.product_variants(id,tenant_id,product_id,name,sku,retail_price,unit_cost,track_inventory,created_by) values
  ('df700000-0000-4000-8000-000000000002','df100000-0000-4000-8000-000000000001','df600000-0000-4000-8000-000000000001','Second','DISCOUNT-SECOND',50.03,20,true,'df000000-0000-4000-8000-000000000001');
 insert into app.inventory_balances(tenant_id,location_id,variant_id,on_hand,average_unit_cost) values
- ('df100000-0000-4000-8000-000000000001','df200000-0000-4000-8000-000000000001','df700000-0000-4000-8000-000000000001',100,50),
+ -- Explicit unknown original cost fixture; no fabricated zero-cost stock return.
+ ('df100000-0000-4000-8000-000000000001','df200000-0000-4000-8000-000000000001','df700000-0000-4000-8000-000000000001',100,null),
  ('df100000-0000-4000-8000-000000000001','df200000-0000-4000-8000-000000000001','df700000-0000-4000-8000-000000000002',10,20);
 create temp table discount_pos_customer as select app.create_customer('df000000-0000-4000-8000-000000000001','df100000-0000-4000-8000-000000000001',
  'Discount customer','discount-customer@example.invalid',null,null,'reseller',false,false,'discount-customer-001','discount-customer-hash','discount-customer-request') result;
