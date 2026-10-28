@@ -112,15 +112,19 @@ update app.tenant_memberships set status='active' where tenant_id='dc100000-0000
 update app.tenants set status='suspended' where id='dc100000-0000-4000-8000-000000000001';
 select throws_ok($$select pg_temp.reverse_discount('refund-half-001',pg_temp.refund_line())$$,'HCSA0',null,'suspended tenant cannot replay');
 update app.tenants set status='active' where id='dc100000-0000-4000-8000-000000000001';
-create temp table void_sale as select pg_temp.discount_pos_sale('discount-void-sale-001') result;
+select throws_ok($$select pg_temp.discount_pos_sale('discount-revoked-session-denial')$$,'HCS90',null,'reactivation does not revive a revoked POS session');
+insert into app.pos_employee_sessions(tenant_id,device_id,register_id,location_id,employee_id,token_hash,expires_at) values
+ ('dc100000-0000-4000-8000-000000000001','dc500000-0000-4000-8000-000000000001','dc400000-0000-4000-8000-000000000001',
+ 'dc200000-0000-4000-8000-000000000001','dc300000-0000-4000-8000-000000000001',repeat('9',64),clock_timestamp()+interval '1 hour');
+create temp table void_sale as select pg_temp.discount_pos_sale('discount-void-sale-001',null,null,null,'retail',repeat('9',64)) result;
 create temp table void_result as select pg_temp.reverse_discount('discount-void-001',null,'void',(select (result->>'saleId')::uuid from void_sale)) result;
 select is((select result->>'amountCentavos' from void_result),'12402','void returns original net payment');
 select is((select result->>'saleStatus' from void_result),'voided','void status retained');
 select is(pg_temp.reverse_discount('discount-void-001',null,'void',(select (result->>'saleId')::uuid from void_sale)),(select result from void_result),'void replay posts once');
-create temp table bank_sale as select pg_temp.discount_pos_sale('discount-bank-reversal',null,'[{"paymentMethodId":"dc800000-0000-4000-8000-000000000002","amountCentavos":12402,"tenderedCentavos":12402,"referenceLastFour":"0047"}]') result;
+create temp table bank_sale as select pg_temp.discount_pos_sale('discount-bank-reversal',null,'[{"paymentMethodId":"dc800000-0000-4000-8000-000000000002","amountCentavos":12402,"tenderedCentavos":12402,"referenceLastFour":"0047"}]',null,'retail',repeat('9',64)) result;
 select throws_ok($$select pg_temp.reverse_discount('discount-bank-denied',null,'void',(select (result->>'saleId')::uuid from bank_sale))$$,'HCSA7',null,'bank payout still denied');
 select is((select count(*)::integer from app.refunds),4,'bank rejection creates no refund');
-create temp table closed_sale as select pg_temp.discount_pos_sale('discount-closed-sale') result;
+create temp table closed_sale as select pg_temp.discount_pos_sale('discount-closed-sale',null,null,null,'retail',repeat('9',64)) result;
 update app.register_sessions set status='closed',expected_cash=0,counted_cash=0,variance=0,closed_at=clock_timestamp() where tenant_id='dc100000-0000-4000-8000-000000000001';
 select throws_ok($$select pg_temp.reverse_discount('discount-closed-denied',null,'void',(select (result->>'saleId')::uuid from closed_sale))$$,'HCSA6',null,'closed original register denied');
 select is(pg_temp.reverse_discount('discount-void-001',null,'void',(select (result->>'saleId')::uuid from void_sale)),(select result from void_result),'exact success replay still works after register close');

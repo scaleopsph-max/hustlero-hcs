@@ -69,6 +69,20 @@ sale suite retains a dedicated assertion that unknown-cost restock is denied.
 No guard was relaxed. A bigint aggregate assertion and complete closed-register
 fixture fields were also corrected during review. Final exact CI is pending.
 
+Follow-up CI 40611472403 reached 36 new reversal assertions before correctly
+rejecting reuse of a POS session invalidated by tenant suspension. Positive
+fixtures now create fresh synthetic sessions; an explicit regression asserts
+reactivation never revives the old session. No security invalidation was changed.
+Review also separated POST rejection from a failed subsequent history GET: a
+successful payout followed by a read conflict can never offer no-effect discard.
+The added DOM regression passes; current focused helper/DOM suite passes 29 cases.
+
+Actual-component loopback-only mocked browser checks passed at 1440x1000 and
+390x844: 53-cent original-net refund, discarded first response, reload and identical
+key/body replay, one effect, no external requests/page errors/document overflow.
+Receipt preview/recovery screenshots were inspected with Back Office body classes
+and local font fallbacks. This is mocked UI verification, not live financial UAT.
+
 ## Rollback
 
 Revert new command routing/UI to a discounted-reversal block while preserving

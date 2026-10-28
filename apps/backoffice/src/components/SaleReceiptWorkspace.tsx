@@ -160,6 +160,7 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
   async function executeReversal(command: PendingSaleReversal) {
     if (commandLock.current) return
     commandLock.current = true
+    let rejectedAtPost = false
     setBusy(true)
     setError(null)
     setDiscardable(false)
@@ -167,13 +168,23 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
       const original = JSON.stringify(command)
       const restored = decodePendingReversal(sessionStorage.getItem(storage) ?? '', { actorId, tenantId, saleId })
       if (JSON.stringify(restored) !== original) throw new Error('Pending reversal changed; reconciliation required.')
-      const response = saleReversalResponseSchema.parse(
-        await request(`/v1/sales/${saleId}/${command.mode === 'refund' ? 'refunds' : 'void'}`, token, tenantId, {
-          method: 'POST',
-          headers: { 'Idempotency-Key': command.key },
-          body: command.body,
-        }),
-      )
+      let posted: unknown
+      try {
+        posted = await request(
+          `/v1/sales/${saleId}/${command.mode === 'refund' ? 'refunds' : 'void'}`,
+          token,
+          tenantId,
+          {
+            method: 'POST',
+            headers: { 'Idempotency-Key': command.key },
+            body: command.body,
+          },
+        )
+      } catch (cause) {
+        rejectedAtPost = canDiscardRejectedReversal(cause)
+        throw cause
+      }
+      const response = saleReversalResponseSchema.parse(posted)
       if (
         response.saleId !== saleId ||
         response.type !== command.mode ||
@@ -204,7 +215,7 @@ export function SaleReceiptWorkspace({ saleId }: { saleId: string }) {
     } catch (cause) {
       if (mounted.current) {
         setError(cause instanceof Error ? cause.message : 'Unknown reversal outcome. Retry only the original request.')
-        setDiscardable(canDiscardRejectedReversal(cause))
+        setDiscardable(rejectedAtPost)
       }
     } finally {
       commandLock.current = false

@@ -8,6 +8,7 @@ vi.mock('@/lib/supabase-browser', () => ({ createClient: () => ({ auth: { getSes
 let Workspace: (typeof import('./SaleReceiptWorkspace'))['SaleReceiptWorkspace']
 let current = saleReversalFixture()
 let posts: { key: string; body: string }[] = []
+let readConflict = false
 let commit: (body: string) => Promise<Response>
 const storage = `hcs-sale-reversal-v1:${ids.tenant}:${ids.actor}:${ids.sale}`
 const result = {
@@ -27,6 +28,7 @@ beforeAll(async () => {
 })
 beforeEach(() => {
   current = saleReversalFixture()
+  readConflict = false
   posts = []
   sessionStorage.clear()
   localStorage.clear()
@@ -65,7 +67,12 @@ beforeEach(() => {
         posts.push({ key, body })
         return commit(body)
       }
-      return Response.json(current)
+      return readConflict
+        ? Response.json(
+            { error: { code: 'SALE_REVERSAL_CONFLICT', message: 'Receipt history needs reconciliation' } },
+            { status: 409 },
+          )
+        : Response.json(current)
     }),
   )
 })
@@ -138,6 +145,19 @@ it('does not clear the original key until the reversal appears in receipt histor
   fireEvent.click(screen.getByRole('button', { name: 'Confirm refund' }))
   await screen.findByText(/not verified in receipt history/)
   expect(sessionStorage.getItem(storage)).not.toBeNull()
+})
+it('never offers no-effect discard when POST succeeded but the subsequent history read conflicts', async () => {
+  commit = async () => {
+    postedHistory()
+    readConflict = true
+    return Response.json(result)
+  }
+  await openRefund()
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm refund' }))
+  await screen.findByText('Receipt history needs reconciliation')
+  expect(sessionStorage.getItem(storage)).not.toBeNull()
+  expect(screen.queryByRole('button', { name: 'Discard rejected request' })).toBeNull()
+  expect(posts).toHaveLength(1)
 })
 it('permits explicit discard after a known no-effect validation conflict', async () => {
   commit = async () =>

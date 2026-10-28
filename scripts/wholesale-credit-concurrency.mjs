@@ -2348,11 +2348,11 @@ try {
     )
   ).rows[0].id
   const posSelection = { discountId: posConfig.id, expectedRevision: 1 }
-  const posSale = (client, key, selection = posSelection) =>
+  const posSale = (client, key, selection = posSelection, sessionHash = posHash) =>
     client.query(
       "select app.complete_pos_discounted_sale($1,$2::jsonb,$3::jsonb,null,'retail',$4::jsonb,$5,$5) response",
       [
-        posHash,
+        sessionHash,
         JSON.stringify([{ variantId: posVariant, quantityMilli: 1000 }]),
         JSON.stringify([{ paymentMethodId: cashMethod, amountCentavos: 9900, tenderedCentavos: 10000 }]),
         JSON.stringify(selection),
@@ -2496,9 +2496,17 @@ try {
   assert.equal(afterRefund.reversals, beforeRefund.reversals + 1)
   assert.equal(afterRefund.stock, beforeRefund.stock + 1)
   assert.equal(afterRefund.cash, beforeRefund.cash - 99)
-  const secondRefundSale = (
-    await posSale(observer, 'pos-refund-race-second-sale', { ...posSelection, expectedRevision: 2 })
-  ).rows[0].response
+  const refundFixtureSale = async (key) => {
+    // Tenant suspension permanently revokes the earlier POS session. Each new
+    // positive fixture uses a fresh synthetic sign-in, never revives old tokens.
+    const freshHash = randomUUID().replaceAll('-', '').repeat(2)
+    await observer.query(
+      "insert into app.pos_employee_sessions(tenant_id,device_id,register_id,location_id,employee_id,token_hash,expires_at) values($1,$2,$3,$4,$5,$6,clock_timestamp()+interval '1 hour')",
+      [tenant, posDevice, posRegister, location, posEmployee, freshHash],
+    )
+    return (await posSale(observer, key, { ...posSelection, expectedRevision: 2 }, freshHash)).rows[0].response
+  }
+  const secondRefundSale = await refundFixtureSale('pos-refund-race-second-sale')
   await first.query('begin')
   await reversePos(first, 'pos-refund-distinct-first', secondRefundSale.saleId)
   const competingRefund = reversePos(second, 'pos-refund-distinct-second', secondRefundSale.saleId).then(
@@ -2522,9 +2530,7 @@ try {
   assert.equal(await suspendedRefund, 'HCSA0')
   assert.deepEqual(await refundSnapshot(), afterCompetition)
   await observer.query("update app.tenants set status='active' where id=$1", [tenant])
-  const closingRefundSale = (
-    await posSale(observer, 'pos-refund-register-sale', { ...posSelection, expectedRevision: 2 })
-  ).rows[0].response
+  const closingRefundSale = await refundFixtureSale('pos-refund-register-sale')
   const beforeClose = await refundSnapshot()
   await first.query('begin')
   await first.query(
