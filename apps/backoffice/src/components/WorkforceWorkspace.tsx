@@ -16,6 +16,7 @@ import {
 import { Button, Chip, Glass } from '@hcs/ui'
 import { CountStaffAccess } from './CountStaffAccess'
 import { EmployeeAccountLink } from './EmployeeAccountLink'
+import { EmployeeInvitationOwner } from './EmployeeInvitationOwner'
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -311,6 +312,15 @@ export function WorkforceWorkspace({ focus = 'employees' }: { focus?: 'employees
               <p className="text-sm text-ink-500">No employees yet.</p>
             )}
           </section>
+          {focus === 'employees' && actorId && tenantId && token ? (
+            <EmployeeInvitationOwner
+              actor={actorId}
+              tenant={tenantId}
+              token={token}
+              data={data}
+              refresh={() => load(token, tenantId)}
+            />
+          ) : null}
           {focus === 'employees' && actorId && tenantId && token ? (
             <EmployeeAccountLink
               actor={actorId}

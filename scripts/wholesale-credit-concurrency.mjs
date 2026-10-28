@@ -2641,6 +2641,56 @@ try {
   console.log(
     'Inventory count concurrency passed: simultaneous same-key post returns one result and creates one stock movement.',
   )
+  // A revocation that wins the invitation row lock must prevent a waiting acceptance.
+  const [invitedUser, invitedEmployee] = Array.from({ length: 2 }, () => randomUUID())
+  const invitedEmail = `${invitedUser}@example.invalid`
+  await first.query(
+    "insert into auth.users(id,email,aud,role,email_confirmed_at) values($1,$2,'authenticated','authenticated',now())",
+    [invitedUser, invitedEmail],
+  )
+  await first.query(
+    "insert into app.employees(id,tenant_id,employee_code,display_name) values($1,$2,$3,'Race invite')",
+    [invitedEmployee, countTenant, `INV-${invitedEmployee}`],
+  )
+  const issued = (
+    await first.query('select app.create_employee_membership_invitation($1,$2,$3,$4,$5,$5) response', [
+      countActor,
+      countTenant,
+      invitedEmployee,
+      invitedEmail,
+      'race-invitation-create01',
+    ])
+  ).rows[0].response
+  await first.query('begin')
+  await first.query('select app.revoke_employee_membership_invitation($1,$2,$3,$4,$4)', [
+    countActor,
+    countTenant,
+    issued.invitationId,
+    'race-invitation-revoke01',
+  ])
+  const waitingAccept = second
+    .query('select app.accept_employee_membership_invitation($1,$2,$3,$3)', [
+      invitedUser,
+      issued.invitationId,
+      'race-invitation-accept01',
+    ])
+    .then(
+      () => null,
+      (error) => error,
+    )
+  await waitForLock()
+  await first.query('commit')
+  const denial = await waitingAccept
+  assert.equal(denial?.code, 'HCPC3')
+  const invitationState = await observer.query(
+    'select (select count(*)::integer from app.tenant_memberships where tenant_id=$1 and user_id=$2) memberships,(select user_id from app.employees where tenant_id=$1 and id=$3) linked',
+    [countTenant, invitedUser, invitedEmployee],
+  )
+  assert.equal(invitationState.rows[0].memberships, 0)
+  assert.equal(invitationState.rows[0].linked, null)
+  console.log(
+    'Employee invitation concurrency passed: revocation-first denies waiting acceptance without membership or link.',
+  )
 } finally {
   // Release any held fixture transaction before closing another session waiting on it.
   await first.query('rollback').catch(() => {})

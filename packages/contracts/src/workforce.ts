@@ -4,6 +4,12 @@ const id = z.uuid()
 export const workforceContextSchema = z.object({
   canManageCountAccess: z.boolean().optional(),
   unlinkedAccounts: z.array(z.object({ userId: id, email: z.email() })).optional(),
+  pendingEmployeeInvitations: z
+    .array(
+      z.object({ invitationId: id, employeeId: id, email: z.email(), expiresAt: z.iso.datetime({ offset: true }) }),
+    )
+    .max(100)
+    .optional(),
   locations: z.array(
     z.object({
       id,
