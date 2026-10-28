@@ -20,7 +20,7 @@ select ok(not has_function_privilege(
 select ok(has_function_privilege('hcs_hyperdrive', 'app.list_catalog_products(uuid,uuid)', 'EXECUTE'), 'API login can list catalog');
 select ok(has_function_privilege(
   'hcs_hyperdrive',
-  'app.create_catalog_product(uuid,uuid,text,text,text,text,text,numeric,numeric,boolean,text[],text,text,text)',
+  'app.create_catalog_product_selected_category(uuid,uuid,jsonb,text,text,text)',
   'EXECUTE'
 ), 'API login can create catalog product');
 

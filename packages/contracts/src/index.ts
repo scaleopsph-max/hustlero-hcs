@@ -112,6 +112,12 @@ export {
 } from './approvals'
 export {
   catalogCategorySchema,
+  catalogCategoryCommandSchema,
+  catalogCategoryCommandResponseSchema,
+  catalogCategoriesContextSchema,
+  type CatalogCategoryCommand,
+  type CatalogCategoryCommandResponse,
+  type CatalogCategoriesContext,
   catalogProductCreateRequestSchema,
   catalogProductCreateResponseSchema,
   catalogProductUpdateRequestSchema,
@@ -135,6 +141,21 @@ export {
   type CatalogVariantUpdateResponse,
   type CatalogResponse,
 } from './catalog'
+export {
+  catalogImportPreviewRequestSchema,
+  catalogImportPreviewResponseSchema,
+  catalogImportSnapshotSchema,
+  type CatalogImportPreviewRequest,
+  type CatalogImportPreviewResponse,
+  type CatalogImportSnapshot,
+  catalogImportJobSummarySchema,
+  catalogImportJobSchema,
+  catalogImportJobListSchema,
+  catalogImportJobSavedSchema,
+  type CatalogImportJob,
+  type CatalogImportJobList,
+  type CatalogImportJobSaved,
+} from './catalog-import'
 export { environmentSchema, healthResponseSchema, type HealthResponse } from './health'
 export {
   customerCreateRequestSchema,
@@ -389,3 +410,6 @@ export {
 } from './wholesale-statements'
 export * from './payment-references'
 export * from './wholesale-returns'
+export * from './catalog-import-execution'
+export * from './retail-discounts'
+export { posDiscountSelectionSchema, posDiscountLineSnapshotSchema } from './pos-sales'

@@ -1,4 +1,16 @@
 import {
+  loadRetailDiscountsFromPostgres,
+  manageRetailDiscountInPostgres,
+  type RetailDiscountLoader,
+  type RetailDiscountCommander,
+} from './retail-discounts-repository'
+import {
+  retailDiscountCommandSchema,
+  retailDiscountSchema,
+  retailDiscountContextSchema,
+  retailDiscountVersionsSchema,
+} from '@hcs/contracts'
+import {
   wholesaleReturnRequestSchema,
   wholesaleReturnPreviewSchema,
   wholesaleReturnResponseSchema,
@@ -8,7 +20,32 @@ import {
   wholesaleCreditRefundResponseSchema,
   wholesaleReturnsContextSchema,
 } from '@hcs/contracts'
-import { quoteWholesaleReturn, wholesaleReturnSettlement } from '@hcs/domain'
+import { quoteWholesaleReturn, wholesaleReturnSettlement, planCatalogImport } from '@hcs/domain'
+import { z } from 'zod'
+import {
+  saveCatalogImportJobInPostgres,
+  loadCatalogImportJobsFromPostgres,
+  loadCatalogImportJobFromPostgres,
+  cancelCatalogImportJobInPostgres,
+  type CatalogImportJobSaver,
+  type CatalogImportJobsLoader,
+  type CatalogImportJobLoader,
+  type CatalogImportJobCanceller,
+} from './catalog-import-jobs-repository'
+import { catalogImportJobSavedSchema, catalogImportJobListSchema, catalogImportJobSchema } from '@hcs/contracts'
+import {
+  catalogImportReviewSchema,
+  catalogImportExecutionCommandSchema,
+  catalogImportExecutionResponseSchema,
+} from '@hcs/contracts'
+import {
+  reviewCatalogImportFromPostgres,
+  loadCatalogImportExecutionFromPostgres,
+  executeCatalogImportInPostgres,
+  type CatalogImportReviewer,
+  type CatalogImportExecutionLoader,
+  type CatalogImportExecutor,
+} from './catalog-import-execution-repository'
 import {
   loadWholesaleReturnsFromPostgres,
   postWholesaleReturnInPostgres,
@@ -106,6 +143,11 @@ import {
   catalogProductUpdateRequestSchema,
   catalogProductUpdateResponseSchema,
   catalogResponseSchema,
+  catalogCategoriesContextSchema,
+  catalogImportPreviewRequestSchema,
+  catalogImportPreviewResponseSchema,
+  catalogCategoryCommandSchema,
+  catalogCategoryCommandResponseSchema,
   catalogVariantCreateRequestSchema,
   catalogVariantCreateResponseSchema,
   catalogVariantDeactivateResponseSchema,
@@ -177,6 +219,7 @@ import {
 } from '@hcs/contracts'
 import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
+import { bodyLimit } from 'hono/body-limit'
 import { requestId } from 'hono/request-id'
 
 import { readBearerToken, verifySupabaseAccessToken, type AccessTokenVerifier } from './auth'
@@ -219,6 +262,12 @@ import {
   createCatalogVariantInPostgres,
   deactivateCatalogVariantInPostgres,
   loadCatalogFromPostgres,
+  loadCatalogImportSnapshotFromPostgres,
+  type CatalogImportSnapshotLoader,
+  loadCatalogCategoriesFromPostgres,
+  manageCatalogCategoryInPostgres,
+  type CatalogCategoriesLoader,
+  type CatalogCategoryCommander,
   updateCatalogProductInPostgres,
   updateCatalogVariantInPostgres,
   type CatalogLoader,
@@ -429,6 +478,18 @@ interface AppDependencies {
   loadOnboarding: OnboardingLoader
   updateOnboarding: OnboardingUpdater
   loadCatalog: CatalogLoader
+  loadCatalogImportSnapshot: CatalogImportSnapshotLoader
+  saveCatalogImportJob: CatalogImportJobSaver
+  loadCatalogImportJobs: CatalogImportJobsLoader
+  loadCatalogImportJob: CatalogImportJobLoader
+  cancelCatalogImportJob: CatalogImportJobCanceller
+  reviewCatalogImport: CatalogImportReviewer
+  loadCatalogImportExecution: CatalogImportExecutionLoader
+  executeCatalogImport: CatalogImportExecutor
+  loadCatalogCategories: CatalogCategoriesLoader
+  manageCatalogCategory: CatalogCategoryCommander
+  loadRetailDiscounts: RetailDiscountLoader
+  manageRetailDiscount: RetailDiscountCommander
   createCatalogProduct: CatalogProductCreator
   createCatalogVariant: CatalogVariantCreator
   updateCatalogProduct: CatalogProductUpdater
@@ -539,6 +600,18 @@ const defaultDependencies: AppDependencies = {
   loadOnboarding: loadOnboardingFromPostgres,
   updateOnboarding: updateOnboardingInPostgres,
   loadCatalog: loadCatalogFromPostgres,
+  loadCatalogImportSnapshot: loadCatalogImportSnapshotFromPostgres,
+  saveCatalogImportJob: saveCatalogImportJobInPostgres,
+  loadCatalogImportJobs: loadCatalogImportJobsFromPostgres,
+  loadCatalogImportJob: loadCatalogImportJobFromPostgres,
+  cancelCatalogImportJob: cancelCatalogImportJobInPostgres,
+  reviewCatalogImport: reviewCatalogImportFromPostgres,
+  loadCatalogImportExecution: loadCatalogImportExecutionFromPostgres,
+  executeCatalogImport: executeCatalogImportInPostgres,
+  loadCatalogCategories: loadCatalogCategoriesFromPostgres,
+  manageCatalogCategory: manageCatalogCategoryInPostgres,
+  loadRetailDiscounts: loadRetailDiscountsFromPostgres,
+  manageRetailDiscount: manageRetailDiscountInPostgres,
   createCatalogProduct: createCatalogProductInPostgres,
   createCatalogVariant: createCatalogVariantInPostgres,
   updateCatalogProduct: updateCatalogProductInPostgres,
@@ -672,6 +745,14 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
   const app = new Hono<{ Bindings: Bindings }>()
 
   app.use('*', requestId())
+  app.use('/v1/catalog', async (context, next) => {
+    context.header('Cache-Control', 'private, no-store')
+    await next()
+  })
+  app.use('/v1/catalog/*', async (context, next) => {
+    context.header('Cache-Control', 'private, no-store')
+    await next()
+  })
   app.use(
     '/v1/*',
     cors({
@@ -2372,6 +2453,511 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
         : undefined
     return tenant ? { userId: user.userId, tenantId: tenant.tenantId } : null
   }
+
+  app.use('/v1/pos/*', async (context, next) => {
+    context.header('Cache-Control', 'private, no-store')
+    await next()
+  })
+  app.use('/v1/discounts', async (context, next) => {
+    context.header('Cache-Control', 'private, no-store')
+    await next()
+  })
+  app.use('/v1/discounts/*', async (context, next) => {
+    context.header('Cache-Control', 'private, no-store')
+    await next()
+  })
+  app.on(
+    ['GET', 'POST'],
+    ['/v1/discounts', '/v1/discounts/:id/versions', '/v1/discounts/:id/versions/:revision'],
+    bodyLimit({
+      maxSize: 4096,
+      onError: (context) =>
+        context.json(
+          {
+            error: {
+              code: 'INVALID_DISCOUNT',
+              message: 'Discount request is too large.',
+              requestId: context.get('requestId'),
+            },
+          },
+          413,
+        ),
+    }),
+    async (context) => {
+      const fail = (code: string, message: string, status: 400 | 401 | 403 | 404 | 409 | 405) =>
+        context.json(
+          apiErrorResponseSchema.parse({ error: { code, message, requestId: context.get('requestId') } }),
+          status,
+        )
+      if (!readBearerToken(context.req.header('authorization')))
+        return fail('AUTHENTICATION_REQUIRED', 'Sign in to manage discounts.', 401)
+      const scope = await resolveWholesaleTenant(context)
+      if (!scope) return fail('DISCOUNT_ACCESS_DENIED', 'Select an authorized business.', 403)
+      try {
+        const id = context.req.param('id') ?? null,
+          raw = context.req.param('revision')
+        const revision = raw === undefined ? null : Number(raw)
+        if (
+          (id !== null && !z.uuid().safeParse(id).success) ||
+          (raw !== undefined && (!/^[1-9]\d*$/.test(raw) || !Number.isInteger(revision) || revision! > 2147483647))
+        )
+          return fail('INVALID_DISCOUNT', 'Invalid discount identity or revision.', 400)
+        if (context.req.method === 'GET') {
+          const result = await dependencies.loadRetailDiscounts(scope.userId, scope.tenantId, id, revision, context.env)
+          return context.json(
+            (id === null
+              ? retailDiscountContextSchema
+              : revision === null
+                ? retailDiscountVersionsSchema
+                : retailDiscountSchema
+            ).parse(result),
+          )
+        }
+        if (id !== null) return fail('METHOD_NOT_ALLOWED', 'History is read-only.', 405)
+        const key = context.req.header('idempotency-key')
+        if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+          return fail('IDEMPOTENCY_KEY_REQUIRED', 'A valid request key is required.', 400)
+        const body = retailDiscountCommandSchema.safeParse(await context.req.json().catch(() => null))
+        if (!body.success) return fail('INVALID_DISCOUNT', 'Check the discount details.', 400)
+        return context.json(
+          retailDiscountSchema.parse(
+            await dependencies.manageRetailDiscount(
+              scope.userId,
+              scope.tenantId,
+              body.data,
+              key,
+              context.get('requestId'),
+              context.env,
+            ),
+          ),
+        )
+      } catch (error) {
+        const code = postgresErrorCode(error)
+        if (code === 'HCDI0' || code === 'HCDI1')
+          return fail('DISCOUNT_ACCESS_DENIED', 'Discount management is unavailable.', 403)
+        if (code === 'HCDI5') return fail('DISCOUNT_NOT_FOUND', 'Discount not found.', 404)
+        if (code === 'HCDI3') return fail('DISCOUNT_ARCHIVED', 'Archived discounts cannot be edited.', 409)
+        if (code === 'HCDI4')
+          return fail('DISCOUNT_REVISION_CONFLICT', 'Discount changed. Refresh before editing.', 409)
+        if (code === '23505') return fail('DISCOUNT_DUPLICATE', 'A discount with this name already exists.', 409)
+        if (code === 'HCS08') return fail('IDEMPOTENCY_KEY_CONFLICT', 'Request key belongs to another command.', 409)
+        if (code === 'HCDI2' || code === '22P02') return fail('INVALID_DISCOUNT', 'Check the discount details.', 400)
+        throw error
+      }
+    },
+  )
+
+  app.on(['GET', 'POST'], '/v1/catalog/categories', async (context) => {
+    const fail = (code: string, message: string, status: 400 | 401 | 403 | 404 | 409) =>
+      context.json(
+        apiErrorResponseSchema.parse({ error: { code, message, requestId: context.get('requestId') } }),
+        status,
+      )
+    if (!readBearerToken(context.req.header('authorization')))
+      return fail('AUTHENTICATION_REQUIRED', 'Sign in to manage categories.', 401)
+    const scope = await resolveWholesaleTenant(context)
+    if (!scope) return fail('CATALOG_ACCESS_DENIED', 'Select an authorized business.', 403)
+    try {
+      if (context.req.method === 'GET')
+        return context.json(
+          catalogCategoriesContextSchema.parse(
+            await dependencies.loadCatalogCategories(scope.userId, scope.tenantId, context.env),
+          ),
+        )
+      const key = context.req.header('idempotency-key')
+      if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+        return fail('IDEMPOTENCY_KEY_REQUIRED', 'A valid request key is required.', 400)
+      const parsed = catalogCategoryCommandSchema.safeParse(await context.req.json().catch(() => null))
+      if (!parsed.success) return fail('INVALID_CATEGORY', 'Check the category details.', 400)
+      const result = await dependencies.manageCatalogCategory(
+        scope.userId,
+        scope.tenantId,
+        parsed.data,
+        key,
+        await requestHash(parsed.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(catalogCategoryCommandResponseSchema.parse(result))
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCS09' || code === 'HCS10')
+        return fail('CATALOG_ACCESS_DENIED', 'Catalog access is unavailable.', 403)
+      if (code === 'HCS12') return fail('CATEGORY_NOT_FOUND', 'Category not found.', 404)
+      if (code === '23505') return fail('CATEGORY_DUPLICATE', 'A category with this name already exists.', 409)
+      if (code === 'HCS08') return fail('IDEMPOTENCY_KEY_CONFLICT', 'Request key belongs to a different command.', 409)
+      if (code === 'HCCT1') return fail('CATEGORY_ARCHIVED', 'Category is archived.', 409)
+      if (code === 'HCCT2')
+        return fail('CATEGORY_IN_USE', 'Reassign product and pricing references before archival.', 409)
+      if (code === 'HCS11' || code === '22P02') return fail('INVALID_CATEGORY', 'Check the category details.', 400)
+      throw error
+    }
+  })
+
+  app.post(
+    '/v1/catalog/imports/preview',
+    bodyLimit({
+      maxSize: 6 * 1024 * 1024,
+      onError: (context) =>
+        context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'CATALOG_IMPORT_TOO_LARGE',
+              message: 'Import request exceeds 6 MB.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          413,
+        ),
+    }),
+    async (context) => {
+      const fail = (code: string, message: string, status: 400 | 401 | 403 | 413) =>
+        context.json(
+          apiErrorResponseSchema.parse({ error: { code, message, requestId: context.get('requestId') } }),
+          status,
+        )
+      if (!readBearerToken(context.req.header('authorization')))
+        return fail('AUTHENTICATION_REQUIRED', 'Sign in to preview a catalog import.', 401)
+      const scope = await resolveWholesaleTenant(context)
+      if (!scope) return fail('CATALOG_ACCESS_DENIED', 'Select an authorized business.', 403)
+      const text = await context.req.text()
+      if (new TextEncoder().encode(text).byteLength > 6 * 1024 * 1024)
+        return fail('CATALOG_IMPORT_TOO_LARGE', 'Import request exceeds 6 MB.', 413)
+      let body: unknown
+      try {
+        body = JSON.parse(text)
+      } catch {
+        return fail('INVALID_CATALOG_IMPORT', 'Invalid import request.', 400)
+      }
+      const parsed = catalogImportPreviewRequestSchema.safeParse(body)
+      if (!parsed.success)
+        return fail('INVALID_CATALOG_IMPORT', 'Check the filename, row count and catalog columns.', 400)
+      try {
+        const snapshot = await dependencies.loadCatalogImportSnapshot(
+          scope.userId,
+          scope.tenantId,
+          parsed.data.rows,
+          context.env,
+        )
+        return context.json(
+          catalogImportPreviewResponseSchema.parse({
+            filename: parsed.data.filename,
+            rows: planCatalogImport(parsed.data.rows, snapshot),
+          }),
+        )
+      } catch (error) {
+        const code = postgresErrorCode(error)
+        if (code === 'HCS09' || code === 'HCS10')
+          return fail('CATALOG_ACCESS_DENIED', 'Catalog management access is unavailable.', 403)
+        throw error
+      }
+    },
+  )
+
+  const importJobError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
+    const code = postgresErrorCode(error)
+    if (code === 'HCIS1' || code === 'HCIJ2' || code === 'HCIJ3' || code === '23505')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code:
+              code === 'HCIS1' ? 'CATALOG_CHANGED' : code === '23505' ? 'IMPORT_KEY_CONFLICT' : 'IMPORT_STATE_CONFLICT',
+            message:
+              code === 'HCIS1'
+                ? 'Catalog changed. Prepare and review a new preview.'
+                : code === 'HCIJ3'
+                  ? 'Confirmed imports cannot be cancelled.'
+                  : code === '23505'
+                    ? 'Import confirmation key was already used.'
+                    : 'Use a valid preview with at most 100 rows per product group.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        409,
+      )
+    const status =
+      code === 'HCS09' || code === 'HCS10'
+        ? 403
+        : code === 'HCS12'
+          ? 404
+          : code === 'HCS08'
+            ? 409
+            : code === 'HCS11'
+              ? 400
+              : null
+    if (status === null) throw error
+    return context.json(
+      apiErrorResponseSchema.parse({
+        error: {
+          code:
+            status === 403
+              ? 'CATALOG_ACCESS_DENIED'
+              : status === 404
+                ? 'IMPORT_JOB_NOT_FOUND'
+                : status === 409
+                  ? 'IMPORT_KEY_CONFLICT'
+                  : 'INVALID_IMPORT_JOB',
+          message:
+            status === 403
+              ? 'Catalog management access is unavailable.'
+              : status === 404
+                ? 'Import job was not found.'
+                : status === 409
+                  ? 'Retry the original import request key and file.'
+                  : 'Check the import request.',
+          requestId: context.get('requestId'),
+        },
+      }),
+      status,
+    )
+  }
+  app.on(
+    ['GET', 'POST'],
+    '/v1/catalog/imports/jobs',
+    bodyLimit({
+      maxSize: 6 * 1024 * 1024,
+      onError: (context) =>
+        context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'CATALOG_IMPORT_TOO_LARGE',
+              message: 'Import request exceeds 6 MB.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          413,
+        ),
+    }),
+    async (context) => {
+      if (!readBearerToken(context.req.header('authorization')))
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'AUTHENTICATION_REQUIRED',
+              message: 'Sign in to view import jobs.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          401,
+        )
+      const scope = await resolveWholesaleTenant(context)
+      if (!scope) return importJobError(context, { code: 'HCS09' })
+      try {
+        if (context.req.method === 'GET')
+          return context.json(
+            catalogImportJobListSchema.parse(
+              await dependencies.loadCatalogImportJobs(scope.userId, scope.tenantId, context.env),
+            ),
+          )
+        const key = context.req.header('idempotency-key')
+        if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key)) return importJobError(context, { code: 'HCS11' })
+        const raw = catalogImportPreviewRequestSchema.safeParse(await context.req.json().catch(() => null))
+        if (!raw.success) return importJobError(context, { code: 'HCS11' })
+        const snapshot = await dependencies.loadCatalogImportSnapshot(
+          scope.userId,
+          scope.tenantId,
+          raw.data.rows,
+          context.env,
+        )
+        const rows = planCatalogImport(raw.data.rows, snapshot)
+        return context.json(
+          catalogImportJobSavedSchema.parse(
+            await dependencies.saveCatalogImportJob(
+              scope.userId,
+              scope.tenantId,
+              raw.data,
+              rows,
+              key,
+              context.get('requestId'),
+              context.env,
+            ),
+          ),
+        )
+      } catch (error) {
+        return importJobError(context, error)
+      }
+    },
+  )
+  app.on(
+    ['GET', 'POST'],
+    '/v1/catalog/imports/jobs/:jobId',
+    bodyLimit({
+      maxSize: 1024,
+      onError: (context) =>
+        context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVALID_IMPORT_JOB',
+              message: 'Import command exceeds 1 KB.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          413,
+        ),
+    }),
+    async (context) => {
+      if (!readBearerToken(context.req.header('authorization')))
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'AUTHENTICATION_REQUIRED',
+              message: 'Sign in to view import jobs.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          401,
+        )
+      const scope = await resolveWholesaleTenant(context)
+      if (!scope) return importJobError(context, { code: 'HCS09' })
+      const job = z.uuid().safeParse(context.req.param('jobId'))
+      if (!job.success) return importJobError(context, { code: 'HCS11' })
+      try {
+        if (context.req.method === 'GET')
+          return context.json(
+            catalogImportJobSchema.parse(
+              await dependencies.loadCatalogImportJob(scope.userId, scope.tenantId, job.data, context.env),
+            ),
+          )
+        const command = z
+          .strictObject({ action: z.literal('cancel') })
+          .safeParse(await context.req.json().catch(() => null))
+        if (!command.success) return importJobError(context, { code: 'HCS11' })
+        return context.json(
+          catalogImportJobSchema.parse(
+            await dependencies.cancelCatalogImportJob(
+              scope.userId,
+              scope.tenantId,
+              job.data,
+              context.get('requestId'),
+              context.env,
+            ),
+          ),
+        )
+      } catch (error) {
+        return importJobError(context, error)
+      }
+    },
+  )
+
+  const bindImportExecution = (value: unknown, jobId: string, required = false) => {
+    const result = catalogImportExecutionResponseSchema.parse(value)
+    if ((required && !result.execution) || (result.execution && result.execution.jobId !== jobId))
+      throw new Error('Import execution response does not match the authorized job.')
+    return result
+  }
+  app.get('/v1/catalog/imports/jobs/:jobId/review', async (context) => {
+    if (!readBearerToken(context.req.header('authorization')))
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'AUTHENTICATION_REQUIRED',
+            message: 'Sign in to review imports.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    const scope = await resolveWholesaleTenant(context),
+      job = z.uuid().safeParse(context.req.param('jobId'))
+    if (!scope) return importJobError(context, { code: 'HCS09' })
+    if (!job.success) return importJobError(context, { code: 'HCS11' })
+    try {
+      const review = await dependencies.reviewCatalogImport(scope.userId, scope.tenantId, job.data, context.env)
+      if (
+        review.job.id !== job.data ||
+        review.job.rejectedCount !== 0 ||
+        JSON.stringify(planCatalogImport(review.job.source.rows, review.snapshot)) !== JSON.stringify(review.job.rows)
+      )
+        return importJobError(context, { code: 'HCIS1' })
+      return context.json(
+        catalogImportReviewSchema.parse({ hash: review.hash, jobId: job.data, groupCount: review.groupCount }),
+      )
+    } catch (error) {
+      return importJobError(context, error)
+    }
+  })
+  app.on(
+    ['GET', 'POST'],
+    '/v1/catalog/imports/jobs/:jobId/execution',
+    bodyLimit({
+      maxSize: 1024,
+      onError: (context) =>
+        context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVALID_IMPORT_JOB',
+              message: 'Import command exceeds 1 KB.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          413,
+        ),
+    }),
+    async (context) => {
+      if (!readBearerToken(context.req.header('authorization')))
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'AUTHENTICATION_REQUIRED',
+              message: 'Sign in to process imports.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          401,
+        )
+      const scope = await resolveWholesaleTenant(context),
+        job = z.uuid().safeParse(context.req.param('jobId'))
+      if (!scope) return importJobError(context, { code: 'HCS09' })
+      if (!job.success) return importJobError(context, { code: 'HCS11' })
+      try {
+        if (context.req.method === 'GET')
+          return context.json(
+            bindImportExecution(
+              await dependencies.loadCatalogImportExecution(scope.userId, scope.tenantId, job.data, context.env),
+              job.data,
+            ),
+          )
+        const command = catalogImportExecutionCommandSchema.safeParse(await context.req.json().catch(() => null)),
+          key = context.req.header('idempotency-key') ?? null
+        if (!command.success || (command.data.action === 'start' && (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))))
+          return importJobError(context, { code: 'HCS11' })
+        if (command.data.action === 'start') {
+          const existing = bindImportExecution(
+            await dependencies.loadCatalogImportExecution(scope.userId, scope.tenantId, job.data, context.env),
+            job.data,
+          )
+          if (!existing.execution) {
+            const review = await dependencies.reviewCatalogImport(scope.userId, scope.tenantId, job.data, context.env)
+            if (
+              review.job.id !== job.data ||
+              review.hash !== command.data.reviewHash ||
+              review.job.rejectedCount !== 0 ||
+              JSON.stringify(planCatalogImport(review.job.source.rows, review.snapshot)) !==
+                JSON.stringify(review.job.rows)
+            )
+              return importJobError(context, { code: 'HCIS1' })
+          }
+        }
+        return context.json(
+          bindImportExecution(
+            await dependencies.executeCatalogImport(
+              scope.userId,
+              scope.tenantId,
+              job.data,
+              command.data,
+              key,
+              context.get('requestId'),
+              context.env,
+            ),
+            job.data,
+            true,
+          ),
+        )
+      } catch (error) {
+        return importJobError(context, error)
+      }
+    },
+  )
 
   const wholesaleError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
     const code = postgresErrorCode(error)
@@ -4794,6 +5380,50 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
   const posError = (context: Context<{ Bindings: Bindings }>, error: unknown) => {
     const code = postgresErrorCode(error)
     const requestId = context.get('requestId')
+    if (code === 'HCDP4')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'POS_PAYMENT_REFERENCE_REQUIRED',
+            message: 'Enter exactly four transaction reference digits for online payments.',
+            requestId,
+          },
+        }),
+        400,
+      )
+    if (code === 'HCDP0')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'POS_DISCOUNT_ACCESS_DENIED',
+            message: 'POS discounts are unavailable for this business.',
+            requestId,
+          },
+        }),
+        403,
+      )
+    if (code === 'HCDP1')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'POS_DISCOUNT_CHANGED',
+            message: 'Selected discount changed or is unavailable. Refresh checkout before selecting it again.',
+            requestId,
+          },
+        }),
+        409,
+      )
+    if (code === 'HCDP2')
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'POS_DISCOUNT_INELIGIBLE',
+            message: 'Choose one eligible discount for an untaxed retail-only ticket with a positive payable amount.',
+            requestId,
+          },
+        }),
+        400,
+      )
     if (code === 'HCS90')
       return context.json(
         apiErrorResponseSchema.parse({

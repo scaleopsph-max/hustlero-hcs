@@ -1,5 +1,101 @@
 # Project State
 
+October 28 discounted-cash reversal integration source candidate: atomic original
+snapshot net refunds/voids, guarded replay/current branch authority, cash/stock/
+loyalty effects and immutable receipt breakdown implemented. Back Office uses
+original-key/body session recovery and verified receipt history before clearing.
+62 focused tests passed. Full local check and disposable SQL/concurrency/exact CI
+pending at this checkpoint. Single-cash/open-original-register only; unsupported
+tax, online/split payout, zero-cent and incoherent history remain denied. No hosted
+action. See qa/POS_DISCOUNT_CASH_REVERSALS_2026-10-28.md.
+
+October 28 next source increment: pure original-snapshot discounted-return
+valuation added, with cumulative net-cent rounding and complete header/line/
+history reconciliation. Payout and physical-quantity exhaustion are distinct;
+zero-cent selections remain denied. No SQL/API/UI reversal guard was loosened.
+Final full regression passed 1,424 app tests plus 47 simulated harness cases;
+workspace-wide typechecks and lint passed, as did changed-source formatting.
+See qa/RETAIL_DISCOUNT_RETURN_VALUATION_2026-10-28.md. Refund/void posting and
+receipt/report integration remain next, not implemented by this pure helper.
+No hosted action. Prior POS sale exact candidate 2c3a4ca passed both CI workflows.
+
+POS retail discount sale source candidate: actual cashier authorization, server
+net computation, immutable definition/line snapshots, online reference evidence
+and original-command checkout recovery implemented for QA. 79 focused tests and
+mocked desktop/mobile browser checks passed. Full local checks and isolated SQL/
+concurrency/exact CI pending. Normal SQL checkout entry is unchanged. Discounted
+refunds/voids and Back Office reports/detail remain gated and next. No hosted
+action. See qa/POS_RETAIL_DISCOUNT_SALES_2026-10-27.md.
+
+October 27 discount configuration source candidate: versioned definitions/private
+API, dedicated permissions and Back Office manager with original-command recovery
+implemented for QA. 55 API/helper and 13 DOM tests passed, mocked desktop/mobile
+browser passed. Full local and isolated SQL/CI pending. No hosted action. POS
+application/posting, discounted refunds and reporting remain next. See
+qa/RETAIL_DISCOUNT_CONFIGURATION_2026-10-27.md.
+
+October 27 retail discount computation checkpoint: owner resolved whole-ticket
+scope, predefined-only dedicated manage/apply permissions, untaxed retail-only
+eligibility and rejection of zero/negative payable. Pure quote engine and strict
+configuration contracts added; 66 focused tests and shared-package typechecks
+passed. Full local checks/all builds passed with 1,243 app tests / 64 files and
+47 simulated harness cases; final contract tightening separately passed 24
+contract tests/typecheck/lint. No new SQL schema or database execution. Database/API/
+manager UI, POS authorization/posting, refund and report integration remain pending.
+No hosted changes. See qa/RETAIL_DISCOUNT_COMPUTATION_2026-10-27.md.
+
+October 27 closeout e6e6de0 passed both exact CI runs with 1,177 app tests / 62
+files, 47 harness cases and 2,077 SQL assertions / 58 files, reset/concurrency/
+cleanup. Result CSV, private/no-store reads, maximum-group review and primary
+barcode preservation passed. Final source follow-up adds actual execution state
+and committed counts to history; exact follow-up CI is pending. No hosted action.
+
+October 27 execution baseline c6efe63 passed both exact CI runs, with 1,152 app
+tests / 61 files, 47 harness cases and 2,062 SQL assertions / 58 files, reset,
+concurrency and cleanup. Actual import posting is now implemented in source,
+not hosted. Closeout adds fresh-authorized result CSV, private/no-store reads,
+identity/FK guards and scale/barcode regressions; final closeout verification is
+pending at this checkpoint. See qa/CATALOG_IMPORT_CLOSEOUT_2026-10-27.md.
+
+October 27 next increment: catalog import confirmation, bounded atomic product-group
+posting, durable outcomes and UI recovery are implemented for execution QA. At
+this checkpoint 1,152 app tests / 61 files and 47 harness cases passed, along with
+mocked desktop/mobile component checks; builds and isolated SQL CI remain pending.
+See qa/CATALOG_IMPORT_EXECUTION_CANDIDATE_2026-10-27.md and
+product/CATALOG_IMPORT_PROCESSING_2026-10-27.md. No hosted environment changed.
+
+October 27 source continuation: durable catalog import prepared jobs/history and
+cancel-only lifecycle implemented for QA, not posting. Original raw input and
+server-derived plan are immutable; request-key recovery retains exact source.
+Final full local/isolated CI verification pending at this document checkpoint.
+See qa/CATALOG_IMPORT_JOBS_CANDIDATE_2026-10-27.md. No live environment changed.
+Actual confirmation/bounded async posting and result reconciliation remain next,
+then Discounts, PCOUNT and supplier improvements. Do not call the importer done.
+
+## Current Priority: Catalog And Inventory Operations
+
+October 26 owner approved five source development/QA slices with APPROVED
+BLUEPRINT - PROCEED TO BUILD: Categories, catalog import, retail discounts,
+PCOUNT and suppliers. Modifiers/Productions deferred. PCOUNT create/post is
+Owner/Manager-only; other explicitly authorized staff may count. Dedicated entry
+permissions and branch access must not be inferred from inventory.manage alone.
+Discount ticket/use details were resolved October 27; see the checkpoint above.
+
+Categories first candidate 0339684 passed both CI runs: 1,017 app / 47 harness,
+1,953 SQL assertions / 55 files, six category concurrency cases plus existing
+overlaps and cleanup. Draft PR #10, no merge or hosted action. Selected category
+UUIDs replace free-text creation; referenced categories cannot archive.
+
+Catalog import preview now has CSV template/parser, bounded SKU/parent/barcode/
+category planning, authenticated API and guarded relevant snapshot, and UI with
+per-row validation. Final full check passed 1,073 app / 47 harness and all builds;
+focused planner/CSV/API/DOM/browser passed. Exact SQL CI pending at this document
+checkpoint. No Import/Post action:
+durable jobs, confirmation, asynchronous posting/results and write reconciliation
+are next. Discounts, PCOUNT and supplier enhancements are not claimed built.
+See qa/CATALOG_IMPORT_PREVIEW_CANDIDATE_2026-10-26.md. No live migration/deployment,
+credential/access grant, main merge or policy bypass; frozen hosted runner unchanged.
+
 ## Current Priority: Combined AW3 And AW4 Source Closeout
 
 October 26 owner clarified all remaining AW3/AW4 development/QA; Online Store last.

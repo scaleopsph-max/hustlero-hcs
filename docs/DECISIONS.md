@@ -1,5 +1,16 @@
 # Decision Register
 
+## Retail Ticket Discounts V1 2026-10-27
+
+Owner selected whole-retail-ticket predefined discounts, dedicated manage/apply
+capabilities (manage defaults Owner/Admin/Manager; apply also authorized Cashier),
+no manual override or stacking, and no wholesale/dealer/mixed, loyalty-redemption
+or nonzero-tax ticket. Percent half-up cents, original gross proportional stable
+cumulative allocation, snapshot-based reporting/refunds. Discount equal to or
+above subtotal is rejected; no free/zero-payable sale or silent cap. Taxed-ticket
+and zero-only refund workflows remain outside this first slice. Source build/QA
+only; no hosted or financial execution is inferred.
+
 ## October 23, 2026: Conditional Source-Only AW4 Merge
 
 Owner approved PR #5 source-only merge after final review and passing CI. This

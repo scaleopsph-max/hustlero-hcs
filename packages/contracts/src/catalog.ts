@@ -7,6 +7,7 @@ export const catalogProductCreateRequestSchema = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(1000).optional(),
   categoryName: z.string().trim().max(80).optional(),
+  categoryId: identifierSchema.nullable().optional(),
   variantName: z.string().trim().min(1).max(80).default('Default'),
   sku: z
     .string()
@@ -84,6 +85,7 @@ export const catalogProductUpdateRequestSchema = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(1000).nullable().default(null),
   categoryName: z.string().trim().max(80).nullable().default(null),
+  categoryId: identifierSchema.nullable().optional(),
 })
 
 export const catalogProductUpdateResponseSchema = z.object({
@@ -128,3 +130,27 @@ export type CatalogVariantDeactivateResponse = z.infer<typeof catalogVariantDeac
 export type CatalogProductUpdateRequest = z.infer<typeof catalogProductUpdateRequestSchema>
 export type CatalogProductUpdateResponse = z.infer<typeof catalogProductUpdateResponseSchema>
 export type CatalogResponse = z.infer<typeof catalogResponseSchema>
+
+export const catalogCategoryCommandSchema = z.discriminatedUnion('action', [
+  z.strictObject({ action: z.literal('create'), name: z.string().trim().min(1).max(80) }),
+  z.strictObject({ action: z.literal('rename'), categoryId: identifierSchema, name: z.string().trim().min(1).max(80) }),
+  z.strictObject({ action: z.literal('archive'), categoryId: identifierSchema }),
+])
+export const catalogCategoryCommandResponseSchema = z.strictObject({
+  categoryId: identifierSchema,
+  name: z.string().min(1),
+  status: z.enum(['active', 'archived']),
+})
+export const catalogCategoriesContextSchema = z.object({
+  canManage: z.boolean(),
+  categories: z.array(
+    catalogCategorySchema.extend({
+      status: z.enum(['active', 'archived']),
+      productCount: z.number().int().nonnegative(),
+      pricingGroupCount: z.number().int().nonnegative(),
+    }),
+  ),
+})
+export type CatalogCategoryCommand = z.infer<typeof catalogCategoryCommandSchema>
+export type CatalogCategoryCommandResponse = z.infer<typeof catalogCategoryCommandResponseSchema>
+export type CatalogCategoriesContext = z.infer<typeof catalogCategoriesContextSchema>

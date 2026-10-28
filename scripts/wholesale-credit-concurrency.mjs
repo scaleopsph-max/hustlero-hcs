@@ -1744,6 +1744,824 @@ try {
   console.log(
     'AW4 fund reversal concurrency passed: overlapping same-key replay and different-key duplicate denial; fund-account wait precedes common event time; original splits net to zero exactly once.',
   )
+  const categoryCommand = (client, body, key) =>
+    client.query('select app.manage_catalog_category($1,$2,$3::jsonb,$4,$4,$4) response', [
+      actor,
+      tenant,
+      JSON.stringify(body),
+      key,
+    ])
+  const selectedProduct = (client, categoryId, suffix) =>
+    client.query('select app.create_catalog_product_selected_category($1,$2,$3::jsonb,$4,$4,$4) response', [
+      actor,
+      tenant,
+      JSON.stringify({
+        name: `Category ${suffix}`,
+        categoryId,
+        variantName: 'Default',
+        sku: `CATEGORY-${suffix}`,
+        retailPriceMinor: 100,
+        unitCostMinor: null,
+        trackInventory: false,
+        barcodes: [],
+      }),
+      `category-product-${suffix}`,
+    ])
+  const newCategory = async (suffix) =>
+    (await categoryCommand(observer, { action: 'create', name: `Category ${suffix}` }, `category-create-${suffix}`))
+      .rows[0].response.categoryId
+  const archiveFirstCategory = await newCategory('archive-first')
+  await first.query('begin')
+  await categoryCommand(first, { action: 'archive', categoryId: archiveFirstCategory }, 'category-archive-first')
+  const afterArchive = selectedProduct(second, archiveFirstCategory, 'ARCHIVE-FIRST').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await afterArchive, 'HCS11')
+
+  const assignFirstCategory = await newCategory('assign-first')
+  await first.query('begin')
+  const categoryProduct = (await selectedProduct(first, assignFirstCategory, 'ASSIGN-FIRST')).rows[0].response.productId
+  const afterAssign = categoryCommand(
+    second,
+    { action: 'archive', categoryId: assignFirstCategory },
+    'category-after-assign',
+  ).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await afterAssign, 'HCCT2')
+  assert.equal(
+    (await observer.query('select category_id from app.products where id=$1', [categoryProduct])).rows[0].category_id,
+    assignFirstCategory,
+  )
+
+  const renameCategory = await newCategory('rename-first')
+  await first.query('begin')
+  await categoryCommand(
+    first,
+    { action: 'rename', categoryId: renameCategory, name: 'Renamed while assigning' },
+    'category-rename-first',
+  )
+  const afterRename = selectedProduct(second, renameCategory, 'RENAME-FIRST')
+  await waitForLock()
+  await first.query('commit')
+  const renamedProduct = (await afterRename).rows[0].response.productId
+  assert.equal(
+    (await observer.query('select category_id from app.products where id=$1', [renamedProduct])).rows[0].category_id,
+    renameCategory,
+  )
+  assert.equal(
+    (
+      await observer.query('select count(*)::int count from app.product_categories where tenant_id=$1 and name=$2', [
+        tenant,
+        'Category rename-first',
+      ])
+    ).rows[0].count,
+    0,
+  )
+
+  await first.query('begin')
+  const sameCategoryBody = { action: 'create', name: 'Same key category' }
+  const sameCategoryKey = 'category-concurrent-replay'
+  const firstCategoryResponse = (await categoryCommand(first, sameCategoryBody, sameCategoryKey)).rows[0].response
+  const sameCategoryReplay = categoryCommand(second, sameCategoryBody, sameCategoryKey)
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await sameCategoryReplay).rows[0].response, firstCategoryResponse)
+  assert.equal(
+    (
+      await observer.query(
+        "select count(*)::int count from audit.audit_events where tenant_id=$1 and entity_id=$2 and action='catalog.category.create'",
+        [tenant, firstCategoryResponse.categoryId],
+      )
+    ).rows[0].count,
+    1,
+  )
+
+  await first.query('begin')
+  await first.query("update app.tenants set status='suspended' where id=$1", [tenant])
+  const suspendedCategory = categoryCommand(
+    second,
+    { action: 'create', name: 'Must not exist' },
+    'category-suspended-wait',
+  ).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await suspendedCategory, 'HCS09')
+  await observer.query("update app.tenants set status='active' where id=$1", [tenant])
+
+  const expiryCategory = await newCategory('expiry-wait')
+  await observer.query(
+    "update app.tenant_entitlements set ends_at=clock_timestamp()+interval '1 second' where tenant_id=$1 and feature_code='catalog'",
+    [tenant],
+  )
+  await first.query('begin')
+  await first.query('select 1 from app.product_categories where id=$1 for update', [expiryCategory])
+  const expiredCategory = selectedProduct(second, expiryCategory, 'EXPIRED-WAIT').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await delay(1100)
+  await first.query('commit')
+  assert.equal(await expiredCategory, 'HCS10')
+  assert.equal(
+    (
+      await observer.query(
+        "select count(*)::int count from app.products where tenant_id=$1 and name='Category EXPIRED-WAIT'",
+        [tenant],
+      )
+    ).rows[0].count,
+    0,
+  )
+  for (const operation of ['create', 'update']) {
+    const replayKey = operation === 'create' ? 'category-product-ASSIGN-FIRST' : 'category-update-expiry-replay'
+    const updateBody = { name: 'Replay product', categoryId: assignFirstCategory, description: null }
+    await observer.query(
+      "update app.tenant_entitlements set ends_at=clock_timestamp()+interval '5 seconds' where tenant_id=$1 and feature_code='catalog'",
+      [tenant],
+    )
+    if (operation === 'update')
+      await observer.query('select app.update_catalog_product_selected_category($1,$2,$3,$4::jsonb,$5,$5,$5)', [
+        actor,
+        tenant,
+        categoryProduct,
+        JSON.stringify(updateBody),
+        replayKey,
+      ])
+    await observer.query(
+      "update app.tenant_entitlements set ends_at=clock_timestamp()+interval '1 second' where tenant_id=$1 and feature_code='catalog'",
+      [tenant],
+    )
+    await first.query('begin')
+    await first.query('select pg_advisory_xact_lock(hashtextextended($1,0))', [
+      `${tenant}:catalog.product.${operation}:${replayKey}`,
+    ])
+    const replay = (
+      operation === 'create'
+        ? selectedProduct(second, assignFirstCategory, 'ASSIGN-FIRST')
+        : second.query('select app.update_catalog_product_selected_category($1,$2,$3,$4::jsonb,$5,$5,$5)', [
+            actor,
+            tenant,
+            categoryProduct,
+            JSON.stringify(updateBody),
+            replayKey,
+          ])
+    ).then(
+      () => 'unexpected-success',
+      (error) => error.code,
+    )
+    await waitForLock()
+    await delay(1100)
+    await first.query('commit')
+    assert.equal(await replay, 'HCS10', `${operation} historical replay must reject expiry after request-key wait`)
+  }
+  console.log(
+    'Catalog category concurrency passed: archive/assignment admission order, ID-preserving rename, one-effect same-key replay, queued suspension, wallclock expiry and expired create/update historical replay deny writes.',
+  )
+  await observer.query(
+    "update app.tenant_entitlements set ends_at=null where tenant_id=$1 and feature_code='catalog'",
+    [tenant],
+  )
+  const importRaw = {
+    filename: 'concurrent-catalog.csv',
+    rows: [{ product_name: 'Job only', sku: 'JOB-ONLY', retail_price: '1.00' }],
+  }
+  const importPlan = [{ rowNumber: 2, issues: [], action: 'create_product', sku: 'JOB-ONLY', retailPriceMinor: 100 }]
+  const importKey = 'catalog-import-concurrent-save'
+  const saveImport = (client) =>
+    client.query('select app.save_catalog_import_job($1,$2,$3::jsonb,$4::jsonb,$5,$5) response', [
+      actor,
+      tenant,
+      JSON.stringify(importRaw),
+      JSON.stringify(importPlan),
+      importKey,
+    ])
+  await first.query('begin')
+  const importSaved = (await saveImport(first)).rows[0].response
+  const importReplay = saveImport(second)
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await importReplay).rows[0].response, importSaved)
+  assert.equal(
+    (
+      await observer.query(
+        "select count(*)::int count from audit.audit_events where tenant_id=$1 and entity_id=$2 and action='catalog.import.prepared'",
+        [tenant, importSaved.jobId],
+      )
+    ).rows[0].count,
+    1,
+  )
+  const cancelImport = (client) =>
+    client.query('select app.cancel_catalog_import_job($1,$2,$3,$4) response', [
+      actor,
+      tenant,
+      importSaved.jobId,
+      'catalog-import-concurrent-cancel',
+    ])
+  await first.query('begin')
+  await cancelImport(first)
+  const cancelReplay = cancelImport(second)
+  await waitForLock()
+  await first.query('commit')
+  assert.equal((await cancelReplay).rows[0].response.state, 'cancelled')
+  assert.equal(
+    (
+      await observer.query(
+        "select count(*)::int count from audit.audit_events where tenant_id=$1 and entity_id=$2 and action='catalog.import.cancelled'",
+        [tenant, importSaved.jobId],
+      )
+    ).rows[0].count,
+    1,
+  )
+  await observer.query(
+    "update app.tenant_entitlements set ends_at=clock_timestamp()+interval '1 second' where tenant_id=$1 and feature_code='catalog'",
+    [tenant],
+  )
+  await first.query('begin')
+  await first.query('select pg_advisory_xact_lock(hashtextextended($1,0))', [
+    `${tenant}:catalog.import.save:${importKey}`,
+  ])
+  const expiredImport = saveImport(second).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await delay(1100)
+  await first.query('commit')
+  assert.equal(await expiredImport, 'HCS10')
+  assert.equal(
+    (
+      await observer.query("select count(*)::int count from app.products where tenant_id=$1 and name='Job only'", [
+        tenant,
+      ])
+    ).rows[0].count,
+    0,
+  )
+  console.log(
+    'Catalog import job concurrency passed: simultaneous save and cancellation emit once, expiry after request-key wait denies historical save replay, no product posting.',
+  )
+  await observer.query(
+    "update app.tenant_entitlements set ends_at=null where tenant_id=$1 and feature_code='catalog'",
+    [tenant],
+  )
+  const executionRaw = {
+    filename: 'execution-race.csv',
+    rows: [{ product_name: 'Execution Race', sku: 'EXECUTION-RACE', retail_price: '49.99', unit_cost: '20.01' }],
+  }
+  const executionPlan = [
+    {
+      rowNumber: 2,
+      issues: [],
+      action: 'create_product',
+      productId: null,
+      variantId: null,
+      productSku: 'EXECUTION-RACE',
+      name: 'Execution Race',
+      description: null,
+      categoryId: null,
+      categoryName: null,
+      variantName: 'Default',
+      sku: 'EXECUTION-RACE',
+      barcodes: [],
+      retailPriceMinor: 4999,
+      unitCostMinor: 2001,
+      trackInventory: true,
+    },
+  ]
+  const prepareExecution = async (raw, plan, key) =>
+    (
+      await observer.query('select app.save_catalog_import_job($1,$2,$3::jsonb,$4::jsonb,$5,$5) response', [
+        actor,
+        tenant,
+        JSON.stringify(raw),
+        JSON.stringify(plan),
+        key,
+      ])
+    ).rows[0].response.jobId
+  const executionJob = await prepareExecution(executionRaw, executionPlan, 'execution-race-prepared-001')
+  const executionHash = (
+    await observer.query('select app.review_catalog_import($1,$2,$3) response', [actor, tenant, executionJob])
+  ).rows[0].response.hash
+  const startExecution = (client) =>
+    client.query('select app.start_catalog_import($1,$2,$3,$4,$5,$5) response', [
+      actor,
+      tenant,
+      executionJob,
+      executionHash,
+      'execution-race-confirm-key',
+    ])
+  await first.query('begin')
+  const firstExecution = (await startExecution(first)).rows[0].response
+  const startReplay = startExecution(second)
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await startReplay).rows[0].response, firstExecution)
+  assert.equal(
+    (
+      await observer.query(
+        "select count(*)::int count from audit.audit_events where tenant_id=$1 and entity_id=$2 and action='catalog.import.confirmed'",
+        [tenant, firstExecution.execution.id],
+      )
+    ).rows[0].count,
+    1,
+  )
+  const stepExecution = (client, job = executionJob) =>
+    client.query('select app.process_catalog_import_group($1,$2,$3,0,$4) response', [
+      actor,
+      tenant,
+      job,
+      'execution-race-step',
+    ])
+  await first.query('begin')
+  const firstStep = (await stepExecution(first)).rows[0].response
+  const stepReplay = stepExecution(second)
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await stepReplay).rows[0].response, firstStep)
+  assert.equal(
+    (
+      await observer.query(
+        "select count(*)::int count from app.product_variants where tenant_id=$1 and sku='EXECUTION-RACE'",
+        [tenant],
+      )
+    ).rows[0].count,
+    1,
+  )
+  assert.equal(
+    (
+      await observer.query(
+        "select count(*)::int count from audit.audit_events where tenant_id=$1 and entity_id=$2 and action='catalog.import.group_processed'",
+        [tenant, firstExecution.execution.id],
+      )
+    ).rows[0].count,
+    1,
+  )
+  const executionTarget = firstStep.execution.results[0]
+  const stalePlan = [
+    {
+      ...executionPlan[0],
+      action: 'update_variant',
+      productId: executionTarget.productId,
+      variantId: executionTarget.variantId,
+      retailPriceMinor: 4501,
+    },
+  ]
+  const staleJob = await prepareExecution(
+    { ...executionRaw, rows: [{ ...executionRaw.rows[0], retail_price: '45.01' }] },
+    stalePlan,
+    'execution-race-stale-001',
+  )
+  const staleHash = (
+    await observer.query('select app.review_catalog_import($1,$2,$3) response', [actor, tenant, staleJob])
+  ).rows[0].response.hash
+  await observer.query('select app.start_catalog_import($1,$2,$3,$4,$5,$5)', [
+    actor,
+    tenant,
+    staleJob,
+    staleHash,
+    'execution-race-stale-confirm',
+  ])
+  await first.query('begin')
+  await first.query('update app.product_variants set retail_price=55.01 where tenant_id=$1 and id=$2', [
+    tenant,
+    executionTarget.variantId,
+  ])
+  const staleStep = stepExecution(second, staleJob)
+  await waitForLock()
+  await first.query('commit')
+  const staleResult = (await staleStep).rows[0].response.execution
+  assert.equal(staleResult.state, 'completed_with_errors')
+  assert.equal(staleResult.results[0].errorCode, 'HCIS1')
+  assert.equal(
+    (
+      await observer.query('select retail_price::text value from app.product_variants where id=$1', [
+        executionTarget.variantId,
+      ])
+    ).rows[0].value,
+    '55.01',
+  )
+  await observer.query(
+    "update app.tenant_entitlements set ends_at=clock_timestamp()+interval '1 second' where tenant_id=$1 and feature_code='catalog'",
+    [tenant],
+  )
+  await first.query('begin')
+  await first.query('select 1 from app.catalog_import_jobs where id=$1 for update', [executionJob])
+  const expiredStep = stepExecution(second).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await delay(1100)
+  await first.query('commit')
+  assert.equal(await expiredStep, 'HCS10')
+  await observer.query(
+    "update app.tenant_entitlements set ends_at=null where tenant_id=$1 and feature_code='catalog'",
+    [tenant],
+  )
+  await first.query('begin')
+  await first.query("update app.tenants set status='suspended' where id=$1", [tenant])
+  const suspendedStep = stepExecution(second).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await suspendedStep, 'HCS09')
+  await observer.query("update app.tenants set status='active' where id=$1", [tenant])
+  console.log(
+    'Catalog import execution concurrency passed: confirmation and same-index posting emit once, post-wait price edits become failed results without overwrite, expired and suspended historical replay denied.',
+  )
+  // Retail discount metadata is a separate private management surface. No sales
+  // are posted here; use the same disposable loopback fixture and lock observer.
+  const discountCommand = (client, body, key) =>
+    client.query('select app.manage_retail_discount($1,$2,$3::jsonb,$4,$4) response', [
+      actor,
+      tenant,
+      JSON.stringify(body),
+      key,
+    ])
+  const discountBody = {
+    action: 'create',
+    name: 'Concurrent retail promotion',
+    value: { kind: 'fixed', amountMinor: 100 },
+    status: 'inactive',
+  }
+  await first.query('begin')
+  const createdDiscount = (await discountCommand(first, discountBody, 'discount-concurrent-create')).rows[0].response
+  const discountReplay = discountCommand(second, discountBody, 'discount-concurrent-create')
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await discountReplay).rows[0].response, createdDiscount)
+  assert.equal(
+    (
+      await observer.query(
+        'select count(*)::int count from app.retail_discount_versions where tenant_id=$1 and discount_id=$2',
+        [tenant, createdDiscount.id],
+      )
+    ).rows[0].count,
+    1,
+  )
+
+  const editDiscount = {
+    action: 'update',
+    discountId: createdDiscount.id,
+    expectedRevision: 1,
+    name: 'Updated retail promotion',
+    value: { kind: 'percent', rateBps: 1250 },
+    status: 'active',
+  }
+  await first.query('begin')
+  await discountCommand(first, editDiscount, 'discount-concurrent-edit-one')
+  const staleDiscount = discountCommand(second, editDiscount, 'discount-concurrent-edit-two').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await staleDiscount, 'HCDI4')
+  assert.equal(
+    (
+      await observer.query(
+        'select count(*)::int count from app.retail_discount_versions where tenant_id=$1 and discount_id=$2',
+        [tenant, createdDiscount.id],
+      )
+    ).rows[0].count,
+    2,
+  )
+
+  await first.query('begin')
+  await first.query("update app.tenants set status='suspended' where id=$1", [tenant])
+  const suspendedDiscount = discountCommand(second, discountBody, 'discount-concurrent-create').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await suspendedDiscount, 'HCDI0')
+  await observer.query("update app.tenants set status='active' where id=$1", [tenant])
+
+  await observer.query(
+    "update app.tenant_entitlements set ends_at=clock_timestamp()+interval '1 second' where tenant_id=$1 and feature_code='sales'",
+    [tenant],
+  )
+  await first.query('begin')
+  await first.query('select 1 from app.retail_discounts where tenant_id=$1 and id=$2 for update', [
+    tenant,
+    createdDiscount.id,
+  ])
+  const expiredDiscount = discountCommand(
+    second,
+    { ...editDiscount, expectedRevision: 2 },
+    'discount-expired-edit',
+  ).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await delay(1100)
+  await first.query('commit')
+  assert.equal(await expiredDiscount, 'HCDI1')
+  assert.equal(
+    (
+      await observer.query('select revision from app.retail_discounts where tenant_id=$1 and id=$2', [
+        tenant,
+        createdDiscount.id,
+      ])
+    ).rows[0].revision,
+    2,
+  )
+  await observer.query("update app.tenant_entitlements set ends_at=null where tenant_id=$1 and feature_code='sales'", [
+    tenant,
+  ])
+  console.log(
+    'Retail discount concurrency passed: same-key create emits once, stale competing edit denied, queued suspension and row-lock expiry deny completed replay/new effects.',
+  )
+  // Real discounted POS commands on the same disposable loopback database.
+  const [posEmployee, posRegister, posDevice, posProduct, posVariant] = Array.from({ length: 5 }, () => randomUUID())
+  const posHash = randomUUID().replaceAll('-', '').repeat(2)
+  const deviceHash = randomUUID().replaceAll('-', '').repeat(2)
+  await observer.query(
+    "insert into app.employees(id,tenant_id,employee_code,display_name) values($1,$2,'DISCOUNT-RACE','Discount race cashier')",
+    [posEmployee, tenant],
+  )
+  await observer.query('insert into app.employee_locations(tenant_id,employee_id,location_id) values($1,$2,$3)', [
+    tenant,
+    posEmployee,
+    location,
+  ])
+  const posRole = (await observer.query("select id from app.roles where tenant_id=$1 and code='cashier'", [tenant]))
+    .rows[0].id
+  await observer.query('insert into app.employee_roles(tenant_id,employee_id,role_id) values($1,$2,$3)', [
+    tenant,
+    posEmployee,
+    posRole,
+  ])
+  await observer.query(
+    "insert into app.registers(id,tenant_id,location_id,name,code) values($1,$2,$3,'Discount race register','DISCOUNT-RACE')",
+    [posRegister, tenant, location],
+  )
+  await observer.query(
+    "insert into app.pos_devices(id,tenant_id,register_id,location_id,name,status,token_hash,activated_at,created_by_user_id) values($1,$2,$3,$4,'Discount race device','active',$5,clock_timestamp(),$6)",
+    [posDevice, tenant, posRegister, location, deviceHash, actor],
+  )
+  await observer.query(
+    "insert into app.pos_employee_sessions(tenant_id,device_id,register_id,location_id,employee_id,token_hash,expires_at) values($1,$2,$3,$4,$5,$6,clock_timestamp()+interval '1 hour')",
+    [tenant, posDevice, posRegister, location, posEmployee, posHash],
+  )
+  await observer.query(
+    "insert into app.products(id,tenant_id,name,created_by) values($1,$2,'Discount race stock',$3)",
+    [posProduct, tenant, actor],
+  )
+  await observer.query(
+    "insert into app.product_variants(id,tenant_id,product_id,name,sku,retail_price,unit_cost,track_inventory,created_by) values($1,$2,$3,'Each','POS-DISCOUNT-RACE',100,50,true,$4)",
+    [posVariant, tenant, posProduct, actor],
+  )
+  await observer.query(
+    'insert into app.inventory_balances(tenant_id,location_id,variant_id,on_hand,average_unit_cost) values($1,$2,$3,10,50)',
+    [tenant, location, posVariant],
+  )
+  const posConfig = (
+    await observer.query(
+      'select app.manage_retail_discount($1,$2,\'{"action":"create","name":"POS Race Discount","value":{"kind":"fixed","amountMinor":100},"status":"active"}\', \'pos-discount-race-config\',\'pos-race\') response',
+      [actor, tenant],
+    )
+  ).rows[0].response
+  const posOpen = (
+    await observer.query('select app.open_pos_register_session($1,100000,$2,$2,$2) response', [
+      posHash,
+      'pos-discount-race-open',
+    ])
+  ).rows[0].response
+  const cashMethod = (
+    await observer.query(
+      "select id from app.payment_methods where tenant_id=$1 and method_type='cash' and is_active limit 1",
+      [tenant],
+    )
+  ).rows[0].id
+  const posSelection = { discountId: posConfig.id, expectedRevision: 1 }
+  const posSale = (client, key, selection = posSelection, sessionHash = posHash) =>
+    client.query(
+      "select app.complete_pos_discounted_sale($1,$2::jsonb,$3::jsonb,null,'retail',$4::jsonb,$5,$5) response",
+      [
+        sessionHash,
+        JSON.stringify([{ variantId: posVariant, quantityMilli: 1000 }]),
+        JSON.stringify([{ paymentMethodId: cashMethod, amountCentavos: 9900, tenderedCentavos: 10000 }]),
+        JSON.stringify(selection),
+        key,
+      ],
+    )
+  const posSnapshot = async () =>
+    (
+      await observer.query(
+        `select jsonb_build_object(
+    'sales',(select count(*) from app.sales where tenant_id=$1),
+    'snapshots',(select count(*) from app.pos_sale_discount_snapshots where tenant_id=$1),
+    'payments',(select count(*) from app.sale_payments where tenant_id=$1),
+    'cash',(select coalesce(sum(amount),0) from app.cash_movements where tenant_id=$1 and movement_type='cash_sale'),
+    'stock',(select round(on_hand*1000) from app.inventory_balances where tenant_id=$1 and location_id=$2 and variant_id=$3),
+    'movements',(select count(*) from app.inventory_movements where tenant_id=$1 and variant_id=$3),
+    'requests',(select count(*) from app.idempotency_records where tenant_id=$1 and operation='pos-sale.complete'),
+    'receiptSequence',(select coalesce(sum(last_number),0) from app.receipt_counters where tenant_id=$1)
+  ) state`,
+        [tenant, location, posVariant],
+      )
+    ).rows[0].state
+  const beforePos = await posSnapshot()
+  await first.query('begin')
+  const firstPos = (await posSale(first, 'pos-discount-race-sale')).rows[0].response
+  const posReplay = posSale(second, 'pos-discount-race-sale')
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await posReplay).rows[0].response, firstPos)
+  const afterPos = await posSnapshot()
+  assert.equal(afterPos.sales, beforePos.sales + 1)
+  assert.equal(afterPos.snapshots, beforePos.snapshots + 1)
+  assert.equal(afterPos.stock, 9000)
+  assert.equal(firstPos.totalCentavos, 9900)
+  await first.query('begin')
+  await first.query('select app.manage_retail_discount($1,$2,$3::jsonb,$4,$4)', [
+    actor,
+    tenant,
+    JSON.stringify({
+      action: 'update',
+      discountId: posConfig.id,
+      expectedRevision: 1,
+      name: 'POS Race Updated',
+      value: { kind: 'fixed', amountMinor: 100 },
+      status: 'active',
+    }),
+    'pos-discount-race-edit',
+  ])
+  const stalePos = posSale(second, 'pos-discount-race-stale').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await stalePos, 'HCDP1')
+  assert.deepEqual(await posSnapshot(), afterPos)
+  await first.query('begin')
+  await first.query(
+    "delete from app.role_permissions where tenant_id=$1 and role_id=$2 and permission_code='discounts.apply'",
+    [tenant, posRole],
+  )
+  const revokedPos = posSale(second, 'pos-discount-race-sale').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await revokedPos, 'HCS93')
+  assert.deepEqual(await posSnapshot(), afterPos)
+  await observer.query(
+    "insert into app.role_permissions(tenant_id,role_id,permission_code) values($1,$2,'discounts.apply')",
+    [tenant, posRole],
+  )
+  assert.deepEqual((await posSale(observer, 'pos-discount-race-sale')).rows[0].response, firstPos)
+  await observer.query(
+    "update app.pos_employee_sessions set expires_at=clock_timestamp()+interval '1 second' where token_hash=$1",
+    [posHash],
+  )
+  await first.query('begin')
+  await first.query('select 1 from app.register_sessions where tenant_id=$1 and id=$2 for update', [
+    tenant,
+    posOpen.registerSessionId,
+  ])
+  const expiredPos = posSale(second, 'pos-discount-race-expired', { ...posSelection, expectedRevision: 2 }).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await delay(1100)
+  await first.query('commit')
+  assert.equal(await expiredPos, 'HCS90')
+  assert.deepEqual(await posSnapshot(), afterPos)
+  await observer.query(
+    "update app.pos_employee_sessions set expires_at=clock_timestamp()+interval '1 hour' where token_hash=$1",
+    [posHash],
+  )
+  await first.query('begin')
+  await first.query("update app.tenants set status='suspended' where id=$1", [tenant])
+  const suspendedPos = posSale(second, 'pos-discount-race-sale').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await suspendedPos, 'HCS90')
+  assert.deepEqual(await posSnapshot(), afterPos)
+  console.log(
+    'POS discount concurrency passed: same-key single net sale, queued definition edit, revoked cashier replay, expired register-lock waiter and suspended tenant all preserve exact financial/stock effects.',
+  )
+  await observer.query("update app.tenants set status='active' where id=$1", [tenant])
+  const reversePos = (client, key, saleId = firstPos.saleId) =>
+    client.query(
+      "select app.reverse_sale($1,$2,$3,'void',null,'Disposable net discount reversal',$4,'ignored-client-hash',$4) response",
+      [actor, tenant, saleId, key],
+    )
+  const refundSnapshot = async () =>
+    (
+      await observer.query(
+        `select jsonb_build_object(
+    'refunds',(select count(*) from app.refunds where tenant_id=$1),
+    'refundAmount',(select coalesce(sum(amount),0) from app.refunds where tenant_id=$1),
+    'reversals',(select count(*) from app.payment_reversals where tenant_id=$1),
+    'cash',(select coalesce(sum(amount),0) from app.cash_movements where tenant_id=$1 and movement_type='cash_refund'),
+    'stock',(select on_hand from app.inventory_balances where tenant_id=$1 and location_id=$2 and variant_id=$3),
+    'stockMovements',(select count(*) from app.inventory_movements where tenant_id=$1 and variant_id=$3),
+    'requests',(select count(*) from app.idempotency_records where tenant_id=$1 and operation='sale.void')
+  ) state`,
+        [tenant, location, posVariant],
+      )
+    ).rows[0].state
+  const beforeRefund = await refundSnapshot()
+  await first.query('begin')
+  const firstRefund = (await reversePos(first, 'pos-refund-same-key')).rows[0].response
+  const sameRefund = reversePos(second, 'pos-refund-same-key')
+  await waitForLock()
+  await first.query('commit')
+  assert.deepEqual((await sameRefund).rows[0].response, firstRefund)
+  assert.equal(firstRefund.amountCentavos, 9900)
+  const afterRefund = await refundSnapshot()
+  assert.equal(afterRefund.refunds, beforeRefund.refunds + 1)
+  assert.equal(afterRefund.reversals, beforeRefund.reversals + 1)
+  assert.equal(afterRefund.stock, beforeRefund.stock + 1)
+  assert.equal(afterRefund.cash, beforeRefund.cash - 99)
+  const refundFixtureSale = async (key) => {
+    // Tenant suspension permanently revokes the earlier POS session. Each new
+    // positive fixture uses a fresh synthetic sign-in, never revives old tokens.
+    const freshHash = randomUUID().replaceAll('-', '').repeat(2)
+    await observer.query(
+      "insert into app.pos_employee_sessions(tenant_id,device_id,register_id,location_id,employee_id,token_hash,expires_at) values($1,$2,$3,$4,$5,$6,clock_timestamp()+interval '1 hour')",
+      [tenant, posDevice, posRegister, location, posEmployee, freshHash],
+    )
+    return (await posSale(observer, key, { ...posSelection, expectedRevision: 2 }, freshHash)).rows[0].response
+  }
+  const secondRefundSale = await refundFixtureSale('pos-refund-race-second-sale')
+  await first.query('begin')
+  await reversePos(first, 'pos-refund-distinct-first', secondRefundSale.saleId)
+  const competingRefund = reversePos(second, 'pos-refund-distinct-second', secondRefundSale.saleId).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await competingRefund, 'HCSA3')
+  const afterCompetition = await refundSnapshot()
+  assert.equal(afterCompetition.refunds, afterRefund.refunds + 1)
+  assert.equal(afterCompetition.stock, afterRefund.stock)
+  await first.query('begin')
+  await first.query("update app.tenants set status='suspended' where id=$1", [tenant])
+  const suspendedRefund = reversePos(second, 'pos-refund-same-key').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await suspendedRefund, 'HCSA0')
+  assert.deepEqual(await refundSnapshot(), afterCompetition)
+  await observer.query("update app.tenants set status='active' where id=$1", [tenant])
+  const closingRefundSale = await refundFixtureSale('pos-refund-register-sale')
+  const beforeClose = await refundSnapshot()
+  await first.query('begin')
+  await first.query(
+    "update app.register_sessions set status='closed',expected_cash=0,counted_cash=0,variance=0,closed_at=clock_timestamp() where tenant_id=$1 and id=$2",
+    [tenant, posOpen.registerSessionId],
+  )
+  const closingRefund = reversePos(second, 'pos-refund-closing-denial', closingRefundSale.saleId).then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await closingRefund, 'HCSA6')
+  assert.deepEqual(await refundSnapshot(), beforeClose)
+  assert.deepEqual((await reversePos(observer, 'pos-refund-same-key')).rows[0].response, firstRefund)
+  await first.query('begin')
+  await first.query("update app.tenant_memberships set status='suspended' where tenant_id=$1 and user_id=$2", [
+    tenant,
+    actor,
+  ])
+  const revokedRefund = reversePos(second, 'pos-refund-same-key').then(
+    () => 'unexpected-success',
+    (error) => error.code,
+  )
+  await waitForLock()
+  await first.query('commit')
+  assert.equal(await revokedRefund, 'HCSA0')
+  assert.deepEqual(await refundSnapshot(), beforeClose)
+  console.log(
+    'Discounted refund concurrency passed: same-key single payout/restock, competing distinct-key denial, queued tenant suspension, closing-register denial, and revoked-membership replay denial.',
+  )
 } finally {
   // Release any held fixture transaction before closing another session waiting on it.
   await first.query('rollback').catch(() => {})

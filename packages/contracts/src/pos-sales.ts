@@ -1,11 +1,26 @@
 import { z } from 'zod'
 import { paymentReferenceLastFourSchema } from './payment-references'
 import { posPricingModeSchema } from './pricing'
+import { retailDiscountSchema } from './retail-discounts'
 
 const id = z.uuid()
 const timestamp = z.iso.datetime({ offset: true })
+export const posDiscountSelectionSchema = z.strictObject({
+  discountId: id,
+  expectedRevision: z.number().int().min(1).max(2147483647),
+})
+export const posDiscountLineSnapshotSchema = z.object({
+  saleLineId: id,
+  variantId: id,
+  quantityMilli: z.number().int().positive(),
+  grossMinor: z.number().int().nonnegative(),
+  discountMinor: z.number().int().nonnegative(),
+  netMinor: z.number().int().nonnegative(),
+})
 
 export const posSalesContextSchema = z.object({
+  canApplyDiscount: z.boolean().optional(),
+  discounts: z.array(retailDiscountSchema).optional(),
   employee: z.object({ id, employeeCode: z.string(), displayName: z.string() }),
   device: z.object({
     id,
@@ -78,6 +93,7 @@ export const posSalePaymentRequestSchema = z.object({
 })
 
 export const posSaleCompleteRequestSchema = z.object({
+  discount: posDiscountSelectionSchema.nullable().optional(),
   lines: z
     .array(z.object({ variantId: id, quantityMilli: z.number().int().positive() }))
     .min(1)
@@ -96,6 +112,9 @@ export const posSaleCompleteRequestSchema = z.object({
 })
 
 export const posSaleCompleteResponseSchema = z.object({
+  discountCentavos: z.number().int().nonnegative().optional(),
+  discountSnapshot: retailDiscountSchema.nullable().optional(),
+  discountLines: z.array(posDiscountLineSnapshotSchema).optional(),
   saleId: id,
   receiptNumber: z.string(),
   status: z.literal('completed'),
@@ -111,6 +130,7 @@ export const posSaleCompleteResponseSchema = z.object({
       amountCentavos: z.number().int().positive(),
       tenderedCentavos: z.number().int().positive(),
       changeCentavos: z.number().int().nonnegative(),
+      referenceLastFour: paymentReferenceLastFourSchema.optional(),
     }),
   ),
   completedAt: timestamp,
@@ -149,6 +169,29 @@ export const salesContextSchema = z.object({
 })
 
 export const saleReceiptDetailSchema = z.object({
+  discountReturnSnapshot: z
+    .object({
+      subtotalMinor: z.number().int().positive(),
+      discountMinor: z.number().int().positive(),
+      totalMinor: z.number().int().positive(),
+      refundedMinor: z.number().int().nonnegative(),
+      lines: z
+        .array(
+          z.object({
+            saleLineId: id,
+            quantityMilli: z.number().int().positive(),
+            grossMinor: z.number().int().nonnegative(),
+            discountMinor: z.number().int().nonnegative(),
+            netMinor: z.number().int().nonnegative(),
+            refundedQuantityMilli: z.number().int().nonnegative(),
+            refundedMinor: z.number().int().nonnegative(),
+          }),
+        )
+        .min(1)
+        .max(200),
+    })
+    .optional(),
+  discountDefinitionSnapshot: retailDiscountSchema.optional(),
   id,
   receiptNumber: z.string(),
   channel: z.enum(['pos', 'wholesale']).default('pos'),
@@ -224,6 +267,7 @@ export const saleRefundRequestSchema = z.object({
         saleLineId: id,
         quantityMilli: z.number().int().positive(),
         returnToStock: z.boolean(),
+        expectedAmountCentavos: z.number().int().min(1).max(99_999_999_999).optional(),
       }),
     )
     .min(1)

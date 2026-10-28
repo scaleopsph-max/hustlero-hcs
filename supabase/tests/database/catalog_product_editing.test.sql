@@ -8,7 +8,7 @@ select ok(not has_function_privilege(
   'anon', 'app.update_catalog_product(uuid,uuid,uuid,text,text,text,text,text,text)', 'EXECUTE'
 ), 'anon cannot update products directly');
 select ok(has_function_privilege(
-  'hcs_hyperdrive', 'app.update_catalog_product(uuid,uuid,uuid,text,text,text,text,text,text)', 'EXECUTE'
+  'hcs_hyperdrive', 'app.update_catalog_product_selected_category(uuid,uuid,uuid,jsonb,text,text,text)', 'EXECUTE'
 ), 'API login can call product update');
 
 insert into auth.users (id, email, aud, role, email_confirmed_at) values
