@@ -1,5 +1,30 @@
 # Project State
 
+October 28 PCOUNT continuation: source candidate adds whole-count approval,
+current-policy recheck, guarded atomic variance posting and cancellation, plus
+private list/action APIs. Recount currently requires cancelling the stale count
+and creating a fresh count. Focused domain/contracts/API tests pass; disposable
+database and multi-session validation, Back Office UI and release are pending.
+Initial draft CI 40615847279 passed app checks but failed a test fixture query
+that selected a variant from two different counts; the assertion now scopes
+the count ID. No security assertion was relaxed and no hosted change occurred.
+
+October 28 PCOUNT draft candidate on `codex/inventory-count-workflow`: owner
+selected one whole-count approval when any variance exceeds the existing
+threshold; approval does not post stock, and Owner/Manager posts separately.
+Source adds strict contracts, pure role/variance helpers, local draft/count-entry
+SQL and scoped API. 31 focused domain/contracts/API tests and API typecheck/lint
+passed at this checkpoint. Database execution, concurrent/security QA, UI,
+submission/approval/posting, stale recount and live deployment remain outstanding.
+No stock posting function or hosted database change was performed.
+
+October 28 inventory count continuation: local pure variance/staleness preview
+implemented, with 11 focused tests and domain typecheck passed. No posting,
+authorization, persistence, API, UI, migration or deployment yet. Owner and
+Manager create/post; authorized staff count. Continue with the complete guarded
+workflow and existing adjustment approval integration; see
+qa/INVENTORY_COUNT_PREVIEW_2026-10-28.md. This checkpoint is uncommitted.
+
 October 28 discounted-cash reversal integration source candidate: atomic original
 snapshot net refunds/voids, guarded replay/current branch authority, cash/stock/
 loyalty effects and immutable receipt breakdown implemented. Back Office uses

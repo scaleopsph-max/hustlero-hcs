@@ -2,6 +2,14 @@ import { z } from 'zod'
 
 const id = z.uuid()
 export const workforceContextSchema = z.object({
+  canManageCountAccess: z.boolean().optional(),
+  unlinkedAccounts: z.array(z.object({ userId: id, email: z.email() })).optional(),
+  pendingEmployeeInvitations: z
+    .array(
+      z.object({ invitationId: id, employeeId: id, email: z.email(), expiresAt: z.iso.datetime({ offset: true }) }),
+    )
+    .max(100)
+    .optional(),
   locations: z.array(
     z.object({
       id,
@@ -30,6 +38,9 @@ export const workforceContextSchema = z.object({
       hasPosPin: z.boolean(),
       roleIds: z.array(id),
       locationIds: z.array(id),
+      hasBackOfficeAccount: z.boolean().optional(),
+      accountLinked: z.boolean().optional(),
+      countAccessLocationIds: z.array(id).optional(),
     }),
   ),
   registers: z.array(
@@ -58,6 +69,7 @@ export const employeeCreateRequestSchema = z.strictObject({
   pin: z.string().regex(/^\d{4,6}$/),
 })
 export const employeeCreateResponseSchema = z.object({ employeeId: id, status: z.literal('created') })
+export const employeeAccountLinkSchema = z.strictObject({ employeeId: id, userId: id })
 export const registerCreateRequestSchema = z.strictObject({
   locationId: id,
   code: z.string().trim().min(2).max(32),

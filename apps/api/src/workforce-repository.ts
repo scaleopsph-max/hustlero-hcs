@@ -3,6 +3,7 @@ import {
   locationCreateResponseSchema,
   registerCreateResponseSchema,
   workforceContextSchema,
+  employeeAccountLinkSchema,
   type EmployeeCreateRequest,
   type LocationCreateRequest,
   type RegisterCreateRequest,
@@ -12,6 +13,14 @@ import { Client } from 'pg'
 import type { Bindings } from './env'
 
 export type WorkforceLoader = (userId: string, tenantId: string, bindings: Bindings) => Promise<WorkforceContext>
+export type EmployeeAccountLinker = (
+  actor: string,
+  tenant: string,
+  command: { employeeId: string; userId: string },
+  key: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<{ employeeId: string; userId: string }>
 export type LocationCreator = (
   userId: string,
   tenantId: string,
@@ -49,6 +58,23 @@ async function query(bindings: Bindings, text: string, values: unknown[]) {
     await client.end()
   }
 }
+export const linkEmployeeAccountInPostgres: EmployeeAccountLinker = async (
+  actor,
+  tenant,
+  command,
+  key,
+  requestId,
+  bindings,
+) =>
+  employeeAccountLinkSchema.parse(
+    (
+      await query(
+        bindings,
+        'select app.link_existing_employee_account($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5::text,$6::text) response',
+        [actor, tenant, command.employeeId, command.userId, key, requestId],
+      )
+    ).rows[0]?.response,
+  )
 export const loadWorkforceFromPostgres: WorkforceLoader = async (userId, tenantId, bindings) =>
   workforceContextSchema.parse(
     (await query(bindings, 'select app.list_workforce_context($1::uuid,$2::uuid) context', [userId, tenantId])).rows[0]

@@ -14,6 +14,9 @@ import {
   type WorkforceContext,
 } from '@hcs/contracts'
 import { Button, Chip, Glass } from '@hcs/ui'
+import { CountStaffAccess } from './CountStaffAccess'
+import { EmployeeAccountLink } from './EmployeeAccountLink'
+import { EmployeeInvitationOwner } from './EmployeeInvitationOwner'
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -34,6 +37,7 @@ export function WorkforceWorkspace({ focus = 'employees' }: { focus?: 'employees
   const [auth] = useState(() => (supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null))
   const [token, setToken] = useState<string | null>(null)
   const [tenantId, setTenantId] = useState<string | null>(null)
+  const [actorId, setActorId] = useState<string | null>(null)
   const [data, setData] = useState<WorkforceContext>({ locations: [], roles: [], employees: [], registers: [] })
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -68,6 +72,7 @@ export function WorkforceWorkspace({ focus = 'employees' }: { focus?: 'employees
         if (!sessionData.session) throw new Error('Sign in to manage the business.')
         setToken(sessionData.session.access_token)
         const session = sessionContextResponseSchema.parse(await call('/v1/me', sessionData.session.access_token, ''))
+        setActorId(session.userId)
         const tenant = selectActiveTenant(session.tenants)
         if (!tenant) throw new Error('Create a business first.')
         setTenantId(tenant.tenantId)
@@ -307,6 +312,33 @@ export function WorkforceWorkspace({ focus = 'employees' }: { focus?: 'employees
               <p className="text-sm text-ink-500">No employees yet.</p>
             )}
           </section>
+          {focus === 'employees' && actorId && tenantId && token ? (
+            <EmployeeInvitationOwner
+              actor={actorId}
+              tenant={tenantId}
+              token={token}
+              data={data}
+              refresh={() => load(token, tenantId)}
+            />
+          ) : null}
+          {focus === 'employees' && actorId && tenantId && token ? (
+            <EmployeeAccountLink
+              actor={actorId}
+              tenant={tenantId}
+              token={token}
+              data={data}
+              refresh={() => load(token, tenantId)}
+            />
+          ) : null}
+          {focus === 'employees' && actorId && tenantId && token ? (
+            <CountStaffAccess
+              actor={actorId}
+              tenant={tenantId}
+              token={token}
+              data={data}
+              refresh={() => load(token, tenantId)}
+            />
+          ) : null}
           <section>
             <h3 className="mb-2 text-xs font-semibold uppercase text-ink-500">Locations</h3>
             {data.locations.map((l) => (

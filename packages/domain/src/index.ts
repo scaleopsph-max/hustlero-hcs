@@ -1,5 +1,12 @@
 export { canUseCapability, type ActorType, type RequestContext } from './request-context'
 export {
+  canPerformInventoryCountAction,
+  previewInventoryCount,
+  type InventoryCountSnapshot,
+  type InventoryCountEntry,
+  type InventoryCountCurrentBalance,
+} from './inventory-count'
+export {
   quoteRetailDiscountReturn,
   type RetailDiscountReturnSnapshot,
   type RetailDiscountReturnSelection,

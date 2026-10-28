@@ -12,10 +12,15 @@ export default function InventoryPage() {
         title="Inventory"
         subtitle="Stock is stored per location and changes only through recorded movements."
         actions={
-          <Link href="/inventory/opening" className={buttonClasses({ variant: 'primary', size: 'sm' })}>
-            <Plus size={18} strokeWidth={2} className="mr-2" />
-            Opening inventory
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/inventory/counts" className={buttonClasses({ variant: 'secondary', size: 'sm' })}>
+              Inventory counts
+            </Link>
+            <Link href="/inventory/opening" className={buttonClasses({ variant: 'primary', size: 'sm' })}>
+              <Plus size={18} strokeWidth={2} className="mr-2" />
+              Opening inventory
+            </Link>
+          </div>
         }
       />
       <StockExplorer />

@@ -423,6 +423,14 @@ export default function SetupPage() {
         ) : null}
       </header>
 
+      {user && mode !== 'update-password' ? (
+        <p className="pt-4 text-sm">
+          <a href="/invitations" className="underline">
+            View business invitations
+          </a>
+        </p>
+      ) : null}
+
       <div className="grid gap-10 pt-10 md:grid-cols-[minmax(0,1.4fr)_minmax(260px,0.9fr)]">
         <section className="min-w-0">
           {loading ? (

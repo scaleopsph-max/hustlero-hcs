@@ -373,6 +373,7 @@ export {
 export {
   employeeCreateRequestSchema,
   employeeCreateResponseSchema,
+  employeeAccountLinkSchema,
   locationCreateRequestSchema,
   locationCreateResponseSchema,
   registerCreateRequestSchema,
@@ -412,4 +413,24 @@ export * from './payment-references'
 export * from './wholesale-returns'
 export * from './catalog-import-execution'
 export * from './retail-discounts'
+export * from './employee-invitations'
 export { posDiscountSelectionSchema, posDiscountLineSnapshotSchema } from './pos-sales'
+export {
+  inventoryCountCreateSchema,
+  inventoryCountEntrySchema,
+  inventoryCountSubmitSchema,
+  inventoryCountDecisionSchema,
+  inventoryCountPostSchema,
+  inventoryCountCancelSchema,
+  inventoryCountStaffAccessSchema,
+  inventoryCountDraftSchema,
+  inventoryCountListSchema,
+  type InventoryCountCreate,
+  type InventoryCountEntryCommand,
+  type InventoryCountDraft,
+  type InventoryCountList,
+  type InventoryCountSubmit,
+  type InventoryCountDecision,
+  type InventoryCountPost,
+  type InventoryCountStaffAccess,
+} from './inventory-count'

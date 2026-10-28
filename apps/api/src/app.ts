@@ -21,7 +21,41 @@ import {
   wholesaleReturnsContextSchema,
 } from '@hcs/contracts'
 import { quoteWholesaleReturn, wholesaleReturnSettlement, planCatalogImport } from '@hcs/domain'
+import {
+  inventoryCountCreateSchema,
+  inventoryCountEntrySchema,
+  inventoryCountDraftSchema,
+  inventoryCountListSchema,
+  inventoryCountSubmitSchema,
+  inventoryCountDecisionSchema,
+  inventoryCountPostSchema,
+  inventoryCountCancelSchema,
+  inventoryCountStaffAccessSchema,
+} from '@hcs/contracts'
+import {
+  createInventoryCountInPostgres,
+  enterInventoryCountInPostgres,
+  loadInventoryCountFromPostgres,
+  listInventoryCountsFromPostgres,
+  commandInventoryCountInPostgres,
+  setInventoryCountStaffAccessInPostgres,
+  type InventoryCountCreator,
+  type InventoryCountEnterer,
+  type InventoryCountLoader,
+  type InventoryCountListLoader,
+  type InventoryCountActionCommander,
+  type InventoryCountAction,
+  type InventoryCountStaffAccessCommander,
+} from './inventory-count-repository'
 import { z } from 'zod'
+import {
+  employeeInvitationCreateSchema,
+  employeeInvitationIssuedSchema,
+  employeeInvitationListSchema,
+  employeeInvitationAcceptedSchema,
+  employeeInvitationRevokedSchema,
+} from '@hcs/contracts'
+import { employeeInvitationsInPostgres, type EmployeeInvitationRepository } from './employee-invitations-repository'
 import {
   saveCatalogImportJobInPostgres,
   loadCatalogImportJobsFromPostgres,
@@ -83,6 +117,7 @@ import {
   transferReceiveResponseSchema,
   employeeCreateRequestSchema,
   employeeCreateResponseSchema,
+  employeeAccountLinkSchema,
   locationCreateRequestSchema,
   locationCreateResponseSchema,
   registerCreateRequestSchema,
@@ -465,13 +500,16 @@ import {
   createLocationInPostgres,
   createRegisterInPostgres,
   loadWorkforceFromPostgres,
+  linkEmployeeAccountInPostgres,
   type EmployeeCreator,
   type LocationCreator,
   type RegisterCreator,
   type WorkforceLoader,
+  type EmployeeAccountLinker,
 } from './workforce-repository'
 
 interface AppDependencies {
+  employeeInvitations: EmployeeInvitationRepository
   verifyAccessToken: AccessTokenVerifier
   loadSessionAccess: SessionAccessLoader
   bootstrapTenant: TenantBootstrapper
@@ -487,6 +525,12 @@ interface AppDependencies {
   loadCatalogImportExecution: CatalogImportExecutionLoader
   executeCatalogImport: CatalogImportExecutor
   loadCatalogCategories: CatalogCategoriesLoader
+  createInventoryCount: InventoryCountCreator
+  enterInventoryCount: InventoryCountEnterer
+  loadInventoryCount: InventoryCountLoader
+  listInventoryCounts: InventoryCountListLoader
+  commandInventoryCount: InventoryCountActionCommander
+  setInventoryCountStaffAccess: InventoryCountStaffAccessCommander
   manageCatalogCategory: CatalogCategoryCommander
   loadRetailDiscounts: RetailDiscountLoader
   manageRetailDiscount: RetailDiscountCommander
@@ -539,6 +583,7 @@ interface AppDependencies {
   dispatchTransfer: TransferDispatcher
   receiveTransfer: TransferReceiver
   loadWorkforce: WorkforceLoader
+  linkEmployeeAccount: EmployeeAccountLinker
   createLocation: LocationCreator
   createEmployee: EmployeeCreator
   createRegister: RegisterCreator
@@ -609,6 +654,12 @@ const defaultDependencies: AppDependencies = {
   loadCatalogImportExecution: loadCatalogImportExecutionFromPostgres,
   executeCatalogImport: executeCatalogImportInPostgres,
   loadCatalogCategories: loadCatalogCategoriesFromPostgres,
+  createInventoryCount: createInventoryCountInPostgres,
+  enterInventoryCount: enterInventoryCountInPostgres,
+  loadInventoryCount: loadInventoryCountFromPostgres,
+  listInventoryCounts: listInventoryCountsFromPostgres,
+  commandInventoryCount: commandInventoryCountInPostgres,
+  setInventoryCountStaffAccess: setInventoryCountStaffAccessInPostgres,
   manageCatalogCategory: manageCatalogCategoryInPostgres,
   loadRetailDiscounts: loadRetailDiscountsFromPostgres,
   manageRetailDiscount: manageRetailDiscountInPostgres,
@@ -661,6 +712,8 @@ const defaultDependencies: AppDependencies = {
   dispatchTransfer: dispatchTransferInPostgres,
   receiveTransfer: receiveTransferInPostgres,
   loadWorkforce: loadWorkforceFromPostgres,
+  linkEmployeeAccount: linkEmployeeAccountInPostgres,
+  employeeInvitations: employeeInvitationsInPostgres,
   createLocation: createLocationInPostgres,
   createEmployee: createEmployeeInPostgres,
   createRegister: createRegisterInPostgres,
@@ -2453,6 +2506,301 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
         : undefined
     return tenant ? { userId: user.userId, tenantId: tenant.tenantId } : null
   }
+
+  app.on(
+    ['GET', 'POST'],
+    ['/v1/employee-invitations', '/v1/employee-invitations/:id/:action'],
+    bodyLimit({ maxSize: 4096 }),
+    async (context) => {
+      context.header('Cache-Control', 'private, no-store')
+      const fail = (code: string, message: string, status: 400 | 401 | 403 | 404 | 409) =>
+        context.json(
+          apiErrorResponseSchema.parse({ error: { code, message, requestId: context.get('requestId') } }),
+          status,
+        )
+      const token = readBearerToken(context.req.header('authorization'))
+      if (!token) return fail('AUTHENTICATION_REQUIRED', 'Sign in to use invitations.', 401)
+      const user = await dependencies.verifyAccessToken(token, context.env)
+      if (!user) return fail('AUTHENTICATION_REQUIRED', 'Sign in to use invitations.', 401)
+      const id = context.req.param('id'),
+        action = context.req.param('action')
+      if (id && !z.uuid().safeParse(id).success) return fail('INVITATION_NOT_FOUND', 'Invitation not found.', 404)
+      try {
+        if (context.req.method === 'GET' && !id)
+          return context.json(
+            employeeInvitationListSchema.parse(await dependencies.employeeInvitations.list(user.userId, context.env)),
+          )
+        if (context.req.method !== 'POST') return fail('INVITATION_NOT_FOUND', 'Invitation not found.', 404)
+        const key = context.req.header('idempotency-key')
+        if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+          return fail('IDEMPOTENCY_KEY_REQUIRED', 'A valid request key is required.', 400)
+        if (id && action === 'accept')
+          return context.json(
+            employeeInvitationAcceptedSchema.parse(
+              await dependencies.employeeInvitations.accept(
+                user.userId,
+                id,
+                key,
+                context.get('requestId'),
+                context.env,
+              ),
+            ),
+          )
+        const scope = await resolveWholesaleTenant(context)
+        if (!scope) return fail('INVITATION_ACCESS_DENIED', 'Select an authorized business.', 403)
+        if (id && action === 'revoke')
+          return context.json(
+            employeeInvitationRevokedSchema.parse(
+              await dependencies.employeeInvitations.revoke(
+                scope.userId,
+                scope.tenantId,
+                id,
+                key,
+                context.get('requestId'),
+                context.env,
+              ),
+            ),
+          )
+        if (id) return fail('INVITATION_NOT_FOUND', 'Invitation not found.', 404)
+        const command = employeeInvitationCreateSchema.safeParse(await context.req.json().catch(() => null))
+        if (!command.success) return fail('INVALID_INVITATION', 'Check employee and email.', 400)
+        return context.json(
+          employeeInvitationIssuedSchema.parse(
+            await dependencies.employeeInvitations.create(
+              scope.userId,
+              scope.tenantId,
+              command.data,
+              key,
+              context.get('requestId'),
+              context.env,
+            ),
+          ),
+          201,
+        )
+      } catch (error) {
+        const code = postgresErrorCode(error)
+        if (code === 'HCPC0')
+          return fail('INVITATION_ACCESS_DENIED', 'Owner access or a verified email is required.', 403)
+        if (code === 'HCPC1') return fail('INVITATION_NOT_FOUND', 'Invitation or employee not found.', 404)
+        if (code === 'HCPC2') return fail('INVALID_INVITATION', 'Check invitation details.', 400)
+        if (code === 'HCPC3' || code === 'HCS08')
+          return fail('INVITATION_CONFLICT', 'Invitation is unavailable or conflicts with an existing request.', 409)
+        throw error
+      }
+    },
+  )
+  app.post('/v1/workforce/employee-account-link', bodyLimit({ maxSize: 4096 }), async (context) => {
+    context.header('Cache-Control', 'private, no-store')
+    const fail = (code: string, message: string, status: 400 | 401 | 403 | 404 | 409) =>
+      context.json(
+        apiErrorResponseSchema.parse({ error: { code, message, requestId: context.get('requestId') } }),
+        status,
+      )
+    if (!readBearerToken(context.req.header('authorization')))
+      return fail('AUTHENTICATION_REQUIRED', 'Sign in to link an account.', 401)
+    const scope = await resolveWholesaleTenant(context)
+    if (!scope) return fail('WORKFORCE_ACCESS_DENIED', 'Select an authorized business.', 403)
+    const key = context.req.header('idempotency-key')
+    if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+      return fail('IDEMPOTENCY_KEY_REQUIRED', 'A valid request key is required.', 400)
+    const parsed = employeeAccountLinkSchema.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success) return fail('INVALID_EMPLOYEE_LINK', 'Check employee and account.', 400)
+    try {
+      return context.json(
+        employeeAccountLinkSchema.parse(
+          await dependencies.linkEmployeeAccount(
+            scope.userId,
+            scope.tenantId,
+            parsed.data,
+            key,
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+      )
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCPC0') return fail('WORKFORCE_ACCESS_DENIED', 'Owner access is required.', 403)
+      if (code === 'HCPC1')
+        return fail('WORKFORCE_REFERENCE_NOT_FOUND', 'Active employee and business member are required.', 404)
+      if (code === 'HCPC2') return fail('INVALID_EMPLOYEE_LINK', 'Check employee and account.', 400)
+      if (code === 'HCPC3' || code === 'HCS08')
+        return fail('WORKFORCE_CONFLICT', 'Account or employee is already linked, or request key conflicts.', 409)
+      throw error
+    }
+  })
+  app.post('/v1/inventory/count-staff-access', bodyLimit({ maxSize: 4096 }), async (context) => {
+    context.header('Cache-Control', 'private, no-store')
+    const fail = (code: string, message: string, status: 400 | 401 | 403 | 404 | 409) =>
+      context.json(
+        apiErrorResponseSchema.parse({ error: { code, message, requestId: context.get('requestId') } }),
+        status,
+      )
+    if (!readBearerToken(context.req.header('authorization')))
+      return fail('AUTHENTICATION_REQUIRED', 'Sign in to manage count access.', 401)
+    const scope = await resolveWholesaleTenant(context)
+    if (!scope) return fail('INVENTORY_COUNT_ACCESS_DENIED', 'Select an authorized business.', 403)
+    const key = context.req.header('idempotency-key')
+    if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+      return fail('IDEMPOTENCY_KEY_REQUIRED', 'A valid request key is required.', 400)
+    const parsed = inventoryCountStaffAccessSchema.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success) return fail('INVALID_INVENTORY_COUNT', 'Check employee, branch and access.', 400)
+    try {
+      return context.json(
+        inventoryCountStaffAccessSchema.parse(
+          await dependencies.setInventoryCountStaffAccess(
+            scope.userId,
+            scope.tenantId,
+            parsed.data,
+            key,
+            context.get('requestId'),
+            context.env,
+          ),
+        ),
+      )
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      if (code === 'HCPC0') return fail('INVENTORY_COUNT_ACCESS_DENIED', 'Owner access is required.', 403)
+      if (code === 'HCPC1')
+        return fail('INVENTORY_COUNT_NOT_FOUND', 'An active linked employee and assigned branch are required.', 404)
+      if (code === 'HCPC2') return fail('INVALID_INVENTORY_COUNT', 'Check employee, branch and access.', 400)
+      if (code === 'HCS08') return fail('IDEMPOTENCY_KEY_CONFLICT', 'Request key belongs to a different command.', 409)
+      throw error
+    }
+  })
+  app.use('/v1/inventory/counts', async (context, next) => {
+    context.header('Cache-Control', 'private, no-store')
+    await next()
+  })
+  app.use('/v1/inventory/counts/*', async (context, next) => {
+    context.header('Cache-Control', 'private, no-store')
+    await next()
+  })
+  app.on(
+    ['GET', 'POST'],
+    ['/v1/inventory/counts', '/v1/inventory/counts/:countId', '/v1/inventory/counts/:countId/:action'],
+    bodyLimit({
+      maxSize: 64 * 1024,
+      onError: (context) =>
+        context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'INVENTORY_COUNT_TOO_LARGE',
+              message: 'Inventory count request exceeds 64 KB.',
+              requestId: context.get('requestId'),
+            },
+          }),
+          413,
+        ),
+    }),
+    async (context) => {
+      const fail = (code: string, message: string, status: 400 | 401 | 403 | 404 | 409) =>
+        context.json(
+          apiErrorResponseSchema.parse({ error: { code, message, requestId: context.get('requestId') } }),
+          status,
+        )
+      if (!readBearerToken(context.req.header('authorization')))
+        return fail('AUTHENTICATION_REQUIRED', 'Sign in to use inventory counts.', 401)
+      const scope = await resolveWholesaleTenant(context)
+      if (!scope) return fail('INVENTORY_COUNT_ACCESS_DENIED', 'Select an authorized business.', 403)
+      const countId = context.req.param('countId')
+      if (countId && !z.uuid().safeParse(countId).success)
+        return fail('INVENTORY_COUNT_NOT_FOUND', 'Inventory count not found.', 404)
+      const action = context.req.param('action')
+      try {
+        if (context.req.method === 'GET') {
+          if (!countId)
+            return context.json(
+              inventoryCountListSchema.parse(
+                await dependencies.listInventoryCounts(scope.userId, scope.tenantId, context.env),
+              ),
+            )
+          if (action) return fail('INVENTORY_COUNT_NOT_FOUND', 'Inventory count not found.', 404)
+          return context.json(
+            inventoryCountDraftSchema.parse(
+              await dependencies.loadInventoryCount(scope.userId, scope.tenantId, countId, context.env),
+            ),
+          )
+        }
+        if (countId && !['entries', 'submit', 'approval', 'post', 'cancel'].includes(action ?? ''))
+          return fail('INVENTORY_COUNT_NOT_FOUND', 'Inventory count not found.', 404)
+        const key = context.req.header('idempotency-key')
+        if (!key || !/^[A-Za-z0-9_-]{16,128}$/.test(key))
+          return fail('IDEMPOTENCY_KEY_REQUIRED', 'A valid request key is required.', 400)
+        const body: unknown = await context.req.json().catch(() => null)
+        if (action === 'entries' && countId) {
+          const parsed = inventoryCountEntrySchema.safeParse(body)
+          if (!parsed.success) return fail('INVALID_INVENTORY_COUNT', 'Check the count entries.', 400)
+          return context.json(
+            inventoryCountDraftSchema.parse(
+              await dependencies.enterInventoryCount(
+                scope.userId,
+                scope.tenantId,
+                countId,
+                parsed.data,
+                key,
+                context.get('requestId'),
+                context.env,
+              ),
+            ),
+          )
+        }
+        if (countId && action && ['submit', 'approval', 'post', 'cancel'].includes(action)) {
+          const schema =
+            action === 'submit'
+              ? inventoryCountSubmitSchema
+              : action === 'approval'
+                ? inventoryCountDecisionSchema
+                : action === 'post'
+                  ? inventoryCountPostSchema
+                  : inventoryCountCancelSchema
+          const parsed = schema.safeParse(body)
+          if (!parsed.success) return fail('INVALID_INVENTORY_COUNT', 'Check the count action.', 400)
+          return context.json(
+            inventoryCountDraftSchema.parse(
+              await dependencies.commandInventoryCount(
+                scope.userId,
+                scope.tenantId,
+                countId,
+                action as InventoryCountAction,
+                parsed.data,
+                key,
+                context.get('requestId'),
+                context.env,
+              ),
+            ),
+          )
+        }
+        const parsed = inventoryCountCreateSchema.safeParse(body)
+        if (!parsed.success) return fail('INVALID_INVENTORY_COUNT', 'Check the count location and products.', 400)
+        return context.json(
+          inventoryCountDraftSchema.parse(
+            await dependencies.createInventoryCount(
+              scope.userId,
+              scope.tenantId,
+              parsed.data,
+              key,
+              context.get('requestId'),
+              context.env,
+            ),
+          ),
+          201,
+        )
+      } catch (error) {
+        const code = postgresErrorCode(error)
+        if (code === 'HCPC0') return fail('INVENTORY_COUNT_ACCESS_DENIED', 'Inventory count access denied.', 403)
+        if (code === 'HCPC1') return fail('INVENTORY_COUNT_NOT_FOUND', 'Inventory count or item not found.', 404)
+        if (code === 'HCPC2' || code === '22P02')
+          return fail('INVALID_INVENTORY_COUNT', 'Check the count details.', 400)
+        if (code === 'HCPC3') return fail('INVENTORY_COUNT_CHANGED', 'Count changed; refresh before entering.', 409)
+        if (code === 'HCPC4')
+          return fail('INVENTORY_COUNT_CONFLICT', 'Stock or cost changed; review the count before posting.', 409)
+        if (code === 'HCS08')
+          return fail('IDEMPOTENCY_KEY_CONFLICT', 'Request key belongs to a different command.', 409)
+        throw error
+      }
+    },
+  )
 
   app.use('/v1/pos/*', async (context, next) => {
     context.header('Cache-Control', 'private, no-store')
