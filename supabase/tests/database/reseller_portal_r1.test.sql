@@ -25,7 +25,12 @@ where tenant_id in ('2e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-
 select is((select count(*)::integer from app.tenant_entitlements
   where tenant_id = '2e100000-0000-4000-8000-000000000001' and feature_code = 'reseller_portal' and not entitled), 1,
   'new tenants receive a disabled reseller portal entitlement');
-select ok(exists(select 1 from app.permissions where code = 'reseller_portal.manage'), 'portal management permission exists');
+select ok(exists(select 1 from app.role_permissions rp join app.roles r on r.tenant_id = rp.tenant_id and r.id = rp.role_id
+  where rp.tenant_id = '2e100000-0000-4000-8000-000000000001' and r.code = 'admin' and rp.permission_code = 'reseller_portal.manage'),
+  'the admin role receives portal management');
+select ok(not exists(select 1 from app.role_permissions rp join app.roles r on r.tenant_id = rp.tenant_id and r.id = rp.role_id
+  where rp.tenant_id = '2e100000-0000-4000-8000-000000000001' and r.code in ('manager', 'cashier') and rp.permission_code = 'reseller_portal.manage'),
+  'managers and cashiers do not manage the portal by default');
 
 select throws_ok($$ select app.load_reseller_portal_admin('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001') $$,
   'HCRP0', null, 'portal is unavailable until the entitlement is enabled');

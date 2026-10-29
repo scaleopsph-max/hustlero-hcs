@@ -32,13 +32,13 @@ insert into app.permissions (code, description) values
 on conflict (code) do update set description = excluded.description;
 
 insert into app.role_permissions (tenant_id, role_id, permission_code)
-select role.tenant_id, role.id, 'reseller_portal.manage' from app.roles role where lower(role.code::text) = 'owner'
+select role.tenant_id, role.id, 'reseller_portal.manage' from app.roles role where lower(role.code::text) in ('owner', 'admin')
 on conflict do nothing;
 
 create function app.initialize_owner_reseller_portal_permissions()
 returns trigger language plpgsql security definer set search_path = '' as $$
 begin
-  if lower(new.code::text) = 'owner' then
+  if lower(new.code::text) in ('owner', 'admin') then
     insert into app.role_permissions (tenant_id, role_id, permission_code)
     values (new.tenant_id, new.id, 'reseller_portal.manage') on conflict do nothing;
   end if;

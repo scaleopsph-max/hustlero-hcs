@@ -103,6 +103,13 @@ export const navGroups: NavGroup[] = [
         feature: 'advanced_wholesale',
         permission: 'wholesale_orders.read',
       },
+      {
+        label: 'Reseller portal',
+        href: '/reseller-portal',
+        icon: Users,
+        feature: 'reseller_portal',
+        permission: 'reseller_portal.manage',
+      },
     ],
   },
 ]

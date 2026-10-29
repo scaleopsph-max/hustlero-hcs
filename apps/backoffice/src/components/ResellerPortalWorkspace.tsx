@@ -1,0 +1,738 @@
+'use client'
+
+import {
+  resellerAccountInviteResponseSchema,
+  resellerAccountStatusResponseSchema,
+  resellerApplicationDecisionResponseSchema,
+  resellerOrderReviewResponseSchema,
+  resellerPortalAdminSchema,
+  resellerPortalSettingsResponseSchema,
+  sessionContextResponseSchema,
+  type ResellerOrderReviewRequest,
+  type ResellerPortalAdmin,
+} from '@hcs/contracts'
+import { Button, Chip, Glass, formatPeso } from '@hcs/ui'
+import { Check, Copy, RefreshCw, UserPlus, X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+
+import { selectActiveTenant } from '@/lib/active-tenant'
+import {
+  applicationLink,
+  approvalRequest,
+  commandKey,
+  orderReviewRequest,
+  rejectionRequest,
+  reviewReasonText,
+} from '@/lib/reseller-portal-admin'
+import { createClient } from '@/lib/supabase-browser'
+
+const api = process.env.NEXT_PUBLIC_API_URL
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+const portalOrigin = process.env.NEXT_PUBLIC_RESELLER_PORTAL_URL
+const control =
+  'min-h-10 w-full min-w-0 rounded-control border border-ink-900/15 bg-white px-3 text-sm outline-none focus:border-ink-900'
+const terms = [
+  ['prepaid', 'Prepaid'],
+  ['cod', 'Cash on delivery'],
+  ['net_7', 'Net 7'],
+  ['net_15', 'Net 15'],
+  ['net_30', 'Net 30'],
+] as const
+const stockTone = { in_stock: 'success', low_stock: 'warning', out_of_stock: 'critical' } as const
+const stockText = { in_stock: 'In stock', low_stock: 'Low', out_of_stock: 'Out' } as const
+
+type Scope = { token: string; tenantId: string }
+
+async function call(path: string, scope: Scope, body?: unknown, idempotencyKey?: string) {
+  if (!api) throw new Error('Back Office API URL is not configured.')
+  const response = await fetch(`${api.replace(/\/$/, '')}${path}`, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: {
+      Authorization: `Bearer ${scope.token}`,
+      'X-Tenant-Id': scope.tenantId,
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  })
+  const data: unknown = await response.json().catch(() => null)
+  if (!response.ok)
+    throw new Error((data as { error?: { message?: string } } | null)?.error?.message ?? 'Request failed.')
+  return data
+}
+
+export function ResellerPortalWorkspace() {
+  const [auth] = useState(() => (supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null))
+  const [scope, setScope] = useState<Scope | null>(null)
+  const [admin, setAdmin] = useState<ResellerPortalAdmin | null>(null)
+  const [busy, setBusy] = useState<string | null>('load')
+  const [error, setError] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const keys = useRef(new Map<string, string>())
+
+  const load = useCallback(async (next: Scope) => {
+    setAdmin(resellerPortalAdminSchema.parse(await call('/v1/reseller-portal/admin', next)))
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    void (async () => {
+      try {
+        if (!auth) throw new Error('Authentication is not configured.')
+        const { data } = await auth.auth.getSession()
+        if (!data.session) throw new Error('Sign in to manage the reseller portal.')
+        const token = data.session.access_token
+        const access = sessionContextResponseSchema.parse(await call('/v1/me', { token, tenantId: '' }))
+        const tenant = selectActiveTenant(access.tenants)
+        if (!tenant) throw new Error('Select a business first.')
+        const next = { token, tenantId: tenant.tenantId }
+        if (!active) return
+        setScope(next)
+        await load(next)
+      } catch (cause) {
+        if (active) setError(cause instanceof Error ? cause.message : 'Could not load the reseller portal.')
+      } finally {
+        if (active) setBusy(null)
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [auth, load])
+
+  /** Runs one command with a stable idempotency key per target, then reloads. */
+  async function run(target: string, path: string, body: unknown, parse: (value: unknown) => unknown, done: string) {
+    if (!scope) return
+    setBusy(target)
+    setError(null)
+    setMessage(null)
+    try {
+      parse(await call(path, scope, body, commandKey(keys.current, `${target}:${JSON.stringify(body)}`)))
+      keys.current.delete(`${target}:${JSON.stringify(body)}`)
+      setMessage(done)
+      await load(scope)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The change was not saved. Try again.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  if (!admin)
+    return (
+      <div className="px-6 pb-10">
+        {error ? <ErrorBanner text={error} /> : <p className="text-ink-500">Loading reseller portal…</p>}
+      </div>
+    )
+
+  const link = applicationLink(portalOrigin, admin.tenantSlug)
+  const pendingApplications = admin.applications.filter((application) => application.status === 'pending')
+
+  return (
+    <div className="flex flex-col gap-6 px-6 pb-10">
+      {error ? <ErrorBanner text={error} /> : null}
+      {message ? (
+        <p
+          role="status"
+          className="rounded-control bg-signal-light-success-bg px-4 py-3 text-sm text-signal-light-success-fg"
+        >
+          {message}
+        </p>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-3">
+        <Chip surface="light" tone={admin.reviewQueue.length ? 'attention' : 'neutral'}>
+          {`${admin.reviewQueue.length} order${admin.reviewQueue.length === 1 ? '' : 's'} for review`}
+        </Chip>
+        <Chip surface="light" tone={pendingApplications.length ? 'info' : 'neutral'}>
+          {`${pendingApplications.length} pending application${pendingApplications.length === 1 ? '' : 's'}`}
+        </Chip>
+        <Chip surface="light">{`${admin.accounts.filter((account) => account.status === 'active').length} active resellers`}</Chip>
+        <Button
+          size="sm"
+          className="ml-auto"
+          disabled={busy !== null || !scope}
+          onClick={() => scope && void run('refresh', '/v1/reseller-portal/admin', undefined, () => null, '')}
+        >
+          <RefreshCw size={16} className="mr-2" />
+          Refresh
+        </Button>
+      </div>
+
+      <SettingsCard
+        admin={admin}
+        busy={busy !== null}
+        link={link}
+        onSave={(body) =>
+          run(
+            'settings',
+            '/v1/reseller-portal/settings',
+            body,
+            (v) => resellerPortalSettingsResponseSchema.parse(v),
+            'Portal settings saved.',
+          )
+        }
+      />
+
+      <Section
+        title="Orders for review"
+        empty="No portal orders are waiting. Orders with stock and available credit confirm automatically."
+      >
+        {admin.reviewQueue.map((order) => (
+          <ReviewCard
+            key={order.id}
+            order={order}
+            busy={busy === `review:${order.id}`}
+            onDecide={(body) =>
+              run(
+                `review:${order.id}`,
+                `/v1/reseller-portal/orders/${order.id}/review`,
+                body,
+                (v) => resellerOrderReviewResponseSchema.parse(v),
+                body.decision === 'approve'
+                  ? `${order.orderNumber} confirmed and stock reserved.`
+                  : `${order.orderNumber} rejected.`,
+              )
+            }
+          />
+        ))}
+      </Section>
+
+      <Section title="Applications" empty="No applications yet. Share the application link with prospective resellers.">
+        {admin.applications.map((application) => (
+          <ApplicationCard
+            key={application.id}
+            application={application}
+            admin={admin}
+            busy={busy === `application:${application.id}`}
+            onDecide={(body) =>
+              run(
+                `application:${application.id}`,
+                `/v1/reseller-portal/applications/${application.id}/decision`,
+                body,
+                (v) => resellerApplicationDecisionResponseSchema.parse(v),
+                body.decision === 'approve'
+                  ? `${application.fullName} approved. They can now sign in with ${application.email}.`
+                  : `${application.fullName} rejected.`,
+              )
+            }
+          />
+        ))}
+      </Section>
+
+      <AccountsCard
+        admin={admin}
+        busy={busy}
+        onInvite={(body) =>
+          run(
+            'invite',
+            '/v1/reseller-portal/accounts',
+            body,
+            (v) => resellerAccountInviteResponseSchema.parse(v),
+            'Invitation saved. The reseller signs in with that email.',
+          )
+        }
+        onStatus={(accountId, status) =>
+          run(
+            `account:${accountId}`,
+            `/v1/reseller-portal/accounts/${accountId}/status`,
+            { status },
+            (v) => resellerAccountStatusResponseSchema.parse(v),
+            status === 'suspended' ? 'Portal access suspended.' : 'Portal access restored.',
+          )
+        }
+      />
+    </div>
+  )
+}
+
+function ErrorBanner({ text }: { text: string }) {
+  return (
+    <p
+      role="alert"
+      className="rounded-control bg-signal-light-critical-bg px-4 py-3 text-sm text-signal-light-critical-fg"
+    >
+      {text}
+    </p>
+  )
+}
+
+function Section({ title, empty, children }: { title: string; empty: string; children: React.ReactNode[] }) {
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="text-h4">{title}</h2>
+      {children.length === 0 ? <p className="text-sm text-ink-500">{empty}</p> : children}
+    </section>
+  )
+}
+
+function SettingsCard({
+  admin,
+  busy,
+  link,
+  onSave,
+}: {
+  admin: ResellerPortalAdmin
+  busy: boolean
+  link: string | null
+  onSave: (body: unknown) => void
+}) {
+  const [location, setLocation] = useState(admin.settings?.fulfillmentLocationId ?? admin.locations[0]?.id ?? '')
+  const [priceList, setPriceList] = useState(admin.settings?.defaultPriceListId ?? '')
+  const [open, setOpen] = useState(admin.settings?.applicationsOpen ?? true)
+  const [auto, setAuto] = useState(admin.settings?.autoConfirm ?? true)
+  const [copied, setCopied] = useState(false)
+
+  function submit(event: FormEvent) {
+    event.preventDefault()
+    onSave({
+      fulfillmentLocationId: location,
+      applicationsOpen: open,
+      autoConfirm: auto,
+      ...(priceList ? { defaultPriceListId: priceList } : {}),
+    })
+  }
+
+  return (
+    <Glass variant="light" className="rounded-panel p-5">
+      <form className="grid gap-4 md:grid-cols-2" onSubmit={submit}>
+        <div className="md:col-span-2">
+          <h2 className="text-h4">Portal settings</h2>
+          {!admin.settings ? (
+            <p className="text-sm text-signal-light-warning-fg">
+              Save these settings to open the portal and the application form.
+            </p>
+          ) : null}
+        </div>
+        <label className="flex flex-col gap-1.5 text-sm font-semibold">
+          Branch that fills portal orders
+          <select className={control} value={location} onChange={(event) => setLocation(event.target.value)} required>
+            {admin.locations.map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.name}
+              </option>
+            ))}
+          </select>
+          <span className="font-normal text-ink-500">Stock badges and reservations use this branch.</span>
+        </label>
+        <label className="flex flex-col gap-1.5 text-sm font-semibold">
+          Default price list for approvals
+          <select className={control} value={priceList} onChange={(event) => setPriceList(event.target.value)}>
+            <option value="">Choose on each approval</option>
+            {admin.priceLists.map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1 size-4"
+            checked={auto}
+            onChange={(event) => setAuto(event.target.checked)}
+          />
+          <span>
+            <span className="font-semibold">Auto-confirm orders</span>
+            <span className="block text-ink-500">
+              Confirm and reserve stock right away when stock and credit allow. Other orders wait for review.
+            </span>
+          </span>
+        </label>
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1 size-4"
+            checked={open}
+            onChange={(event) => setOpen(event.target.checked)}
+          />
+          <span>
+            <span className="font-semibold">Accept new applications</span>
+            <span className="block text-ink-500">
+              Anyone with the link can apply. Nobody gets access until you approve them.
+            </span>
+          </span>
+        </label>
+        <div className="flex flex-wrap items-center gap-3 md:col-span-2">
+          <Button type="submit" variant="confirm" disabled={busy || !location}>
+            Save settings
+          </Button>
+          {link ? (
+            <Button
+              size="sm"
+              onClick={() => {
+                void navigator.clipboard.writeText(link).then(() => setCopied(true))
+              }}
+            >
+              <Copy size={16} className="mr-2" />
+              {copied ? 'Link copied' : 'Copy application link'}
+            </Button>
+          ) : (
+            <span className="text-sm text-ink-500">
+              Application link: /apply?b={admin.tenantSlug} on the reseller portal
+            </span>
+          )}
+        </div>
+      </form>
+    </Glass>
+  )
+}
+
+function ReviewCard({
+  order,
+  busy,
+  onDecide,
+}: {
+  order: ResellerPortalAdmin['reviewQueue'][number]
+  busy: boolean
+  onDecide: (body: ResellerOrderReviewRequest) => void
+}) {
+  const [note, setNote] = useState('')
+  const [problem, setProblem] = useState<string | null>(null)
+  function decide(decision: 'approve' | 'reject') {
+    const request = orderReviewRequest(decision, note)
+    if (typeof request === 'string') return setProblem(request)
+    setProblem(null)
+    onDecide(request)
+  }
+  return (
+    <Glass variant="data" className="flex flex-col gap-3 rounded-panel p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-semibold">
+            {order.orderNumber} · {order.customerName}
+          </p>
+          <p className="text-sm text-ink-500">
+            {new Date(order.createdAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })} ·{' '}
+            {order.fulfillmentMethod === 'pickup'
+              ? `Pickup at ${order.locationName}`
+              : `Deliver to ${order.deliveryAddress ?? '—'}`}{' '}
+            · {order.paymentPreference === 'gcash' ? 'GCash' : 'Bank transfer'}
+          </p>
+        </div>
+        <p className="text-h4">{formatPeso(order.totalMinor)}</p>
+      </div>
+      {order.reviewReason ? (
+        <p className="rounded-control bg-signal-light-attention-bg px-3 py-2 text-sm text-signal-light-attention-fg">
+          {reviewReasonText[order.reviewReason]}
+        </p>
+      ) : null}
+      <table className="w-full text-sm">
+        <tbody>
+          {order.lines.map((line) => (
+            <tr key={line.id} className="border-t border-ink-900/10">
+              <td className="py-2">
+                {line.productName} {line.variantName} <span className="text-ink-500">{line.sku}</span>
+              </td>
+              <td className="py-2 text-right">{line.orderedQuantityMilli / 1000}</td>
+              <td className="py-2 text-right">{formatPeso(line.lineTotalMinor)}</td>
+              <td className="py-2 pl-3 text-right">
+                {line.stockStatus ? (
+                  <Chip surface="light" tone={stockTone[line.stockStatus]}>
+                    {stockText[line.stockStatus]}
+                  </Chip>
+                ) : null}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {order.notes ? <p className="text-sm text-ink-600">Reseller note: {order.notes}</p> : null}
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex min-w-60 flex-1 flex-col gap-1.5 text-sm font-semibold">
+          Note to reseller (required to reject)
+          <input className={control} maxLength={500} value={note} onChange={(event) => setNote(event.target.value)} />
+        </label>
+        <Button variant="confirm" disabled={busy} onClick={() => decide('approve')}>
+          <Check size={16} className="mr-2" />
+          Confirm and reserve
+        </Button>
+        <Button disabled={busy} onClick={() => decide('reject')}>
+          <X size={16} className="mr-2" />
+          Reject
+        </Button>
+      </div>
+      {problem ? <p className="text-sm text-signal-light-critical-fg">{problem}</p> : null}
+      <p className="text-caption text-ink-500">
+        Confirming rechecks stock and credit. Over-limit orders need an approved credit override in Wholesale approvals.
+      </p>
+    </Glass>
+  )
+}
+
+function ApplicationCard({
+  application,
+  admin,
+  busy,
+  onDecide,
+}: {
+  application: ResellerPortalAdmin['applications'][number]
+  admin: ResellerPortalAdmin
+  busy: boolean
+  onDecide: (body: Exclude<ReturnType<typeof approvalRequest>, string>) => void
+}) {
+  const matchingCustomer = admin.resellerCustomers.find(
+    (customer) => customer.email?.toLowerCase() === application.email.toLowerCase(),
+  )
+  const [form, setForm] = useState({
+    customerId: matchingCustomer?.id ?? '',
+    priceListId: admin.settings?.defaultPriceListId ?? '',
+    paymentTerm: 'prepaid',
+    creditLimit: '0',
+    note: '',
+  })
+  const [problem, setProblem] = useState<string | null>(null)
+  const pending = application.status === 'pending'
+
+  function decide(decision: 'approve' | 'reject') {
+    const request = decision === 'approve' ? approvalRequest(form) : rejectionRequest(form.note)
+    if (typeof request === 'string') return setProblem(request)
+    setProblem(null)
+    onDecide(request)
+  }
+
+  return (
+    <Glass variant="data" className="flex flex-col gap-3 rounded-panel p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-semibold">
+            {application.fullName}
+            {application.businessName ? ` · ${application.businessName}` : ''}
+          </p>
+          <p className="text-sm text-ink-500">
+            {application.email} · {application.phone}
+            {application.city ? ` · ${application.city}` : ''}
+          </p>
+          {application.message ? <p className="mt-1 text-sm text-ink-700">“{application.message}”</p> : null}
+        </div>
+        <Chip surface="light" tone={pending ? 'info' : application.status === 'approved' ? 'success' : 'neutral'}>
+          {pending ? 'Pending' : application.status === 'approved' ? 'Approved' : 'Rejected'}
+        </Chip>
+      </div>
+      {pending ? (
+        <>
+          <div className="grid gap-3 md:grid-cols-4">
+            <label className="flex flex-col gap-1.5 text-sm font-semibold">
+              Customer record
+              <select
+                className={control}
+                value={form.customerId}
+                onChange={(event) => setForm({ ...form, customerId: event.target.value })}
+              >
+                <option value="">Create a new reseller customer</option>
+                {admin.resellerCustomers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.fullName} ({customer.customerNumber})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5 text-sm font-semibold">
+              Price list
+              <select
+                className={control}
+                value={form.priceListId}
+                onChange={(event) => setForm({ ...form, priceListId: event.target.value })}
+              >
+                <option value="">Choose…</option>
+                {admin.priceLists.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5 text-sm font-semibold">
+              Payment terms
+              <select
+                className={control}
+                value={form.paymentTerm}
+                onChange={(event) => setForm({ ...form, paymentTerm: event.target.value })}
+              >
+                {terms.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5 text-sm font-semibold">
+              Credit limit (₱)
+              <input
+                className={control}
+                inputMode="decimal"
+                value={form.creditLimit}
+                onChange={(event) => setForm({ ...form, creditLimit: event.target.value })}
+              />
+            </label>
+          </div>
+          <p className="text-caption text-ink-500">
+            The credit limit caps confirmed orders that are not paid yet, even for prepaid terms. With ₱0, every portal
+            order waits for review.
+          </p>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex min-w-60 flex-1 flex-col gap-1.5 text-sm font-semibold">
+              Note (required to reject)
+              <input
+                className={control}
+                maxLength={500}
+                value={form.note}
+                onChange={(event) => setForm({ ...form, note: event.target.value })}
+              />
+            </label>
+            <Button variant="confirm" disabled={busy} onClick={() => decide('approve')}>
+              <Check size={16} className="mr-2" />
+              Approve
+            </Button>
+            <Button disabled={busy} onClick={() => decide('reject')}>
+              <X size={16} className="mr-2" />
+              Reject
+            </Button>
+          </div>
+          {problem ? <p className="text-sm text-signal-light-critical-fg">{problem}</p> : null}
+        </>
+      ) : application.decisionReason ? (
+        <p className="text-sm text-ink-600">Note: {application.decisionReason}</p>
+      ) : null}
+    </Glass>
+  )
+}
+
+function AccountsCard({
+  admin,
+  busy,
+  onInvite,
+  onStatus,
+}: {
+  admin: ResellerPortalAdmin
+  busy: string | null
+  onInvite: (body: unknown) => void
+  onStatus: (accountId: string, status: 'active' | 'suspended') => void
+}) {
+  const [customerId, setCustomerId] = useState('')
+  const [email, setEmail] = useState('')
+  const [priceListId, setPriceListId] = useState(admin.settings?.defaultPriceListId ?? '')
+  const statusTone = { invited: 'info', active: 'success', suspended: 'neutral' } as const
+
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="text-h4">Reseller accounts</h2>
+      <Glass variant="data" className="overflow-x-auto rounded-panel">
+        <table className="w-full min-w-[640px] text-sm">
+          <thead className="text-left text-ink-500">
+            <tr>
+              <th className="px-4 py-3">Reseller</th>
+              <th className="px-4 py-3">Sign-in email</th>
+              <th className="px-4 py-3">Price list</th>
+              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3" />
+            </tr>
+          </thead>
+          <tbody>
+            {admin.accounts.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-6 text-ink-500">
+                  No reseller accounts yet.
+                </td>
+              </tr>
+            ) : (
+              admin.accounts.map((account) => (
+                <tr key={account.id} className="border-t border-ink-900/10">
+                  <td className="px-4 py-3 font-semibold">
+                    {account.customerName} <span className="font-normal text-ink-500">{account.customerNumber}</span>
+                  </td>
+                  <td className="px-4 py-3">{account.email}</td>
+                  <td className="px-4 py-3">{account.priceListName}</td>
+                  <td className="px-4 py-3">
+                    <Chip surface="light" tone={statusTone[account.status]}>
+                      {account.status === 'invited'
+                        ? 'Invited, not signed in'
+                        : account.status === 'active'
+                          ? 'Active'
+                          : 'Suspended'}
+                    </Chip>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <Button
+                      size="sm"
+                      disabled={busy !== null}
+                      onClick={() => onStatus(account.id, account.status === 'suspended' ? 'active' : 'suspended')}
+                    >
+                      {account.status === 'suspended' ? 'Restore access' : 'Suspend'}
+                    </Button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </Glass>
+      {admin.resellerCustomers.length > 0 ? (
+        <Glass variant="light" className="rounded-panel p-5">
+          <form
+            className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end"
+            onSubmit={(event) => {
+              event.preventDefault()
+              onInvite({ customerId, email: email.trim(), priceListId })
+            }}
+          >
+            <label className="flex flex-col gap-1.5 text-sm font-semibold">
+              Invite an existing reseller
+              <select
+                className={control}
+                required
+                value={customerId}
+                onChange={(event) => {
+                  setCustomerId(event.target.value)
+                  setEmail(admin.resellerCustomers.find((customer) => customer.id === event.target.value)?.email ?? '')
+                }}
+              >
+                <option value="">Choose a customer…</option>
+                {admin.resellerCustomers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.fullName} ({customer.customerNumber})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5 text-sm font-semibold">
+              Sign-in email
+              <input
+                className={control}
+                type="email"
+                required
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5 text-sm font-semibold">
+              Price list
+              <select
+                className={control}
+                required
+                value={priceListId}
+                onChange={(event) => setPriceListId(event.target.value)}
+              >
+                <option value="">Choose…</option>
+                {admin.priceLists.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button type="submit" variant="confirm" disabled={busy !== null}>
+              <UserPlus size={16} className="mr-2" />
+              Invite
+            </Button>
+          </form>
+          <p className="mt-2 text-caption text-ink-500">
+            Set credit settings in Wholesale credit so their orders can auto-confirm.
+          </p>
+        </Glass>
+      ) : null}
+    </section>
+  )
+}
