@@ -1,3 +1,5 @@
+import { registerResellerPortalRoutes } from './reseller-portal-routes'
+import { resellerPortalPostgresRepository, type ResellerPortalRepository } from './reseller-portal-repository'
 import {
   wholesaleReturnRequestSchema,
   wholesaleReturnPreviewSchema,
@@ -530,6 +532,7 @@ interface AppDependencies {
   createSupportAccess: SupportAccessCreator
   revokeSupportAccess: SupportAccessRevoker
   loadSupportOverview: SupportOverviewLoader
+  resellerPortal: ResellerPortalRepository
 }
 
 const defaultDependencies: AppDependencies = {
@@ -640,6 +643,7 @@ const defaultDependencies: AppDependencies = {
   createSupportAccess: createSupportAccessInPostgres,
   revokeSupportAccess: revokeSupportAccessInPostgres,
   loadSupportOverview: loadSupportOverviewFromPostgres,
+  resellerPortal: resellerPortalPostgresRepository,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -678,7 +682,8 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
       origin: (origin, context) =>
         origin === context.env.BACKOFFICE_ORIGIN ||
         origin === context.env.POS_ORIGIN ||
-        origin === context.env.ADMIN_ORIGIN
+        origin === context.env.ADMIN_ORIGIN ||
+        origin === context.env.RESELLER_ORIGIN
           ? origin
           : '',
       allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -7905,6 +7910,14 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
       404,
     ),
   )
+
+  registerResellerPortalRoutes(app, {
+    verifyAccessToken: dependencies.verifyAccessToken,
+    resolveBackofficeTenant: resolveWholesaleTenant,
+    repository: dependencies.resellerPortal,
+    requestHash,
+    postgresErrorCode,
+  })
 
   return app
 }

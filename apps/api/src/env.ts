@@ -6,6 +6,7 @@ export interface Bindings {
   BACKOFFICE_ORIGIN?: string
   POS_ORIGIN?: string
   ADMIN_ORIGIN?: string
+  RESELLER_ORIGIN?: string
   HYPERDRIVE?: {
     connectionString: string
   }
