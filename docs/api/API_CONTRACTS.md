@@ -241,6 +241,13 @@ Current POS sales implementation:
 - AW2 records no payment, receivable, or credit balance. Those controls remain AW3 scope. Wholesale returns and credit notes remain AW4 scope, so AW2 invoices cannot be reversed through the POS refund command.
 - Fulfillment retries with the same key and request hash replay the stored invoice result. The first committed execution appends one audit event and one outbox event; browser roles retain no direct table access.
 
+### Reseller Portal R1
+
+- Public (no sign-in): `GET /v1/public/reseller-portal/{slug}` returns the business name and whether applications are open; `POST /v1/public/reseller-portal/{slug}/applications` accepts name, optional business name, email, mobile number, optional city and message, and always answers `202 received` for duplicates.
+- Reseller (verified Supabase token, `X-Tenant-Id` as a selector the database verifies): `GET /v1/portal/session`, `GET /v1/portal/catalog`, `GET /v1/portal/orders`, and `POST /v1/portal/orders` with an `Idempotency-Key`. The order request carries variant IDs, integer-thousandth quantities, fulfillment method, delivery address for delivery, payment preference and notes; prices, totals, stock and credit are always server-resolved. The response is `confirmed` (stock reserved) or `submitted` with a review reason.
+- Back Office (`reseller_portal.manage` or owner): `GET /v1/reseller-portal/admin`, `POST /v1/reseller-portal/settings`, `POST /v1/reseller-portal/applications/{id}/decision`, `POST /v1/reseller-portal/accounts`, `POST /v1/reseller-portal/accounts/{id}/status`, and `POST /v1/reseller-portal/orders/{id}/review`. Writes other than account status require an `Idempotency-Key`; application decisions allow at most 120 characters because nested customer and credit commands derive keys from it.
+- Errors: `HCRP0` portal unavailable (404), `HCRP1` reseller access denied (403), `HCRP2` not configured, `HCRP3` invalid request (400), `HCRP4` item or price list unavailable, `HCRP5` wholesale minimum not met, `HCRP6` applications closed, `HCRA1`–`HCRA5` Back Office permission and state errors. Review approval surfaces the existing confirmation errors (`HCQ10` stock, `HCCR*` credit).
+
 - The API derives tenant, actor, employee, location, and device context from trusted authentication/device state.
 - Clients never submit authoritative cost, COGS, tax outcome, available stock, entitlement, permission, expected cash, or ledger balances.
 - Critical command responses are stored against the idempotency record and replayed for identical retries.
