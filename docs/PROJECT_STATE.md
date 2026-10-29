@@ -1,5 +1,16 @@
 # Project State
 
+## Current Increment: Files, Product Photos, And Payment Proofs (source candidate)
+
+Branch codex/files-product-images-payment-proofs on top of the R1 branch adds
+migration 20261029080000, R2-backed upload and signed-link API, the Back Office
+photo manager, photos in the product list, POS tiles and reseller catalog, and
+reseller payment proofs with Back Office verification. Verified locally: 86
+migrations apply, all 56 database test files pass (new file: 41 assertions), and
+a harness ran the real API against PostgreSQL with a disk-backed bucket while
+headless Chromium uploaded photos, submitted a GCash proof and verified it. Not
+merged, migrated or deployed; R2 bucket and FILES_URL_SECRET are not created.
+
 ## Current Increment: Reseller Portal R1 (source candidate)
 
 Owner approved R1 on 2026-10-29. Branch codex/reseller-portal-r1 from main

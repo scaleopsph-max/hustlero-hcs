@@ -1,5 +1,16 @@
 # Decision Register
 
+## October 29, 2026: File Storage, Product Photos, And Payment Proofs
+
+Owner directed development of product photos and reseller proof of payment.
+Both use one tenant-isolated file foundation: bytes in Cloudflare R2, records in
+PostgreSQL with database-derived storage keys, archive instead of delete, and
+short-lived HMAC-signed links instead of public objects. Photos are set up once
+on the Back Office product page and appear in POS and the reseller portal.
+Accepting a payment proof only marks it verified; recording money stays with
+the existing audited wholesale payment commands. See
+product/FILES_PRODUCT_PHOTOS_PAYMENT_PROOFS.md.
+
 ## October 29, 2026: Reseller Portal R1
 
 Owner approved `APPROVED RESELLER PORTAL BLUEPRINT - PROCEED R1` for local

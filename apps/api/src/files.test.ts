@@ -414,3 +414,37 @@ describe('file routes', () => {
     warn.mockRestore()
   })
 })
+
+describe('POS photos', () => {
+  it('maps each POS item to its product photo thumbnail through the variant', async () => {
+    const { decoratePosContext } = await import('./files-routes')
+    const variantId = '50000000-0000-4000-8000-000000000001'
+    const fileId = '40000000-0000-4000-8000-000000000001'
+    const context = {
+      items: [
+        { variantId, productName: 'Coffee' },
+        { variantId: '50000000-0000-4000-8000-000000000002', productName: 'Tea' },
+      ],
+    } as unknown as Parameters<typeof decoratePosContext>[1]
+    const decorated = await decoratePosContext(
+      repository({
+        listImagesForPos: vi.fn(async () => [
+          {
+            productId,
+            fileId,
+            position: 0,
+            storageKey: storageKey(tenantId, 'product_image', fileId, 'main'),
+            thumbStorageKey: storageKey(tenantId, 'product_image', fileId, 'thumb'),
+            variantIds: [variantId],
+          },
+        ]),
+      }),
+      context,
+      'a'.repeat(64),
+      bindings,
+      now,
+    )
+    expect(decorated.items[0]?.imageThumbUrl).toContain(encodeURIComponent('/thumb'))
+    expect(decorated.items[1]?.imageThumbUrl).toBeNull()
+  })
+})
