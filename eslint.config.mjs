@@ -29,6 +29,12 @@ export default tseslint.config(
     },
   },
   {
+    files: ['apps/*/public/sw.js'],
+    languageOptions: {
+      globals: globals.serviceworker,
+    },
+  },
+  {
     files: ['**/postcss.config.{js,cjs}'],
     languageOptions: {
       globals: globals.commonjs,
