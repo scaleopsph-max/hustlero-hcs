@@ -7,7 +7,10 @@ import {
   resellerOrderReviewResponseSchema,
   resellerPortalAdminSchema,
   resellerPortalSettingsResponseSchema,
+  paymentProofReviewResponseSchema,
+  pendingPaymentProofsSchema,
   sessionContextResponseSchema,
+  type PendingPaymentProof,
   type ResellerOrderReviewRequest,
   type ResellerPortalAdmin,
 } from '@hcs/contracts'
@@ -16,6 +19,7 @@ import { Check, Copy, RefreshCw, UserPlus, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { selectActiveTenant } from '@/lib/active-tenant'
+import { fileUrl } from './ProductPhotos'
 import {
   applicationLink,
   approvalRequest,
@@ -71,8 +75,15 @@ export function ResellerPortalWorkspace() {
   const [message, setMessage] = useState<string | null>(null)
   const keys = useRef(new Map<string, string>())
 
+  const [proofs, setProofs] = useState<PendingPaymentProof[] | null>(null)
   const load = useCallback(async (next: Scope) => {
     setAdmin(resellerPortalAdminSchema.parse(await call('/v1/reseller-portal/admin', next)))
+    // Proofs need file storage; the rest of the screen works without it.
+    try {
+      setProofs(pendingPaymentProofsSchema.parse(await call('/v1/reseller-portal/payment-proofs', next)).proofs)
+    } catch {
+      setProofs(null)
+    }
   }, [])
 
   useEffect(() => {
@@ -199,6 +210,29 @@ export function ResellerPortalWorkspace() {
         ))}
       </Section>
 
+      {proofs ? (
+        <Section title="Payment proofs to verify" empty="No payment proofs are waiting.">
+          {proofs.map((proof) => (
+            <ProofCard
+              key={proof.id}
+              proof={proof}
+              busy={busy === `proof:${proof.id}`}
+              onDecide={(body) =>
+                run(
+                  `proof:${proof.id}`,
+                  `/v1/reseller-portal/payment-proofs/${proof.id}/review`,
+                  body,
+                  (v) => paymentProofReviewResponseSchema.parse(v),
+                  body.decision === 'accept'
+                    ? `Proof for ${proof.orderNumber} verified. Record the payment in Wholesale payments or at paid fulfillment using reference ${proof.reference}.`
+                    : `Proof for ${proof.orderNumber} rejected. The reseller sees your reason.`,
+                )
+              }
+            />
+          ))}
+        </Section>
+      ) : null}
+
       <Section title="Applications" empty="No applications yet. Share the application link with prospective resellers.">
         {admin.applications.map((application) => (
           <ApplicationCard
@@ -244,6 +278,93 @@ export function ResellerPortalWorkspace() {
         }
       />
     </div>
+  )
+}
+
+function ProofCard({
+  proof,
+  busy,
+  onDecide,
+}: {
+  proof: PendingPaymentProof
+  busy: boolean
+  onDecide: (body: { decision: 'accept' } | { decision: 'reject'; reason: string }) => void
+}) {
+  const [reason, setReason] = useState('')
+  const [problem, setProblem] = useState<string | null>(null)
+  const mismatch = proof.amountMinor !== proof.orderTotalMinor
+  return (
+    <Glass variant="data" className="flex flex-col gap-3 rounded-panel p-5 md:flex-row">
+      <a
+        href={fileUrl(proof.url)}
+        target="_blank"
+        rel="noreferrer"
+        className="flex-none self-start"
+        aria-label={`Open proof for ${proof.orderNumber}`}
+      >
+        {proof.thumbUrl ? (
+          <img
+            src={fileUrl(proof.thumbUrl)}
+            alt={`Payment proof for ${proof.orderNumber}`}
+            className="h-40 w-32 rounded-control object-cover"
+          />
+        ) : (
+          <span className="flex h-40 w-32 items-center justify-center rounded-control bg-ink-900/5 text-sm font-semibold text-ink-600">
+            Open PDF
+          </span>
+        )}
+      </a>
+      <div className="flex min-w-0 flex-1 flex-col gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="font-semibold">
+              {proof.orderNumber} · {proof.customerName}
+            </p>
+            <p className="text-sm text-ink-500">
+              {proof.method === 'gcash' ? 'GCash' : 'Bank transfer'} · Ref {proof.reference} ·{' '}
+              {new Date(proof.createdAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-h4">{formatPeso(proof.amountMinor)}</p>
+            <p className={mismatch ? 'text-sm text-signal-light-warning-fg' : 'text-sm text-ink-500'}>
+              Order total {formatPeso(proof.orderTotalMinor)}
+            </p>
+          </div>
+        </div>
+        <p className="text-caption text-ink-500">
+          Check the amount and reference in your GCash or bank app before accepting. Accepting only marks the proof as
+          verified; it does not record the payment.
+        </p>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex min-w-60 flex-1 flex-col gap-1.5 text-sm font-semibold">
+            Reason (required to reject)
+            <input
+              className={control}
+              maxLength={500}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+            />
+          </label>
+          <Button variant="confirm" disabled={busy} onClick={() => onDecide({ decision: 'accept' })}>
+            <Check size={16} className="mr-2" />
+            Mark verified
+          </Button>
+          <Button
+            disabled={busy}
+            onClick={() => {
+              if (reason.trim().length < 2) return setProblem('Tell the reseller why the proof is rejected.')
+              setProblem(null)
+              onDecide({ decision: 'reject', reason: reason.trim() })
+            }}
+          >
+            <X size={16} className="mr-2" />
+            Reject
+          </Button>
+        </div>
+        {problem ? <p className="text-sm text-signal-light-critical-fg">{problem}</p> : null}
+      </div>
+    </Glass>
   )
 }
 

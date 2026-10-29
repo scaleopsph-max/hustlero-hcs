@@ -25,6 +25,11 @@ export function portalAuth(): SupabaseClient | null {
   return client
 }
 
+/** Turns a signed API-relative file path into an absolute URL. */
+export function fileUrl(path: string): string {
+  return `${(apiUrl ?? '').replace(/\/$/, '')}${path}`
+}
+
 export function apiConfigured(): boolean {
   return Boolean(apiUrl)
 }
@@ -39,13 +44,14 @@ export async function portalRequest<T>(
   if (options.token) headers.Authorization = `Bearer ${options.token}`
   if (options.tenantId) headers['X-Tenant-Id'] = options.tenantId
   if (options.idempotencyKey) headers['Idempotency-Key'] = options.idempotencyKey
-  if (options.body !== undefined) headers['Content-Type'] = 'application/json'
+  const isForm = typeof FormData !== 'undefined' && options.body instanceof FormData
+  if (options.body !== undefined && !isForm) headers['Content-Type'] = 'application/json'
   let response: Response
   try {
     response = await fetch(`${apiUrl.replace(/\/$/, '')}${path}`, {
       method: options.method ?? 'GET',
       headers,
-      body: options.body === undefined ? null : JSON.stringify(options.body),
+      body: options.body === undefined ? null : isForm ? (options.body as FormData) : JSON.stringify(options.body),
     })
   } catch {
     throw new PortalApiError('Walang internet connection. Subukan ulit kapag may signal na.', 0, 'OFFLINE')

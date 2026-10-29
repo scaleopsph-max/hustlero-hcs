@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  paymentProofUploadResponseSchema,
   resellerOrderSubmitResponseSchema,
   resellerOrdersSchema,
   resellerPortalCatalogSchema,
@@ -133,6 +134,22 @@ export function PortalApp() {
     return response
   }
 
+  async function uploadProof(orderId: string, body: FormData, idempotencyKey: string) {
+    if (!token || !tenantId) throw new Error('Mag-sign in ulit.')
+    await portalRequest(
+      `/v1/portal/orders/${orderId}/payment-proofs`,
+      (value) => paymentProofUploadResponseSchema.parse(value),
+      {
+        token,
+        tenantId,
+        method: 'POST',
+        body,
+        idempotencyKey,
+      },
+    )
+    await loadOrders()
+  }
+
   function reorder(order: ResellerOrder) {
     const available = new Set(catalog?.items.map((item) => item.variantId))
     updateCart(
@@ -215,6 +232,7 @@ export function PortalApp() {
               loading={ordersLoading}
               onRefresh={() => void loadOrders()}
               onReorder={reorder}
+              onUploadProof={uploadProof}
             />
           ) : session && tenantId ? (
             <AccountView

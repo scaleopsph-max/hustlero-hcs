@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react'
 
 import { quantityInCart, type CartLine } from '@/lib/cart'
 import { stockLabel } from '@/lib/labels'
+import { fileUrl } from '@/lib/portal-api'
 
 import { QuantityStepper } from './QuantityStepper'
 
@@ -90,7 +91,15 @@ export function CatalogView({
               <li key={item.variantId}>
                 <Glass className="flex flex-col gap-3 rounded-glass p-4">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+                    {item.thumbUrl ? (
+                      <img
+                        src={fileUrl(item.thumbUrl)}
+                        alt=""
+                        loading="lazy"
+                        className="size-16 flex-none rounded-[14px] object-cover"
+                      />
+                    ) : null}
+                    <div className="min-w-0 flex-1">
                       <p className="font-semibold leading-tight">{item.productName}</p>
                       <p className="text-small text-ink-300">
                         {item.variantName} · {item.sku}

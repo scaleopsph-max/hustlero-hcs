@@ -6,6 +6,7 @@ import { ChevronDown, PackageSearch, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 
 import { formatQuantity } from '@/lib/cart'
+import { PaymentProofs } from './PaymentProofs'
 import { formatDateTime, orderStatusLabel, paymentLabel, reviewReasonLabel } from '@/lib/labels'
 
 export function OrdersView({
@@ -13,11 +14,13 @@ export function OrdersView({
   loading,
   onRefresh,
   onReorder,
+  onUploadProof,
 }: {
   orders: ResellerOrder[]
   loading: boolean
   onRefresh: () => void
   onReorder: (order: ResellerOrder) => void
+  onUploadProof: (orderId: string, body: FormData, idempotencyKey: string) => Promise<void>
 }) {
   const [openId, setOpenId] = useState<string | null>(null)
 
@@ -112,6 +115,7 @@ export function OrdersView({
                           </>
                         ) : null}
                       </dl>
+                      <PaymentProofs order={order} onUpload={onUploadProof} />
                       <Button size="sm" onClick={() => onReorder(order)}>
                         Order ulit
                       </Button>
