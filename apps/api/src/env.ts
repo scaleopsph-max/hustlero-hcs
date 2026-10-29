@@ -1,5 +1,7 @@
 import { environmentSchema } from '@hcs/contracts'
 
+import type { FileBucket } from './files'
+
 export interface Bindings {
   ENVIRONMENT: string
   SUPABASE_URL?: string
@@ -7,6 +9,10 @@ export interface Bindings {
   POS_ORIGIN?: string
   ADMIN_ORIGIN?: string
   RESELLER_ORIGIN?: string
+  /** Cloudflare R2 bucket for tenant files. */
+  FILES?: FileBucket
+  /** Secret for signing file links (Worker secret, never a plain var). */
+  FILES_URL_SECRET?: string
   HYPERDRIVE?: {
     connectionString: string
   }

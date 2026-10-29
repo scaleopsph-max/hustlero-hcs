@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { paymentProofSchema } from './files'
+
 const uuid = z.uuid()
 const minor = z.number().int().nonnegative()
 const milli = z.number().int().nonnegative()
@@ -77,6 +79,9 @@ export const resellerCatalogItemSchema = z.object({
   pricingGroupName: z.string().min(1),
   thresholdMilli: milli,
   stockStatus: resellerStockStatusSchema,
+  /** Signed API-relative paths of the primary product photo. */
+  imageUrl: z.string().nullable().optional(),
+  thumbUrl: z.string().nullable().optional(),
 })
 
 export const resellerPortalCatalogSchema = z.object({
@@ -131,6 +136,7 @@ export const resellerOrderSchema = z.object({
     }),
   ),
   invoices: z.array(z.object({ id: uuid, invoiceNumber: z.string().min(1), totalMinor: minor, issuedAt: timestamp })),
+  paymentProofs: z.array(paymentProofSchema).optional(),
 })
 
 export const resellerOrdersSchema = z.object({ orders: z.array(resellerOrderSchema) })

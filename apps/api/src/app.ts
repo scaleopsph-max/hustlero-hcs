@@ -1,3 +1,12 @@
+import {
+  decorateBackofficeCatalog,
+  decoratePosContext,
+  decorateResellerCatalog,
+  presentOrders,
+  registerFileRoutes,
+} from './files-routes'
+import { filesPostgresRepository, type FilesRepository } from './files-repository'
+import type { FileBucket } from './files'
 import { registerResellerPortalRoutes } from './reseller-portal-routes'
 import { resellerPortalPostgresRepository, type ResellerPortalRepository } from './reseller-portal-repository'
 import {
@@ -533,6 +542,8 @@ interface AppDependencies {
   revokeSupportAccess: SupportAccessRevoker
   loadSupportOverview: SupportOverviewLoader
   resellerPortal: ResellerPortalRepository
+  files: FilesRepository
+  fileBucket: (bindings: Bindings) => FileBucket | null
 }
 
 const defaultDependencies: AppDependencies = {
@@ -644,6 +655,8 @@ const defaultDependencies: AppDependencies = {
   revokeSupportAccess: revokeSupportAccessInPostgres,
   loadSupportOverview: loadSupportOverviewFromPostgres,
   resellerPortal: resellerPortalPostgresRepository,
+  files: filesPostgresRepository,
+  fileBucket: (bindings) => bindings.FILES ?? null,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -673,6 +686,26 @@ async function sha256(value: string): Promise<string> {
 
 export function createApp(overrides: Partial<AppDependencies> = {}) {
   const dependencies: AppDependencies = { ...defaultDependencies, ...overrides }
+  // Product photos ride along with catalog-shaped responses for Back Office and POS.
+  const loadCatalogWithoutImages = dependencies.loadCatalog
+  dependencies.loadCatalog = async (userId, tenantId, bindings) =>
+    decorateBackofficeCatalog(
+      dependencies.files,
+      await loadCatalogWithoutImages(userId, tenantId, bindings),
+      userId,
+      tenantId,
+      bindings,
+      Math.floor(Date.now() / 1000),
+    )
+  const loadPosContextWithoutImages = dependencies.loadPosSalesContext
+  dependencies.loadPosSalesContext = async (sessionHash, bindings) =>
+    decoratePosContext(
+      dependencies.files,
+      await loadPosContextWithoutImages(sessionHash, bindings),
+      sessionHash,
+      bindings,
+      Math.floor(Date.now() / 1000),
+    )
   const app = new Hono<{ Bindings: Bindings }>()
 
   app.use('*', requestId())
@@ -7915,6 +7948,24 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
     verifyAccessToken: dependencies.verifyAccessToken,
     resolveBackofficeTenant: resolveWholesaleTenant,
     repository: dependencies.resellerPortal,
+    requestHash,
+    postgresErrorCode,
+    decorateCatalog: (catalog, authUserId, tenantId, bindings) =>
+      decorateResellerCatalog(
+        dependencies.files,
+        catalog,
+        authUserId,
+        tenantId,
+        bindings,
+        Math.floor(Date.now() / 1000),
+      ),
+    presentOrders: (orders, bindings) => presentOrders(orders, bindings, Math.floor(Date.now() / 1000)),
+  })
+  registerFileRoutes(app, {
+    verifyAccessToken: dependencies.verifyAccessToken,
+    resolveBackofficeTenant: resolveWholesaleTenant,
+    repository: dependencies.files,
+    bucket: dependencies.fileBucket,
     requestHash,
     postgresErrorCode,
   })

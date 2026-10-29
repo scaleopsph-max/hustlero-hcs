@@ -145,7 +145,9 @@ create function app.catalog_images_core(p_tenant uuid)
 returns jsonb language sql stable security definer set search_path = '' as $$
   select jsonb_build_object('images', coalesce(jsonb_agg(jsonb_build_object(
     'productId', image.product_id, 'fileId', file.id, 'position', image.position,
-    'storageKey', file.storage_key, 'thumbStorageKey', file.thumb_storage_key
+    'storageKey', file.storage_key, 'thumbStorageKey', file.thumb_storage_key,
+    'variantIds', coalesce((select jsonb_agg(variant.id order by variant.id) from app.product_variants variant
+      where variant.tenant_id = image.tenant_id and variant.product_id = image.product_id), '[]'::jsonb)
   ) order by image.product_id, image.position, file.created_at), '[]'::jsonb))
   from app.product_images image
   join app.files file on file.tenant_id = image.tenant_id and file.id = image.file_id and file.status = 'active'
@@ -357,7 +359,7 @@ begin
   insert into app.payment_proofs (tenant_id, sales_order_id, file_id, reseller_account_id, method, amount, reference)
   values (p_tenant, p_order, v_file, v_account.id, v_method, v_amount / 100, btrim(p_payload->>'reference'))
   returning id into v_proof;
-  v_response := jsonb_build_object('proofId', v_proof, 'salesOrderId', p_order, 'status', 'pending',
+  v_response := jsonb_build_object('proofId', v_proof, 'fileId', v_file, 'salesOrderId', p_order, 'status', 'pending',
     'amountMinor', v_amount::bigint, 'method', v_method);
   insert into audit.audit_events (tenant_id, request_id, actor_type, actor_id, action, entity_type, entity_id, metadata)
   values (p_tenant, p_request_id, 'system', v_account.id, 'payment_proof.submitted', 'sales_order', p_order,

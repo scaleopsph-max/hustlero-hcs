@@ -5,7 +5,7 @@ import {
   resellerApplicationResponseSchema,
   resellerOrderReviewResponseSchema,
   resellerOrderSubmitResponseSchema,
-  resellerOrdersSchema,
+  resellerOrderSchema,
   resellerPortalAdminSchema,
   resellerPortalCatalogSchema,
   resellerPortalPublicSchema,
@@ -21,10 +21,8 @@ import {
   type ResellerApplicationResponse,
   type ResellerOrderReviewRequest,
   type ResellerOrderReviewResponse,
-  type ResellerOrders,
   type ResellerOrderSubmitRequest,
   type ResellerOrderSubmitResponse,
-  type ResellerPortalAdmin,
   type ResellerPortalCatalog,
   type ResellerPortalPublic,
   type ResellerPortalSession,
@@ -32,8 +30,23 @@ import {
   type ResellerPortalSettingsResponse,
 } from '@hcs/contracts'
 import { Client } from 'pg'
+import { z } from 'zod'
+
+import { storedPaymentProofSchema } from './files-repository'
 
 import type { Bindings } from './env'
+
+/** Orders as stored: payment proofs still carry storage keys until the API signs them. */
+export const storedResellerOrderSchema = resellerOrderSchema.extend({
+  paymentProofs: z.array(storedPaymentProofSchema).optional(),
+})
+export type StoredResellerOrder = z.infer<typeof storedResellerOrderSchema>
+export type StoredResellerOrders = { orders: StoredResellerOrder[] }
+const storedResellerOrdersSchema = z.object({ orders: z.array(storedResellerOrderSchema) })
+const storedResellerPortalAdminSchema = resellerPortalAdminSchema.extend({
+  reviewQueue: z.array(storedResellerOrderSchema),
+})
+export type StoredResellerPortalAdmin = z.infer<typeof storedResellerPortalAdminSchema>
 
 /** A command's idempotency and audit context, derived by the API. */
 export interface PortalCommand {
@@ -52,7 +65,7 @@ export interface ResellerPortalRepository {
   ): Promise<ResellerApplicationResponse>
   loadSession(authUserId: string, bindings: Bindings): Promise<ResellerPortalSession>
   loadCatalog(authUserId: string, tenantId: string, bindings: Bindings): Promise<ResellerPortalCatalog>
-  listOrders(authUserId: string, tenantId: string, bindings: Bindings): Promise<ResellerOrders>
+  listOrders(authUserId: string, tenantId: string, bindings: Bindings): Promise<StoredResellerOrders>
   submitOrder(
     authUserId: string,
     tenantId: string,
@@ -60,7 +73,7 @@ export interface ResellerPortalRepository {
     command: PortalCommand,
     bindings: Bindings,
   ): Promise<ResellerOrderSubmitResponse>
-  loadAdmin(userId: string, tenantId: string, bindings: Bindings): Promise<ResellerPortalAdmin>
+  loadAdmin(userId: string, tenantId: string, bindings: Bindings): Promise<StoredResellerPortalAdmin>
   saveSettings(
     userId: string,
     tenantId: string,
@@ -145,7 +158,7 @@ export const resellerPortalPostgresRepository: ResellerPortalRepository = {
       bindings,
       'select app.list_reseller_portal_orders($1::uuid, $2::uuid) response',
       [authUserId, tenantId],
-      (value) => resellerOrdersSchema.parse(value),
+      (value) => storedResellerOrdersSchema.parse(value),
     ),
   submitOrder: (authUserId, tenantId, request, command, bindings) =>
     queryOne(
@@ -159,7 +172,7 @@ export const resellerPortalPostgresRepository: ResellerPortalRepository = {
       bindings,
       'select app.load_reseller_portal_admin($1::uuid, $2::uuid) response',
       [userId, tenantId],
-      (value) => resellerPortalAdminSchema.parse(value),
+      (value) => storedResellerPortalAdminSchema.parse(value),
     ),
   saveSettings: (userId, tenantId, request, command, bindings) =>
     queryOne(

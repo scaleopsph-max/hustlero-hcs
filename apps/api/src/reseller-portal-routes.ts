@@ -7,6 +7,8 @@ import {
   resellerOrderReviewRequestSchema,
   resellerOrderSubmitRequestSchema,
   resellerPortalSettingsRequestSchema,
+  type ResellerOrder,
+  type ResellerPortalCatalog,
 } from '@hcs/contracts'
 import type { Context, Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
@@ -14,7 +16,7 @@ import type { ZodType } from 'zod'
 
 import { readBearerToken, type AccessTokenVerifier } from './auth'
 import type { Bindings } from './env'
-import type { PortalCommand, ResellerPortalRepository } from './reseller-portal-repository'
+import type { PortalCommand, ResellerPortalRepository, StoredResellerOrder } from './reseller-portal-repository'
 
 type AppContext = Context<{ Bindings: Bindings }>
 
@@ -25,7 +27,19 @@ export interface ResellerPortalRouteDependencies {
   repository: ResellerPortalRepository
   requestHash: (value: unknown) => Promise<string>
   postgresErrorCode: (error: unknown) => string | null
+  /** Adds signed product photo URLs to the reseller catalog. */
+  decorateCatalog?: (
+    catalog: ResellerPortalCatalog,
+    authUserId: string,
+    tenantId: string,
+    bindings: Bindings,
+  ) => Promise<ResellerPortalCatalog>
+  /** Signs payment-proof links and removes storage keys before orders leave the API. */
+  presentOrders?: (orders: StoredResellerOrder[], bindings: Bindings) => Promise<ResellerOrder[]>
 }
+
+const dropProofs = async (orders: StoredResellerOrder[]): Promise<ResellerOrder[]> =>
+  orders.map((order) => ({ ...order, paymentProofs: [] }))
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/i
@@ -208,7 +222,14 @@ export function registerResellerPortalRoutes(
     const reseller = await resolveReseller(context, true)
     if (reseller instanceof Response) return reseller
     return run(context, async () =>
-      context.json(await dependencies.repository.loadCatalog(reseller.userId, reseller.tenantId, context.env)),
+      context.json(
+        await (dependencies.decorateCatalog ?? (async (catalog) => catalog))(
+          await dependencies.repository.loadCatalog(reseller.userId, reseller.tenantId, context.env),
+          reseller.userId,
+          reseller.tenantId,
+          context.env,
+        ),
+      ),
     )
   })
 
@@ -216,7 +237,12 @@ export function registerResellerPortalRoutes(
     const reseller = await resolveReseller(context, true)
     if (reseller instanceof Response) return reseller
     return run(context, async () =>
-      context.json(await dependencies.repository.listOrders(reseller.userId, reseller.tenantId, context.env)),
+      context.json({
+        orders: await (dependencies.presentOrders ?? dropProofs)(
+          (await dependencies.repository.listOrders(reseller.userId, reseller.tenantId, context.env)).orders,
+          context.env,
+        ),
+      }),
     )
   })
 
@@ -247,9 +273,13 @@ export function registerResellerPortalRoutes(
   app.get('/v1/reseller-portal/admin', async (context) => {
     const admin = await resolveAdmin(context)
     if (admin instanceof Response) return admin
-    return run(context, async () =>
-      context.json(await dependencies.repository.loadAdmin(admin.userId, admin.tenantId, context.env)),
-    )
+    return run(context, async () => {
+      const loaded = await dependencies.repository.loadAdmin(admin.userId, admin.tenantId, context.env)
+      return context.json({
+        ...loaded,
+        reviewQueue: await (dependencies.presentOrders ?? dropProofs)(loaded.reviewQueue, context.env),
+      })
+    })
   })
 
   app.post('/v1/reseller-portal/settings', async (context) => {
