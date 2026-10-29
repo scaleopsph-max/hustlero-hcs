@@ -389,3 +389,4 @@ export {
 } from './wholesale-statements'
 export * from './payment-references'
 export * from './wholesale-returns'
+export * from './reseller-portal'

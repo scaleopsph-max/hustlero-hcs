@@ -4,6 +4,8 @@ const id = z.uuid()
 
 export const wholesaleOrderStatusSchema = z.enum([
   'draft',
+  // Reseller Portal orders waiting for Back Office review; they reserve no stock.
+  'submitted',
   'confirmed',
   'partially_fulfilled',
   'fulfilled',

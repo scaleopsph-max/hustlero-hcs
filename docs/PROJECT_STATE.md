@@ -1,5 +1,19 @@
 # Project State
 
+## Current Increment: Reseller Portal R1 (source candidate)
+
+Owner approved R1 on 2026-10-29. Branch codex/reseller-portal-r1 from main
+b45b1f6 adds migration 20261029013000 (applications, reseller accounts, portal
+settings, portal catalog, auto-confirming portal orders, review queue), portal
+API routes and contracts, the `apps/reseller` PWA, and the Back Office
+`/reseller-portal` screen. Verified locally on PostgreSQL 16 with pgTAP: all
+85 migrations apply and all 55 database test files pass (new file: 66
+assertions; onboarding feature counts updated for the new add-on). An
+end-to-end harness ran the real API as `hcs_hyperdrive` against that database
+and drove the PWA and Back Office in headless Chromium. Not merged, migrated or
+deployed; no hosted change. See product/RESELLER_PORTAL_BLUEPRINT.md and
+operations/RESELLER_PORTAL_R1_RECOVERY.md.
+
 ## Current Priority: Combined AW3 And AW4 Source Closeout
 
 October 26 owner clarified all remaining AW3/AW4 development/QA; Online Store last.

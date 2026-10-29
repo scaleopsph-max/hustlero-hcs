@@ -15,6 +15,7 @@
     "dev:api": "npm run dev -w @hcs/api",
     "dev:backoffice": "npm run dev -w @hcs/backoffice",
     "dev:pos": "npm run dev -w @hcs/pos",
+    "dev:reseller": "npm run dev -w @hcs/reseller",
     "dev:web": "npm run dev -w @hcs/web",
     "format": "prettier --write \"apps/**/*.{ts,tsx,js,mjs,json,jsonc,css}\" \"packages/**/*.{ts,tsx,js,mjs,json,css}\" \"*.{ts,js,mjs,json,jsonc}\" \".github/**/*.yml\" \"scripts/staging-*.mjs\"",
     "format:check": "prettier --check \"apps/**/*.{ts,tsx,js,mjs,json,jsonc,css}\" \"packages/**/*.{ts,tsx,js,mjs,json,css}\" \"*.{ts,js,mjs,json,jsonc}\" \".github/**/*.yml\" \"scripts/staging-*.mjs\"",
