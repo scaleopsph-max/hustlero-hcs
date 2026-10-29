@@ -27,6 +27,12 @@
           "id": "0a57f9065dea4b159b7ef2cad9ca3e80",
         },
       ],
+      "r2_buckets": [
+        {
+          "binding": "FILES",
+          "bucket_name": "hustlero-hcs-files-development",
+        },
+      ],
     },
     "staging": {
       "name": "hustlero-hcs-api-staging",
@@ -41,6 +47,12 @@
         {
           "binding": "HYPERDRIVE",
           "id": "008f24430d3e433eb478caaa52787fea",
+        },
+      ],
+      "r2_buckets": [
+        {
+          "binding": "FILES",
+          "bucket_name": "hustlero-hcs-files-staging",
         },
       ],
     },
