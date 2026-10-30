@@ -115,7 +115,7 @@ select throws_ok($$ select app.list_catalog_images_for_reseller('1f200000-0000-4
   'HCRP1', null, 'resellers cannot read another tenant''s photos');
 select is(app.submit_reseller_portal_order('1f200000-0000-4000-8000-000000000010', '2f200000-0000-4000-8000-000000000001',
   '{"lines":[{"variantId":"8f200000-0000-4000-8000-000000000001","quantityMilli":5000}],"fulfillmentMethod":"pickup","paymentPreference":"gcash"}',
-  'files-order-key-0001', 'h1', 'r')->>'status', 'confirmed', 'reseller places an order');
+  'files-order-key-0001', 'h1', 'r')->>'reviewReason', 'awaiting_payment', 'reseller places an order that waits for payment');
 
 create function pg_temp.proof(file_id text) returns jsonb language sql as $$
   select jsonb_build_object('fileId', file_id, 'mimeType', 'image/png', 'sizeBytes', 400000, 'thumbSizeBytes', 30000,
@@ -141,21 +141,32 @@ select lives_ok($$ select app.record_payment_proof('1f200000-0000-4000-8000-0000
 select is(jsonb_array_length((select o->'paymentProofs' from jsonb_array_elements(app.list_reseller_portal_orders(
   '1f200000-0000-4000-8000-000000000010', '2f200000-0000-4000-8000-000000000001')->'orders') o limit 1)), 2,
   'the reseller sees proofs on the order');
-select is(jsonb_array_length(app.list_pending_payment_proofs('1f200000-0000-4000-8000-000000000001',
-  '2f200000-0000-4000-8000-000000000001')->'proofs'), 2, 'the Back Office lists pending proofs');
+select is(jsonb_array_length(app.list_pending_payment_proofs('1f200000-0000-4000-8000-000000000001', '2f200000-0000-4000-8000-000000000001')->'proofs'), 0,
+  'proofs on an order in review are checked from the review card');
+select is(app.review_reseller_portal_order('1f200000-0000-4000-8000-000000000001', '2f200000-0000-4000-8000-000000000001', (select id from app.sales_orders where order_number = 'RP-000001' and tenant_id = '2f200000-0000-4000-8000-000000000001'), '{"decision":"approve"}', 'files-review-key-0001', 'rv1', 'r')->>'status',
+  'confirmed', 'owner verifies the payment and confirms the order in one step');
+select is((select count(*)::integer from app.payment_proofs where sales_order_id = (select id from app.sales_orders where order_number = 'RP-000001' and tenant_id = '2f200000-0000-4000-8000-000000000001') and status = 'accepted'), 2,
+  'confirming verifies every pending proof on the order');
+-- Balance payments after confirmation are verified one by one.
+select lives_ok($$ select app.record_payment_proof('1f200000-0000-4000-8000-000000000010', '2f200000-0000-4000-8000-000000000001', (select id from app.sales_orders where order_number = 'RP-000001' and tenant_id = '2f200000-0000-4000-8000-000000000001'), pg_temp.proof('bf200000-0000-4000-8000-000000000004'),
+  'payment-proof-key-04', 'p4', 'r') $$, 'reseller pays the balance on a confirmed order');
+select lives_ok($$ select app.record_payment_proof('1f200000-0000-4000-8000-000000000010', '2f200000-0000-4000-8000-000000000001', (select id from app.sales_orders where order_number = 'RP-000001' and tenant_id = '2f200000-0000-4000-8000-000000000001'),
+  pg_temp.proof('bf200000-0000-4000-8000-000000000005') || '{"method":"bank_transfer"}', 'payment-proof-key-05', 'p5', 'r') $$,
+  'reseller sends another balance proof');
+select is(jsonb_array_length(app.list_pending_payment_proofs('1f200000-0000-4000-8000-000000000001', '2f200000-0000-4000-8000-000000000001')->'proofs'), 2, 'the Back Office lists pending balance proofs');
 select throws_ok($$ select app.list_pending_payment_proofs('1f200000-0000-4000-8000-000000000003', '2f200000-0000-4000-8000-000000000001') $$,
   'HCRA1', null, 'members without portal permission cannot review proofs');
 select throws_ok($$ select app.review_payment_proof('1f200000-0000-4000-8000-000000000001', '2f200000-0000-4000-8000-000000000001',
-  (select id from app.payment_proofs where file_id = 'bf200000-0000-4000-8000-000000000003'), '{"decision":"reject"}', 'r') $$,
+  (select id from app.payment_proofs where file_id = 'bf200000-0000-4000-8000-000000000005'), '{"decision":"reject"}', 'r') $$,
   'HCRP3', null, 'rejecting a proof requires a reason');
 select is(app.review_payment_proof('1f200000-0000-4000-8000-000000000001', '2f200000-0000-4000-8000-000000000001',
-  (select id from app.payment_proofs where file_id = 'bf200000-0000-4000-8000-000000000001'), '{"decision":"accept"}', 'r')->>'status',
+  (select id from app.payment_proofs where file_id = 'bf200000-0000-4000-8000-000000000004'), '{"decision":"accept"}', 'r')->>'status',
   'accepted', 'owner accepts the GCash proof');
 select is(app.review_payment_proof('1f200000-0000-4000-8000-000000000001', '2f200000-0000-4000-8000-000000000001',
-  (select id from app.payment_proofs where file_id = 'bf200000-0000-4000-8000-000000000003'),
+  (select id from app.payment_proofs where file_id = 'bf200000-0000-4000-8000-000000000005'),
   '{"decision":"reject","reason":"Amount does not match the order"}', 'r')->>'status', 'rejected', 'owner rejects the bank proof');
 select throws_ok($$ select app.review_payment_proof('1f200000-0000-4000-8000-000000000001', '2f200000-0000-4000-8000-000000000001',
-  (select id from app.payment_proofs where file_id = 'bf200000-0000-4000-8000-000000000001'), '{"decision":"reject","reason":"Again"}', 'r') $$,
+  (select id from app.payment_proofs where file_id = 'bf200000-0000-4000-8000-000000000004'), '{"decision":"reject","reason":"Again"}', 'r') $$,
   'HCRA5', null, 'a reviewed proof cannot be reviewed again');
 select is((select count(*)::integer from app.wholesale_payment_allocations where tenant_id = '2f200000-0000-4000-8000-000000000001'), 0,
   'accepting a proof does not post money');

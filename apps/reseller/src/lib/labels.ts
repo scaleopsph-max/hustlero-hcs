@@ -22,6 +22,8 @@ export const reviewReasonLabel: Record<ResellerReviewReason, string> = {
   credit_review: 'The team needs to check your account before confirming.',
   stock_insufficient: 'Stock is short right now. The team will review when it can ship.',
   credit_limit: 'This order is over your available credit. The team will review it, or settle your balance first.',
+  awaiting_payment: 'Send your payment and upload the proof to keep your stock on hold.',
+  payment_review: 'Payment proof received. The team is checking it and will confirm your order soon.',
 }
 
 export const paymentLabel = { gcash: 'GCash', bank_transfer: 'Bank transfer' } as const
@@ -45,4 +47,30 @@ const dateFormat = new Intl.DateTimeFormat('en-PH', {
 export function formatDateTime(value: string): string {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : dateFormat.format(date)
+}
+
+/** The badge for an order: pay-first orders show where they are in the payment step. */
+export function orderBadge(order: Pick<ResellerOrder, 'status' | 'reviewReason'>): { text: string; tone: ChipTone } {
+  if (order.status === 'submitted' && order.reviewReason === 'awaiting_payment')
+    return { text: 'Awaiting payment', tone: 'attention' }
+  if (order.status === 'submitted' && order.reviewReason === 'payment_review')
+    return { text: 'Payment sent', tone: 'info' }
+  return orderStatusLabel[order.status]
+}
+
+const timeFormat = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' })
+
+/** "8:31 PM" for a payment deadline. */
+export function formatTime(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : timeFormat.format(date)
+}
+
+/** "3h 52m left", "12m left", or null once the deadline has passed. */
+export function timeLeft(deadline: string, now: number): string | null {
+  const ms = new Date(deadline).getTime() - now
+  if (Number.isNaN(ms) || ms <= 0) return null
+  const minutes = Math.ceil(ms / 60_000)
+  const hours = Math.floor(minutes / 60)
+  return hours > 0 ? `${hours}h ${minutes % 60}m left` : `${minutes}m left`
 }

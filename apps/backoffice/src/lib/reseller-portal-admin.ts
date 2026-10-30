@@ -13,6 +13,8 @@ export const reviewReasonText: Record<ResellerReviewReason, string> = {
   credit_review: 'Historical invoices for this reseller need classification.',
   stock_insufficient: 'Available stock at the portal branch was short when the order arrived.',
   credit_limit: 'The order would exceed the reseller credit limit.',
+  awaiting_payment: 'Waiting for the reseller to upload a payment proof.',
+  payment_review: 'Payment proof received. Check it in your GCash or bank app, then confirm.',
 }
 
 export type ApprovalForm = {

@@ -137,3 +137,11 @@ authorized by these development decisions.
 - **Decision:** Resellers cannot order a variant whose available stock at the portal fulfillment branch is zero or less. The catalog and cart disable increasing its quantity, the cart blocks submission while one is present, and `app.submit_reseller_portal_order` rejects such lines with `HCRP7` (API `RESELLER_ITEM_OUT_OF_STOCK`, 409) before saving anything. A variant with some stock but less than requested still goes to review as `stock_insufficient`, because stock is shown to resellers only as a badge.
 - **Reason:** Owner direction during Development QA ("pag out of stock hindi makaka order"). Back orders through the portal were creating review work for items the business cannot ship.
 - **Review trigger:** Revisit if the business wants pre-orders or back orders from resellers.
+
+## ADR-042: Reseller portal orders are pay first
+
+- **Date:** 2026-10-30
+- **Status:** Accepted
+- **Decision:** Every reseller portal order holds its stock for four hours (`payment_hold` entries in the reservation ledger) and waits for the reseller's payment proof. A downpayment is enough to move it from `awaiting_payment` to `payment_review`, where it enters the Back Office queue with its proofs. One action verifies the pending proofs and confirms the order through the existing wholesale confirmation (stock and credit checks), releasing the hold first in the same transaction; rejection releases the hold and rejects the pending proofs with the same reason. Orders without a proof after four hours are cancelled by `app.expire_reseller_payment_holds`, run by the API Worker cron every five minutes and by portal commands for their tenant. Items without enough available stock are refused at checkout (`HCRP8`). The portal `auto_confirm` setting is retired (kept only for older clients). Accepting a proof still never records money.
+- **Reason:** Owner direction during Development QA: resellers must send payment before an order reaches the team for approval, the hold should be 4 hours, it applies to all resellers, and a downpayment is acceptable. One verify-and-confirm action keeps review fast.
+- **Review trigger:** Revisit the four-hour window, downpayment rule, or automatic payment recording when a payment gateway is introduced.

@@ -68,6 +68,11 @@ const errorMap: Record<string, { status: ContentfulStatusCode; code: string; mes
     code: 'RESELLER_ITEM_OUT_OF_STOCK',
     message: 'An item in your cart is out of stock. Remove it and submit again.',
   },
+  HCRP8: {
+    status: 409,
+    code: 'RESELLER_STOCK_SHORT',
+    message: 'There is not enough stock for one of the items. Lower the quantity and try again.',
+  },
   HCRA1: {
     status: 403,
     code: 'RESELLER_PORTAL_ADMIN_DENIED',
@@ -84,6 +89,11 @@ const errorMap: Record<string, { status: ContentfulStatusCode; code: string; mes
     status: 409,
     code: 'RESELLER_RECORD_ALREADY_DECIDED',
     message: 'This record was already updated. Refresh and try again.',
+  },
+  HCRA6: {
+    status: 409,
+    code: 'RESELLER_ORDER_AWAITING_PAYMENT',
+    message: "This order is still waiting for the reseller's payment proof.",
   },
   HCS08: {
     status: 409,

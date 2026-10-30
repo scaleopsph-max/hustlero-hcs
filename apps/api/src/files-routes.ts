@@ -62,6 +62,11 @@ const errorMap: Record<string, { status: ContentfulStatusCode; code: string; mes
     message: 'The file limit was reached. Remove or wait for review first.',
   },
   HCFL5: { status: 409, code: 'PAYMENT_PROOF_NOT_ACCEPTED', message: 'This order cannot take a payment proof.' },
+  HCFL6: {
+    status: 409,
+    code: 'PAYMENT_WINDOW_CLOSED',
+    message: 'The 4-hour payment window for this order has closed. Place the order again.',
+  },
   HCRP0: { status: 404, code: 'RESELLER_PORTAL_UNAVAILABLE', message: 'The reseller portal is not available.' },
   HCRP1: { status: 403, code: 'RESELLER_ACCESS_DENIED', message: 'This account does not have reseller access here.' },
   HCRP3: { status: 400, code: 'INVALID_RESELLER_PORTAL_REQUEST', message: 'Check the details and try again.' },

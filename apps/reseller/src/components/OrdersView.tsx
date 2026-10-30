@@ -3,11 +3,12 @@
 import type { ResellerOrder } from '@hcs/contracts'
 import { Button, Chip, Glass, formatPeso } from '@hcs/ui'
 import { ChevronDown, PackageSearch, RefreshCw } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { formatQuantity } from '@/lib/cart'
 import { PaymentProofs } from './PaymentProofs'
-import { formatDateTime, orderStatusLabel, paymentLabel, reviewReasonLabel } from '@/lib/labels'
+import { formatDateTime, formatTime, orderBadge, paymentLabel, reviewReasonLabel, timeLeft } from '@/lib/labels'
+import { PaymentInstructions } from './PaymentInstructions'
 
 export function OrdersView({
   orders,
@@ -15,14 +16,28 @@ export function OrdersView({
   onRefresh,
   onReorder,
   onUploadProof,
+  focusOrderId,
+  paymentInstructions,
 }: {
   orders: ResellerOrder[]
+  /** Order to open on arrival, e.g. right after checkout. */
+  focusOrderId?: string | null
+  paymentInstructions?: string | null
   loading: boolean
   onRefresh: () => void
   onReorder: (order: ResellerOrder) => void
   onUploadProof: (orderId: string, body: FormData, idempotencyKey: string) => Promise<void>
 }) {
-  const [openId, setOpenId] = useState<string | null>(null)
+  const [openId, setOpenId] = useState<string | null>(focusOrderId ?? null)
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (focusOrderId) setOpenId(focusOrderId)
+  }, [focusOrderId])
+  // Keeps the payment countdown current.
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   return (
     <section className="flex flex-col gap-3">
@@ -41,7 +56,9 @@ export function OrdersView({
       ) : (
         <ul className="flex flex-col gap-3">
           {orders.map((order) => {
-            const status = orderStatusLabel[order.status]
+            const status = orderBadge(order)
+            const awaitingPayment = order.status === 'submitted' && order.reviewReason === 'awaiting_payment'
+            const left = awaitingPayment && order.paymentDueAt ? timeLeft(order.paymentDueAt, now) : null
             const open = openId === order.id
             return (
               <li key={order.id}>
@@ -68,7 +85,16 @@ export function OrdersView({
 
                   {open ? (
                     <div className="flex flex-col gap-3 border-t border-white/10 p-4">
-                      {order.status === 'submitted' && order.reviewReason ? (
+                      {awaitingPayment && order.paymentDueAt ? (
+                        <div className="flex flex-col gap-2">
+                          <p className="rounded-control bg-signal-dark-attention-bg px-3 py-2 text-small text-signal-dark-attention-fg">
+                            {left
+                              ? `Pay by ${formatTime(order.paymentDueAt)} (${left}). Upload your proof before then or the order is cancelled.`
+                              : 'The payment window has closed. Refresh to see the latest status.'}
+                          </p>
+                          <PaymentInstructions instructions={paymentInstructions} />
+                        </div>
+                      ) : order.status === 'submitted' && order.reviewReason ? (
                         <p className="rounded-control bg-signal-dark-attention-bg px-3 py-2 text-small text-signal-dark-attention-fg">
                           {reviewReasonLabel[order.reviewReason]}
                         </p>
@@ -116,7 +142,11 @@ export function OrdersView({
                           </>
                         ) : null}
                       </dl>
-                      <PaymentProofs order={order} onUpload={onUploadProof} />
+                      <PaymentProofs
+                        order={order}
+                        onUpload={onUploadProof}
+                        startOpen={awaitingPayment && left !== null}
+                      />
                       <Button size="sm" onClick={() => onReorder(order)}>
                         Order again
                       </Button>

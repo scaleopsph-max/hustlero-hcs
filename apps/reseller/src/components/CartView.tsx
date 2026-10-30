@@ -2,13 +2,14 @@
 
 import type { ResellerOrderSubmitRequest, ResellerOrderSubmitResponse, ResellerPortalCatalog } from '@hcs/contracts'
 import { Button, Glass, cn, formatPeso } from '@hcs/ui'
-import { CircleCheck, Clock, ShoppingCart, TriangleAlert } from 'lucide-react'
+import { CircleCheck, Clock, ShoppingCart, TriangleAlert, Upload } from 'lucide-react'
 import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 
 import { formatQuantity, summarizeCart, type CartLine } from '@/lib/cart'
-import { paymentLabel, reviewReasonLabel, stockLabel } from '@/lib/labels'
+import { formatTime, paymentLabel, reviewReasonLabel, stockLabel } from '@/lib/labels'
 import { newIdempotencyKey } from '@/lib/portal-api'
 
+import { PaymentInstructions } from './PaymentInstructions'
 import { QuantityStepper } from './QuantityStepper'
 
 export function CartView({
@@ -23,10 +24,11 @@ export function CartView({
   cart: CartLine[]
   onQuantity: (variantId: string, quantityMilli: number) => void
   onSubmit: (request: ResellerOrderSubmitRequest, idempotencyKey: string) => Promise<ResellerOrderSubmitResponse>
-  onOrderPlaced: () => void
+  onOrderPlaced: (salesOrderId: string) => void
   onBrowse: () => void
 }) {
   const summary = useMemo(() => summarizeCart(cart, catalog.items), [cart, catalog.items])
+  const holdHours = catalog.payment?.holdHours ?? 4
   const [method, setMethod] = useState<'delivery' | 'pickup'>('delivery')
   const [address, setAddress] = useState('')
   const [payment, setPayment] = useState<'gcash' | 'bank_transfer'>('gcash')
@@ -39,6 +41,7 @@ export function CartView({
 
   if (placed) {
     const confirmed = placed.status === 'confirmed'
+    const awaitingPayment = placed.reviewReason === 'awaiting_payment'
     return (
       <Glass className="flex flex-col items-center gap-4 rounded-sheet px-6 py-10 text-center">
         {confirmed ? (
@@ -47,26 +50,46 @@ export function CartView({
           <Clock size={48} className="text-signal-dark-attention-fg" />
         )}
         <div>
-          <p className="text-h3">{confirmed ? 'Order confirmed!' : 'Order received'}</p>
+          <p className="text-h3">
+            {confirmed ? 'Order confirmed!' : awaitingPayment ? 'Order placed. Send your payment' : 'Order received'}
+          </p>
           <p className="mt-1 text-ink-300">
             Order {placed.orderNumber} · {formatPeso(placed.totalMinor)}
           </p>
         </div>
-        <p className="text-ink-200">
-          {confirmed
-            ? 'Your stock is reserved. Watch for updates on payment and delivery.'
-            : placed.reviewReason
-              ? reviewReasonLabel[placed.reviewReason]
-              : 'The team will review your order first.'}
-        </p>
+        {awaitingPayment ? (
+          <>
+            <p className="text-ink-200">
+              Your stock is on hold
+              {placed.paymentDueAt ? ` until ${formatTime(placed.paymentDueAt)}` : ` for ${holdHours} hours`}. Upload
+              your payment proof before then or the order is cancelled. A downpayment is fine.
+            </p>
+            <PaymentInstructions instructions={catalog.payment?.instructions} />
+          </>
+        ) : (
+          <p className="text-ink-200">
+            {confirmed
+              ? 'Your stock is reserved. Watch for updates on payment and delivery.'
+              : placed.reviewReason
+                ? reviewReasonLabel[placed.reviewReason]
+                : 'The team will review your order first.'}
+          </p>
+        )}
         <Button
           variant="primary"
           onClick={() => {
             setPlaced(null)
-            onOrderPlaced()
+            onOrderPlaced(placed.salesOrderId)
           }}
         >
-          View orders
+          {awaitingPayment ? (
+            <>
+              <Upload size={18} className="mr-2" />
+              Upload payment proof
+            </>
+          ) : (
+            'View orders'
+          )}
         </Button>
       </Glass>
     )
@@ -212,9 +235,13 @@ export function CartView({
             Estimated profit if sold at SRP: {formatPeso(summary.potentialProfitMinor)}
           </p>
         ) : null}
+        <p className="text-small text-ink-300">
+          After you place the order, send your payment within {holdHours} hours to keep the stock on hold. A downpayment
+          is fine.
+        </p>
         {error ? <p className="text-small text-signal-dark-critical-fg">{error}</p> : null}
         <Button type="submit" variant="primary" size="xl" disabled={blocked}>
-          {busy ? 'Sending…' : 'Submit order'}
+          {busy ? 'Sending…' : 'Place order'}
         </Button>
       </Glass>
     </form>

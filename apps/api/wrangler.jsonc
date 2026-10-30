@@ -33,6 +33,11 @@
           "bucket_name": "hustlero-hcs-files-development",
         },
       ],
+      // Cancels unpaid reseller portal orders after their 4-hour window and releases the held stock.
+      // Add to production only together with the pay-first migration.
+      "triggers": {
+        "crons": ["*/5 * * * *"],
+      },
     },
     "staging": {
       "name": "hustlero-hcs-api-staging",
@@ -55,6 +60,11 @@
           "bucket_name": "hustlero-hcs-files-staging",
         },
       ],
+      // Cancels unpaid reseller portal orders after their 4-hour window and releases the held stock.
+      // Add to production only together with the pay-first migration.
+      "triggers": {
+        "crons": ["*/5 * * * *"],
+      },
     },
     "production": {
       "name": "hustlero-hcs-api",

@@ -42,6 +42,7 @@ export function PortalApp() {
   const [ordersLoading, setOrdersLoading] = useState(false)
   const [cart, setCart] = useState<CartLine[]>([])
   const [tab, setTab] = useState<Tab>('catalog')
+  const [focusOrderId, setFocusOrderId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -127,7 +128,7 @@ export function PortalApp() {
     )
     updateCart([])
     void loadOrders()
-    // Refresh badges and available credit after a reservation.
+    // Refresh badges after the stock hold.
     portalRequest('/v1/portal/catalog', (value) => resellerPortalCatalogSchema.parse(value), { token, tenantId })
       .then(setCatalog)
       .catch(() => undefined)
@@ -223,7 +224,10 @@ export function PortalApp() {
               cart={cart}
               onQuantity={(id, qty) => updateCart(setCartQuantity(cart, id, qty))}
               onSubmit={submitOrder}
-              onOrderPlaced={() => setTab('orders')}
+              onOrderPlaced={(salesOrderId) => {
+                setFocusOrderId(salesOrderId)
+                setTab('orders')
+              }}
               onBrowse={() => setTab('catalog')}
             />
           ) : tab === 'orders' ? (
@@ -233,6 +237,8 @@ export function PortalApp() {
               onRefresh={() => void loadOrders()}
               onReorder={reorder}
               onUploadProof={uploadProof}
+              focusOrderId={focusOrderId}
+              paymentInstructions={catalog.payment?.instructions ?? null}
             />
           ) : session && tenantId ? (
             <AccountView

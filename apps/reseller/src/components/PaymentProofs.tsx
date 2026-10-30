@@ -19,8 +19,11 @@ const proofStatus: Record<'pending' | 'accepted' | 'rejected', { text: string; t
 export function PaymentProofs({
   order,
   onUpload,
+  startOpen = false,
 }: {
   order: ResellerOrder
+  /** Opens the upload form right away, e.g. for an order waiting for payment. */
+  startOpen?: boolean
   onUpload: (orderId: string, body: FormData, idempotencyKey: string) => Promise<void>
 }) {
   const proofs = order.paymentProofs ?? []
@@ -28,7 +31,7 @@ export function PaymentProofs({
     .filter((proof) => proof.status === 'accepted')
     .reduce((sum, proof) => sum + proof.amountMinor, 0)
   const remainingMinor = Math.max(0, order.totalMinor - verifiedMinor)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(startOpen)
   const [amount, setAmount] = useState((remainingMinor / 100).toFixed(2))
   const [reference, setReference] = useState('')
   const [method, setMethod] = useState<'gcash' | 'bank_transfer'>(order.paymentPreference ?? 'gcash')
@@ -80,7 +83,12 @@ export function PaymentProofs({
       <div className="flex items-center justify-between gap-2">
         <p className="text-small font-semibold">Proof of payment</p>
         {verifiedMinor > 0 ? (
-          <span className="text-caption text-signal-dark-success-fg">Verified: {formatPeso(verifiedMinor)}</span>
+          <span className="text-caption text-signal-dark-success-fg">
+            Verified: {formatPeso(verifiedMinor)}
+            {remainingMinor > 0 ? (
+              <span className="text-signal-dark-warning-fg"> · Balance {formatPeso(remainingMinor)}</span>
+            ) : null}
+          </span>
         ) : null}
       </div>
       {proofs.length ? (
@@ -126,7 +134,7 @@ export function PaymentProofs({
       {accepting && !open ? (
         <Button size="sm" onClick={() => setOpen(true)}>
           <Upload size={16} className="mr-2" />
-          Upload proof
+          Upload payment proof
         </Button>
       ) : null}
       {open ? (
@@ -170,7 +178,7 @@ export function PaymentProofs({
             />
           </label>
           <label className="flex flex-col gap-1.5 text-small font-semibold" htmlFor={`proof-file-${order.id}`}>
-            Screenshot o PDF
+            Screenshot or PDF
             <input
               id={`proof-file-${order.id}`}
               type="file"

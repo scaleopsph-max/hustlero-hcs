@@ -16,6 +16,10 @@ export const resellerReviewReasonSchema = z.enum([
   'credit_review',
   'stock_insufficient',
   'credit_limit',
+  /** Pay first: stock is held for four hours until the reseller sends a payment proof. */
+  'awaiting_payment',
+  /** A payment proof arrived; the team verifies it and confirms the order. */
+  'payment_review',
 ])
 export const resellerOrderStatusSchema = z.enum([
   'submitted',
@@ -98,6 +102,8 @@ export const resellerPortalCatalogSchema = z.object({
     pointsBalance: z.number().int().nonnegative(),
   }),
   fulfillmentLocationName: z.string().min(1),
+  /** Where to send payment. Optional so older API versions still parse. */
+  payment: z.object({ instructions: z.string().nullable(), holdHours: z.number().int().positive() }).optional(),
   items: z.array(resellerCatalogItemSchema),
 })
 
@@ -120,6 +126,8 @@ export const resellerOrderSchema = z.object({
   createdAt: timestamp,
   confirmedAt: timestamp.nullable(),
   cancelledAt: timestamp.nullable(),
+  /** When an order awaiting payment is cancelled if no proof arrives. */
+  paymentDueAt: timestamp.nullable().optional(),
   lines: z.array(
     z.object({
       id: uuid,
@@ -165,6 +173,7 @@ export const resellerOrderSubmitResponseSchema = z.object({
   orderNumber: z.string().min(1),
   status: z.enum(['confirmed', 'submitted']),
   reviewReason: resellerReviewReasonSchema.nullable(),
+  paymentDueAt: timestamp.nullable().optional(),
   lineCount: z.number().int().positive(),
   totalMinor: minor,
 })
@@ -175,7 +184,10 @@ export const resellerPortalSettingsRequestSchema = z.strictObject({
   fulfillmentLocationId: uuid,
   defaultPriceListId: uuid.optional(),
   applicationsOpen: z.boolean(),
-  autoConfirm: z.boolean(),
+  /** Ignored: portal orders are always pay first. Kept for older clients. */
+  autoConfirm: z.boolean().optional(),
+  /** GCash or bank details shown to resellers; null clears them. */
+  paymentInstructions: z.string().trim().min(2).max(1000).nullable().optional(),
 })
 
 export const resellerPortalSettingsResponseSchema = z.object({
@@ -184,6 +196,7 @@ export const resellerPortalSettingsResponseSchema = z.object({
   defaultPriceListId: uuid.nullable(),
   applicationsOpen: z.boolean(),
   autoConfirm: z.boolean(),
+  paymentInstructions: z.string().nullable().optional(),
 })
 
 export const resellerApplicationDecisionRequestSchema = z.discriminatedUnion('decision', [
@@ -246,6 +259,7 @@ export const resellerPortalAdminSchema = z.object({
       defaultPriceListId: uuid.nullable(),
       applicationsOpen: z.boolean(),
       autoConfirm: z.boolean(),
+      paymentInstructions: z.string().nullable().optional(),
       updatedAt: timestamp,
     })
     .nullable(),
@@ -296,6 +310,18 @@ export const resellerPortalAdminSchema = z.object({
     }),
   ),
   reviewQueue: z.array(resellerOrderSchema),
+  awaitingPayment: z
+    .array(
+      z.object({
+        id: uuid,
+        orderNumber: z.string().min(1),
+        customerName: z.string().min(1),
+        totalMinor: minor,
+        createdAt: timestamp,
+        paymentDueAt: timestamp,
+      }),
+    )
+    .optional(),
 })
 
 export type ResellerStockStatus = z.infer<typeof resellerStockStatusSchema>

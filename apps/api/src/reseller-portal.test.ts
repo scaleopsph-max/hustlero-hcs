@@ -323,6 +323,26 @@ describe('reseller portal API', () => {
     expect(apiErrorResponseSchema.parse(await response.json()).error.code).toBe('RESELLER_ITEM_OUT_OF_STOCK')
   })
 
+  it('refuses orders larger than the available stock', async () => {
+    const app = portalApp(repository({ submitOrder: vi.fn(async () => Promise.reject(postgresError('HCRP8'))) }))
+    const response = await app.request(
+      '/v1/portal/orders',
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer reseller-token',
+          'content-type': 'application/json',
+          'x-tenant-id': tenantId,
+          'idempotency-key': 'portal-order-0004',
+        },
+        body: JSON.stringify(orderRequest),
+      },
+      bindings,
+    )
+    expect(response.status).toBe(409)
+    expect(apiErrorResponseSchema.parse(await response.json()).error.code).toBe('RESELLER_STOCK_SHORT')
+  })
+
   it('keeps Back Office administration behind a member session', async () => {
     const repo = repository()
     const app = portalApp(repo)

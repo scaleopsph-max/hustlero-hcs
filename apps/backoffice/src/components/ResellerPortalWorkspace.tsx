@@ -139,6 +139,7 @@ export function ResellerPortalWorkspace() {
 
   const link = applicationLink(portalOrigin, admin.tenantSlug)
   const pendingApplications = admin.applications.filter((application) => application.status === 'pending')
+  const awaiting = admin.awaitingPayment ?? []
 
   return (
     <div className="flex flex-col gap-6 px-6 pb-10">
@@ -154,7 +155,10 @@ export function ResellerPortalWorkspace() {
 
       <div className="flex flex-wrap items-center gap-3">
         <Chip surface="light" tone={admin.reviewQueue.length ? 'attention' : 'neutral'}>
-          {`${admin.reviewQueue.length} order${admin.reviewQueue.length === 1 ? '' : 's'} for review`}
+          {`${admin.reviewQueue.length} paid order${admin.reviewQueue.length === 1 ? '' : 's'} to confirm`}
+        </Chip>
+        <Chip surface="light" tone={awaiting.length ? 'info' : 'neutral'}>
+          {`${awaiting.length} awaiting payment`}
         </Chip>
         <Chip surface="light" tone={pendingApplications.length ? 'info' : 'neutral'}>
           {`${pendingApplications.length} pending application${pendingApplications.length === 1 ? '' : 's'}`}
@@ -187,8 +191,8 @@ export function ResellerPortalWorkspace() {
       />
 
       <Section
-        title="Orders for review"
-        empty="No portal orders are waiting. Orders with stock and available credit confirm automatically."
+        title="Paid orders to confirm"
+        empty="No paid orders are waiting. Orders appear here once the reseller uploads a payment proof."
       >
         {admin.reviewQueue.map((order) => (
           <ReviewCard
@@ -202,16 +206,50 @@ export function ResellerPortalWorkspace() {
                 body,
                 (v) => resellerOrderReviewResponseSchema.parse(v),
                 body.decision === 'approve'
-                  ? `${order.orderNumber} confirmed and stock reserved.`
-                  : `${order.orderNumber} rejected.`,
+                  ? `${order.orderNumber} confirmed and its payment proofs verified. Record the payment in Wholesale payments using the proof reference.`
+                  : `${order.orderNumber} rejected and its stock released. The reseller sees your reason.`,
               )
             }
           />
         ))}
       </Section>
 
+      <Section
+        title="Awaiting payment"
+        empty="No orders are waiting for payment. New portal orders hold stock for 4 hours until the reseller pays."
+      >
+        {awaiting.map((order) => (
+          <Glass
+            key={order.id}
+            variant="data"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-panel px-5 py-3"
+          >
+            <div>
+              <p className="font-semibold">
+                {order.orderNumber} · {order.customerName}
+              </p>
+              <p className="text-sm text-ink-500">
+                Stock on hold until{' '}
+                {new Date(order.paymentDueAt).toLocaleString('en-PH', {
+                  timeZone: 'Asia/Manila',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  month: 'short',
+                  day: 'numeric',
+                })}
+                . Cancelled automatically if no proof arrives.
+              </p>
+            </div>
+            <p className="font-semibold">{formatPeso(order.totalMinor)}</p>
+          </Glass>
+        ))}
+      </Section>
+
       {proofs ? (
-        <Section title="Payment proofs to verify" empty="No payment proofs are waiting.">
+        <Section
+          title="Balance payments to verify"
+          empty="No balance payments are waiting. Proofs sent before confirmation are checked on the order above."
+        >
           {proofs.map((proof) => (
             <ProofCard
               key={proof.id}
@@ -402,7 +440,7 @@ function SettingsCard({
   const [location, setLocation] = useState(admin.settings?.fulfillmentLocationId ?? admin.locations[0]?.id ?? '')
   const [priceList, setPriceList] = useState(admin.settings?.defaultPriceListId ?? '')
   const [open, setOpen] = useState(admin.settings?.applicationsOpen ?? true)
-  const [auto, setAuto] = useState(admin.settings?.autoConfirm ?? true)
+  const [instructions, setInstructions] = useState(admin.settings?.paymentInstructions ?? '')
   const [copied, setCopied] = useState(false)
 
   function submit(event: FormEvent) {
@@ -410,7 +448,7 @@ function SettingsCard({
     onSave({
       fulfillmentLocationId: location,
       applicationsOpen: open,
-      autoConfirm: auto,
+      paymentInstructions: instructions.trim() ? instructions.trim() : null,
       ...(priceList ? { defaultPriceListId: priceList } : {}),
     })
   }
@@ -448,18 +486,18 @@ function SettingsCard({
             ))}
           </select>
         </label>
-        <label className="flex items-start gap-3 text-sm">
-          <input
-            type="checkbox"
-            className="mt-1 size-4"
-            checked={auto}
-            onChange={(event) => setAuto(event.target.checked)}
+        <label className="flex flex-col gap-1.5 text-sm font-semibold md:row-span-2">
+          Payment instructions for resellers
+          <textarea
+            className={`${control} min-h-28 py-2 font-normal`}
+            maxLength={1000}
+            value={instructions}
+            onChange={(event) => setInstructions(event.target.value)}
+            placeholder={'GCash: 0917 123 4567 (Juan Dela Cruz)\nBDO: 0012 3456 7890 (Local Recipe)'}
           />
-          <span>
-            <span className="font-semibold">Auto-confirm orders</span>
-            <span className="block text-ink-500">
-              Confirm and reserve stock right away when stock and credit allow. Other orders wait for review.
-            </span>
+          <span className="font-normal text-ink-500">
+            Every portal order holds its stock for 4 hours. The reseller pays here and uploads the proof; the order then
+            appears below for you to confirm.
           </span>
         </label>
         <label className="flex items-start gap-3 text-sm">
@@ -512,6 +550,11 @@ function ReviewCard({
 }) {
   const [note, setNote] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
+  const proofs = order.paymentProofs ?? []
+  const paidMinor = proofs
+    .filter((proof) => proof.status !== 'rejected')
+    .reduce((sum, proof) => sum + proof.amountMinor, 0)
+  const balanceMinor = Math.max(0, order.totalMinor - paidMinor)
   function decide(decision: 'approve' | 'reject') {
     const request = orderReviewRequest(decision, note)
     if (typeof request === 'string') return setProblem(request)
@@ -561,6 +604,54 @@ function ReviewCard({
         </tbody>
       </table>
       {order.notes ? <p className="text-sm text-ink-600">Reseller note: {order.notes}</p> : null}
+      {proofs.length ? (
+        <div className="flex flex-col gap-2 rounded-control border border-ink-900/10 p-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+            <p className="font-semibold">Payment proofs</p>
+            <p>
+              Sent {formatPeso(paidMinor)} of {formatPeso(order.totalMinor)}
+              {balanceMinor > 0 ? (
+                <span className="text-signal-light-warning-fg"> · Balance {formatPeso(balanceMinor)}</span>
+              ) : (
+                <span className="text-signal-light-success-fg"> · Paid in full</span>
+              )}
+            </p>
+          </div>
+          <ul className="flex flex-wrap gap-3">
+            {proofs.map((proof) => (
+              <li key={proof.id} className="flex items-center gap-3 rounded-control bg-ink-900/5 p-2 pr-3 text-sm">
+                <a
+                  href={fileUrl(proof.url)}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={`Open payment proof ${proof.reference}`}
+                >
+                  {proof.thumbUrl ? (
+                    <img
+                      src={fileUrl(proof.thumbUrl)}
+                      alt={`Payment proof ${proof.reference}`}
+                      className="h-20 w-16 rounded-control object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-20 w-16 items-center justify-center rounded-control bg-white text-xs font-semibold">
+                      PDF
+                    </span>
+                  )}
+                </a>
+                <span>
+                  <span className="block font-semibold">{formatPeso(proof.amountMinor)}</span>
+                  <span className="block text-ink-500">
+                    {proof.method === 'gcash' ? 'GCash' : 'Bank'} · Ref {proof.reference}
+                  </span>
+                  {proof.status !== 'pending' ? (
+                    <span className="block text-ink-500 capitalize">{proof.status}</span>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex min-w-60 flex-1 flex-col gap-1.5 text-sm font-semibold">
           Note to reseller (required to reject)
@@ -568,16 +659,18 @@ function ReviewCard({
         </label>
         <Button variant="confirm" disabled={busy} onClick={() => decide('approve')}>
           <Check size={16} className="mr-2" />
-          Confirm and reserve
+          {proofs.length ? 'Verify payment & confirm order' : 'Confirm order'}
         </Button>
         <Button disabled={busy} onClick={() => decide('reject')}>
           <X size={16} className="mr-2" />
-          Reject
+          Reject order
         </Button>
       </div>
       {problem ? <p className="text-sm text-signal-light-critical-fg">{problem}</p> : null}
       <p className="text-caption text-ink-500">
-        Confirming rechecks stock and credit. Over-limit orders need an approved credit override in Wholesale approvals.
+        Check the amount and reference in your GCash or bank app first. Confirming verifies the proofs and reserves the
+        stock; it does not record the payment. A remaining balance follows the reseller&apos;s payment terms and credit
+        limit. Rejecting releases the stock and rejects the proofs.
       </p>
     </Glass>
   )
@@ -690,8 +783,9 @@ function ApplicationCard({
             </label>
           </div>
           <p className="text-caption text-ink-500">
-            The credit limit caps confirmed orders that are not paid yet, even for prepaid terms. With ₱0, every portal
-            order waits for review.
+            The credit limit caps confirmed orders whose payment is not yet recorded in Wholesale payments, even for
+            prepaid terms. Verified proofs do not count until the payment is recorded, so set it at least as high as the
+            orders you confirm before recording payment.
           </p>
           <div className="flex flex-wrap items-end gap-3">
             <label className="flex min-w-60 flex-1 flex-col gap-1.5 text-sm font-semibold">

@@ -144,7 +144,7 @@ select throws_ok($$ select app.load_reseller_portal_catalog('1e100000-0000-4000-
 select throws_ok($$ select app.load_reseller_portal_catalog('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001') $$,
   'HCRP1', null, 'a Back Office owner session is not a reseller session');
 
--- Auto-confirmed order reserves shared stock with the reseller as actor.
+-- Pay first: every order holds its stock for four hours and waits for a payment proof.
 select throws_ok($$ select app.submit_reseller_portal_order('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001',
   '{"lines":[{"variantId":"8e100000-0000-4000-8000-000000000001","quantityMilli":1000}],"fulfillmentMethod":"pickup","paymentPreference":"gcash"}',
   'portal-order-key-00', 'order-hash-0', 'order-request-0') $$, 'HCRP5', null, 'wholesale minimum quantity is enforced');
@@ -153,88 +153,134 @@ select throws_ok($$ select app.submit_reseller_portal_order('1e100000-0000-4000-
   'portal-order-key-0a', 'order-hash-0a', 'order-request-0a') $$, 'HCRP3', null, 'delivery requires an address');
 select is(app.submit_reseller_portal_order('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001',
   '{"lines":[{"variantId":"8e100000-0000-4000-8000-000000000001","quantityMilli":10000}],"fulfillmentMethod":"delivery","deliveryAddress":"Blk 4 Lot 2, Tagaytay City","paymentPreference":"gcash"}',
-  'portal-order-key-01', 'order-hash-1', 'order-request-1')->>'status', 'confirmed', 'an order with stock and credit auto-confirms');
+  'portal-order-key-01', 'order-hash-1', 'order-request-1')->>'reviewReason', 'awaiting_payment', 'a new order waits for payment');
+select is((select status from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'), 'submitted',
+  'portal orders receive server-generated numbers and stay submitted until reviewed');
 select is((select reserved from app.inventory_balances where tenant_id = '2e100000-0000-4000-8000-000000000001'
-  and variant_id = '8e100000-0000-4000-8000-000000000001'), 10.000::numeric, 'auto-confirm reserves the shared branch stock');
+  and variant_id = '8e100000-0000-4000-8000-000000000001'), 10.000::numeric, 'the order holds the shared branch stock');
 select is((select count(*)::integer from app.sales_order_reservation_ledger where tenant_id = '2e100000-0000-4000-8000-000000000001'
-  and actor_reseller_account_id is not null and actor_user_id is null), 1, 'reservation ledger records the reseller actor');
-select is((select order_number::text from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and status = 'confirmed'),
-  'RP-000001', 'portal orders receive server-generated numbers');
-select ok(exists(select 1 from app.wholesale_order_credit_snapshots s join app.sales_orders o on o.tenant_id = s.tenant_id and o.id = s.sales_order_id
-  where o.order_number = 'RP-000001'), 'auto-confirm snapshots the credit terms like Back Office confirmation');
+  and reason = 'payment_hold' and actor_reseller_account_id is not null and actor_user_id is null), 1,
+  'the payment hold is recorded with the reseller as actor');
+select ok((select payment_due_at between now() + interval '3 hours 59 minutes' and now() + interval '4 hours 1 minute'
+  from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'), 'the payment window is four hours');
 select is(app.submit_reseller_portal_order('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001',
   '{"lines":[{"variantId":"8e100000-0000-4000-8000-000000000001","quantityMilli":10000}],"fulfillmentMethod":"delivery","deliveryAddress":"Blk 4 Lot 2, Tagaytay City","paymentPreference":"gcash"}',
   'portal-order-key-01', 'order-hash-1', 'order-request-1b')->>'orderNumber', 'RP-000001', 'a retried submit returns the first result');
 select is((select reserved from app.inventory_balances where tenant_id = '2e100000-0000-4000-8000-000000000001'
-  and variant_id = '8e100000-0000-4000-8000-000000000001'), 10.000::numeric, 'a retried submit does not reserve twice');
+  and variant_id = '8e100000-0000-4000-8000-000000000001'), 10.000::numeric, 'a retried submit does not hold twice');
 select throws_ok($$ select app.submit_reseller_portal_order('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001',
   '{"lines":[{"variantId":"8e100000-0000-4000-8000-000000000001","quantityMilli":20000}],"fulfillmentMethod":"pickup","paymentPreference":"gcash"}',
   'portal-order-key-01', 'different-hash', 'order-request-1c') $$, 'HCS08', null, 'a reused key with a different order is rejected');
 
--- Out-of-stock items cannot be ordered at all; nothing is saved.
+-- Out-of-stock and short items cannot be ordered; nothing is saved.
 select throws_ok($$ select app.submit_reseller_portal_order('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001',
   '{"lines":[{"variantId":"8e100000-0000-4000-8000-000000000001","quantityMilli":2000},{"variantId":"8e100000-0000-4000-8000-000000000003","quantityMilli":2000}],"fulfillmentMethod":"pickup","paymentPreference":"gcash"}',
   'portal-order-key-oos', 'order-hash-oos', 'order-request-oos') $$, 'HCRP7', null, 'an order with an out-of-stock item is rejected');
-select is((select count(*)::integer from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001'
-  and source = 'reseller_portal'), 1, 'a rejected out-of-stock order saves nothing');
-
--- Holds: insufficient stock and credit go to the review queue without touching stock.
-select is(app.submit_reseller_portal_order('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001',
+select throws_ok($$ select app.submit_reseller_portal_order('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001',
   '{"lines":[{"variantId":"8e100000-0000-4000-8000-000000000002","quantityMilli":9000}],"fulfillmentMethod":"pickup","paymentPreference":"bank_transfer"}',
-  'portal-order-key-02', 'order-hash-2', 'order-request-2')->>'reviewReason', 'stock_insufficient', 'insufficient stock goes to review');
+  'portal-order-key-short', 'order-hash-short', 'order-request-short') $$, 'HCRP8', null, 'an order larger than available stock is rejected');
+select is((select count(*)::integer from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and source = 'reseller_portal'), 1,
+  'rejected orders save nothing');
 select is((select reserved from app.inventory_balances where tenant_id = '2e100000-0000-4000-8000-000000000001'
-  and variant_id = '8e100000-0000-4000-8000-000000000002'), 0.000::numeric, 'a held order reserves nothing');
-select is(app.submit_reseller_portal_order('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001',
-  '{"lines":[{"variantId":"8e100000-0000-4000-8000-000000000001","quantityMilli":80000}],"fulfillmentMethod":"pickup","paymentPreference":"gcash"}',
-  'portal-order-key-03', 'order-hash-3', 'order-request-3')->>'reviewReason', 'credit_limit', 'orders over the credit limit go to review');
-select is((select count(*)::integer from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and status = 'submitted'), 2,
-  'both held orders wait in the review queue');
-select is(jsonb_array_length(app.load_reseller_portal_admin('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001')->'reviewQueue'), 2,
-  'the Back Office review queue lists held orders');
-select ok(exists(select 1 from (select jsonb_array_elements(app.load_wholesale_order_context('1e100000-0000-4000-8000-000000000001',
-  '2e100000-0000-4000-8000-000000000001')->'orders') o) x where x.o->>'status' = 'submitted'),
-  'held orders also appear in the wholesale order list');
+  and variant_id = '8e100000-0000-4000-8000-000000000002'), 0.000::numeric, 'a rejected order holds nothing');
 
--- Review: reject one, approve the other after restock through the Back Office confirmation path.
+-- The team sees an order only after a payment proof arrives.
+select is(jsonb_array_length(app.load_reseller_portal_admin('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001')->'reviewQueue'), 0,
+  'orders awaiting payment are not in the review queue');
+select is(jsonb_array_length(app.load_reseller_portal_admin('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001')->'awaitingPayment'), 1,
+  'the Back Office sees how many orders await payment');
 select throws_ok($$ select app.review_reseller_portal_order('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
-  (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and review_reason = 'stock_insufficient'),
-  '{"decision":"approve"}', 'portal-review-key-01', 'review-hash-1', 'review-request-1') $$,
-  'HCQ10', null, 'approval still enforces available stock');
-select is((select status from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and review_reason = 'stock_insufficient'),
-  'submitted', 'a failed approval leaves the order in review');
-update app.inventory_balances set on_hand = 50.000
-where tenant_id = '2e100000-0000-4000-8000-000000000001' and variant_id = '8e100000-0000-4000-8000-000000000002';
+  (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'),
+  '{"decision":"approve"}', 'portal-review-key-00', 'review-hash-0', 'review-request-0') $$,
+  'HCRA6', null, 'an order cannot be confirmed before the reseller pays');
+
+create function pg_temp.proof(file_id text, amount bigint) returns jsonb language sql as $$
+  select jsonb_build_object('fileId', file_id, 'mimeType', 'image/png', 'sizeBytes', 400000, 'thumbSizeBytes', 30000,
+    'sha256', repeat('c', 64), 'originalFilename', 'gcash.png', 'amountMinor', amount, 'reference', 'GC-1029-3845', 'method', 'gcash')
+$$;
+select is(app.record_payment_proof('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001',
+  (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'),
+  pg_temp.proof('be100000-0000-4000-8000-000000000001', 50000), 'portal-proof-key-01', 'proof-hash-1', 'proof-request-1')->>'status',
+  'pending', 'a downpayment proof is accepted');
+select is((select review_reason from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'), 'payment_review',
+  'the first proof sends the order to review');
+select is(jsonb_array_length(app.load_reseller_portal_admin('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001')->'reviewQueue'->0->'paymentProofs'), 1,
+  'the review queue shows the order with its proof');
+select is(jsonb_array_length(app.list_pending_payment_proofs('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001')->'proofs'), 0,
+  'proofs on orders in review are handled from the review card');
+
+-- One step: verify the payment and confirm the order.
 select is(app.review_reseller_portal_order('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
-  (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and review_reason = 'stock_insufficient'),
-  '{"decision":"approve","reason":"Restocked this morning"}', 'portal-review-key-02', 'review-hash-2', 'review-request-2')->>'status',
-  'confirmed', 'owner approves the held order after restock');
+  (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'),
+  '{"decision":"approve"}', 'portal-review-key-01', 'review-hash-1', 'review-request-1')->>'status',
+  'confirmed', 'owner verifies the payment and confirms the order');
+select is((select status from app.payment_proofs where file_id = 'be100000-0000-4000-8000-000000000001'), 'accepted',
+  'confirming verifies the pending proof');
 select is((select reserved from app.inventory_balances where tenant_id = '2e100000-0000-4000-8000-000000000001'
-  and variant_id = '8e100000-0000-4000-8000-000000000002'), 9.000::numeric, 'approval reserves stock');
-select is((select actor_user_id from app.sales_order_reservation_ledger where tenant_id = '2e100000-0000-4000-8000-000000000001'
-  and variant_id = '8e100000-0000-4000-8000-000000000002'), '1e100000-0000-4000-8000-000000000001'::uuid, 'approval records the Back Office actor');
+  and variant_id = '8e100000-0000-4000-8000-000000000001'), 10.000::numeric, 'the hold becomes the confirmed reservation');
+select is((select array_agg(reason || ':' || quantity_delta order by reason) from app.sales_order_reservation_ledger
+  where tenant_id = '2e100000-0000-4000-8000-000000000001' and sales_order_id = (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')),
+  array['order_confirmed:10.000', 'payment_hold:10.000', 'payment_hold_released:-10.000'], 'the ledger shows hold, release, and confirmation');
+select ok(exists(select 1 from app.wholesale_order_credit_snapshots s join app.sales_orders o on o.tenant_id = s.tenant_id and o.id = s.sales_order_id
+  where o.order_number = 'RP-000001'), 'confirmation snapshots the credit terms like Back Office confirmation');
+
+-- Reject: the hold is released and the pending proof is rejected with the same reason.
+select is(app.submit_reseller_portal_order('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001',
+  '{"lines":[{"variantId":"8e100000-0000-4000-8000-000000000002","quantityMilli":6000}],"fulfillmentMethod":"pickup","paymentPreference":"bank_transfer"}',
+  'portal-order-key-02', 'order-hash-2', 'order-request-2')->>'orderNumber', 'RP-000002', 'reseller places a second order');
+select lives_ok($$ select app.record_payment_proof('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001',
+  (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000002'),
+  pg_temp.proof('be100000-0000-4000-8000-000000000002', 288000), 'portal-proof-key-02', 'proof-hash-2', 'proof-request-2') $$,
+  'reseller sends the full payment');
 select throws_ok($$ select app.review_reseller_portal_order('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
-  (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and review_reason = 'credit_limit'),
+  (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000002'),
   '{"decision":"reject"}', 'portal-review-key-03', 'review-hash-3', 'review-request-3') $$,
   'HCRP3', null, 'rejection requires a reason');
 select is(app.review_reseller_portal_order('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
-  (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and review_reason = 'credit_limit'),
-  '{"decision":"reject","reason":"Please settle the open balance first"}', 'portal-review-key-04', 'review-hash-4', 'review-request-4')->>'status',
-  'cancelled', 'owner rejects the over-limit order');
-select is((select jsonb_array_length(app.list_reseller_portal_orders('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001')->'orders')),
-  3, 'reseller sees every portal order with its status');
-select is((select o->>'reviewDecisionReason' from jsonb_array_elements(app.list_reseller_portal_orders('1e100000-0000-4000-8000-000000000010',
-  '2e100000-0000-4000-8000-000000000001')->'orders') o where o->>'status' = 'cancelled'), 'Please settle the open balance first',
-  'reseller sees the rejection reason');
+  (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000002'),
+  '{"decision":"reject","reason":"Reference not found in our GCash"}', 'portal-review-key-04', 'review-hash-4', 'review-request-4')->>'status',
+  'cancelled', 'owner rejects the order');
+select is((select reserved from app.inventory_balances where tenant_id = '2e100000-0000-4000-8000-000000000001'
+  and variant_id = '8e100000-0000-4000-8000-000000000002'), 0.000::numeric, 'rejection releases the hold');
+select is((select status || ':' || review_reason from app.payment_proofs where file_id = 'be100000-0000-4000-8000-000000000002'),
+  'rejected:Reference not found in our GCash', 'rejection also rejects the pending proof');
 
--- Manual review setting and suspension.
-select lives_ok($$
-  select app.save_reseller_portal_settings('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
-    jsonb_build_object('fulfillmentLocationId', '3e100000-0000-4000-8000-000000000001', 'applicationsOpen', false, 'autoConfirm', false),
-    'portal-settings-key-02', 'settings-hash-2', 'settings-request-2')
-$$, 'owner switches to manual review');
+-- No proof within four hours: the order is cancelled and the stock comes back.
 select is(app.submit_reseller_portal_order('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001',
   '{"lines":[{"variantId":"8e100000-0000-4000-8000-000000000001","quantityMilli":2000}],"fulfillmentMethod":"pickup","paymentPreference":"gcash"}',
-  'portal-order-key-04', 'order-hash-4', 'order-request-4')->>'reviewReason', 'manual_review', 'manual review holds every order');
+  'portal-order-key-03', 'order-hash-3', 'order-request-3')->>'orderNumber', 'RP-000003', 'reseller places a third order');
+select is(app.expire_reseller_payment_holds('2e100000-0000-4000-8000-000000000001'), 0, 'orders inside their window are kept');
+update app.sales_orders set payment_due_at = now() - interval '1 minute' where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000003';
+select throws_ok($$ select app.record_payment_proof('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001',
+  (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000003'),
+  pg_temp.proof('be100000-0000-4000-8000-000000000003', 50000), 'portal-proof-key-03', 'proof-hash-3', 'proof-request-3') $$,
+  'HCFL6', null, 'a proof after the window is refused');
+select is(app.expire_reseller_payment_holds(null), 1, 'the sweep cancels the expired order');
+select is((select status || ':' || review_decision_reason from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000003'),
+  'cancelled:Payment was not received within 4 hours.', 'the reseller sees why the order was cancelled');
+select is((select reserved from app.inventory_balances where tenant_id = '2e100000-0000-4000-8000-000000000001'
+  and variant_id = '8e100000-0000-4000-8000-000000000001'), 10.000::numeric, 'expiry releases the hold');
+select is(app.expire_reseller_payment_holds(null), 0, 'the sweep is idempotent');
+select is((select jsonb_array_length(app.list_reseller_portal_orders('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001')->'orders')),
+  3, 'reseller sees every portal order with its status');
+select ok((select o ? 'paymentDueAt' from jsonb_array_elements(app.list_reseller_portal_orders('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001')->'orders') o limit 1),
+  'orders carry the payment deadline');
+
+-- Settings: payment instructions reach the reseller; auto-confirm is optional and ignored.
+select lives_ok($$
+  select app.save_reseller_portal_settings('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
+    jsonb_build_object('fulfillmentLocationId', '3e100000-0000-4000-8000-000000000001', 'applicationsOpen', false,
+      'paymentInstructions', 'GCash 0917 123 4567 (Juan D.)'),
+    'portal-settings-key-02', 'settings-hash-2', 'settings-request-2')
+$$, 'owner saves payment instructions');
+select is(app.load_reseller_portal_catalog('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001')->'payment'->>'instructions', 'GCash 0917 123 4567 (Juan D.)',
+  'the reseller sees where to pay');
+select throws_ok($$
+  select app.save_reseller_portal_settings('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
+    jsonb_build_object('fulfillmentLocationId', '3e100000-0000-4000-8000-000000000001', 'applicationsOpen', false,
+      'paymentInstructions', ''),
+    'portal-settings-key-03', 'settings-hash-3', 'settings-request-3')
+$$, 'HCRP3', null, 'blank payment instructions are refused; send null to clear them');
 select lives_ok($$ select app.set_reseller_account_status('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
   (select id from app.reseller_accounts where tenant_id = '2e100000-0000-4000-8000-000000000001'), 'suspended', 'suspend-request') $$,
   'owner suspends the reseller account');
@@ -244,6 +290,10 @@ select throws_ok($$ select app.list_reseller_portal_orders('1e100000-0000-4000-8
 -- Database roles: only the API role may execute the entry points.
 select ok(has_function_privilege('hcs_hyperdrive', 'app.submit_reseller_portal_order(uuid,uuid,jsonb,text,text,text)', 'execute'),
   'API role executes portal order submission');
+select ok(has_function_privilege('hcs_hyperdrive', 'app.expire_reseller_payment_holds(uuid)', 'execute'),
+  'API role runs the payment-window sweep');
+select ok(not has_function_privilege('hcs_hyperdrive', 'app.release_reseller_payment_hold(uuid,uuid,uuid,uuid)', 'execute'),
+  'API role cannot release holds directly');
 select ok(not has_function_privilege('anon', 'app.submit_reseller_application(text,jsonb,text)', 'execute'),
   'anonymous database role cannot submit applications directly');
 select ok(not has_function_privilege('hcs_hyperdrive', 'app.create_reseller_account_core(uuid,uuid,uuid,text,uuid,uuid,text)', 'execute'),
