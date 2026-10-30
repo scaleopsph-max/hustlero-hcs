@@ -437,6 +437,51 @@ describe('reseller portal API', () => {
     expect(removePushSubscription).toHaveBeenCalledWith(resellerUserId, tenantId, subscription.endpoint, bindings)
   })
 
+  it('lets the owner turn the portal on and explains refusals', async () => {
+    const availability = {
+      entitled: true,
+      enabled: true,
+      advancedWholesaleEnabled: true,
+      canToggle: true,
+      canManage: true,
+      canHandleOrders: true,
+    }
+    const setEnabled = vi
+      .fn()
+      .mockResolvedValueOnce(availability)
+      .mockRejectedValueOnce(postgresError('HCRA9'))
+      .mockRejectedValueOnce(postgresError('HCRA8'))
+    const app = portalApp(repository({ loadAvailability: vi.fn(async () => availability), setEnabled }))
+    const headers = { authorization: 'Bearer owner-token', 'content-type': 'application/json', 'x-tenant-id': tenantId }
+    expect((await app.request('/v1/reseller-portal/availability', { headers }, bindings)).status).toBe(200)
+    const bad = await app.request(
+      '/v1/reseller-portal/enabled',
+      { method: 'POST', headers, body: '{"enabled":"yes"}' },
+      bindings,
+    )
+    expect(bad.status).toBe(400)
+    const on = await app.request(
+      '/v1/reseller-portal/enabled',
+      { method: 'POST', headers, body: '{"enabled":true}' },
+      bindings,
+    )
+    expect(on.status).toBe(200)
+    expect(setEnabled).toHaveBeenCalledWith(ownerId, tenantId, true, expect.any(String), bindings)
+    const wholesaleOff = await app.request(
+      '/v1/reseller-portal/enabled',
+      { method: 'POST', headers, body: '{"enabled":true}' },
+      bindings,
+    )
+    expect(wholesaleOff.status).toBe(409)
+    expect(apiErrorResponseSchema.parse(await wholesaleOff.json()).error.code).toBe('ADVANCED_WHOLESALE_REQUIRED')
+    const notOwner = await app.request(
+      '/v1/reseller-portal/enabled',
+      { method: 'POST', headers, body: '{"enabled":false}' },
+      bindings,
+    )
+    expect(notOwner.status).toBe(403)
+  })
+
   it('lists reseller notifications and marks them read', async () => {
     const loadNotifications = vi.fn(async () => ({ unreadCount: 0, items: [] }))
     const markNotificationsRead = vi.fn(async () => ({ unreadCount: 0 }))

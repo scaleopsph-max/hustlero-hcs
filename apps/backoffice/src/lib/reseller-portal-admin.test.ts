@@ -108,6 +108,16 @@ describe('shipmentMessage', () => {
       }),
     ).toBe('RP-000001 marked picked up. Stock released, invoice INV-2 issued. Paid in full.')
   })
+  it('mentions loyalty points the sale earned', () => {
+    expect(
+      shipmentMessage({ orderNumber: 'RP-000003', method: 'pickup' }, 'delivered', {
+        invoiceNumber: 'INV-3',
+        recordedPaymentMinor: 0,
+        balanceMinor: 0,
+        pointsEarned: 25,
+      }),
+    ).toBe('RP-000003 marked picked up. Stock released, invoice INV-3 issued. Paid in full. 25 loyalty points earned.')
+  })
   it('does not repeat the sale when a shipped delivery is marked delivered', () => {
     expect(
       shipmentMessage(delivery, 'delivered', { invoiceNumber: 'INV-1', recordedPaymentMinor: 0, balanceMinor: 0 }),

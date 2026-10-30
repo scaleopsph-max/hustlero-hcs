@@ -106,7 +106,10 @@ export function accountRequest(
 export function shipmentMessage(
   shipment: { orderNumber: string; method: 'delivery' | 'pickup' },
   status: 'packed' | 'shipped' | 'delivered',
-  result: Pick<PortalShipmentUpdateResponse, 'invoiceNumber' | 'recordedPaymentMinor' | 'balanceMinor'>,
+  result: Pick<
+    PortalShipmentUpdateResponse,
+    'invoiceNumber' | 'recordedPaymentMinor' | 'balanceMinor' | 'pointsEarned'
+  >,
 ): string {
   const step =
     status === 'packed'
@@ -119,5 +122,6 @@ export function shipmentMessage(
   // A delivery is completed when it ships; marking it delivered only reports new payments.
   if (status === 'delivered' && shipment.method === 'delivery') return `${step}${paid}`
   const balance = result.balanceMinor ? ` ${formatPeso(result.balanceMinor)} still to pay.` : ' Paid in full.'
-  return `${step} Stock released, invoice ${result.invoiceNumber} issued.${paid}${balance}`
+  const points = result.pointsEarned ? ` ${result.pointsEarned} loyalty points earned.` : ''
+  return `${step} Stock released, invoice ${result.invoiceNumber} issued.${paid}${balance}${points}`
 }

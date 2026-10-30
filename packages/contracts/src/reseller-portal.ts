@@ -301,6 +301,8 @@ export const portalShipmentUpdateResponseSchema = z.object({
   /** Present when this step completed the sale: stock released, invoice issued, verified payments recorded. */
   invoiceNumber: z.string().nullable().optional(),
   recordedPaymentMinor: z.number().int().nonnegative().optional(),
+  /** Loyalty points the completed sale earned. */
+  pointsEarned: z.number().int().nonnegative().optional(),
   balanceMinor: z.number().int().optional(),
 })
 
@@ -357,6 +359,8 @@ export const resellerOrderReviewResponseSchema = z.object({
 })
 
 export const resellerPortalAdminSchema = z.object({
+  /** False for members who handle orders only (managers): settings, accounts, and applications are read-only. */
+  canManage: z.boolean().optional(),
   tenantSlug: z.string().min(1),
   settings: z
     .object({
@@ -508,3 +512,16 @@ export type ResellerNotification = z.infer<typeof resellerNotificationSchema>
 export type ResellerNotifications = z.infer<typeof resellerNotificationsSchema>
 export type ResellerNotificationReadRequest = z.infer<typeof resellerNotificationReadRequestSchema>
 export type ResellerNotificationReadResponse = z.infer<typeof resellerNotificationReadResponseSchema>
+
+/** Whether the portal is in the plan and turned on, and what this member may do about it. */
+export const resellerPortalAvailabilitySchema = z.object({
+  entitled: z.boolean(),
+  enabled: z.boolean(),
+  advancedWholesaleEnabled: z.boolean(),
+  canToggle: z.boolean(),
+  canManage: z.boolean(),
+  canHandleOrders: z.boolean(),
+})
+export const resellerPortalEnableRequestSchema = z.strictObject({ enabled: z.boolean() })
+export type ResellerPortalAvailability = z.infer<typeof resellerPortalAvailabilitySchema>
+export type ResellerPortalEnableRequest = z.infer<typeof resellerPortalEnableRequestSchema>

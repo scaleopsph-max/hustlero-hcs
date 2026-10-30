@@ -436,6 +436,46 @@ select ok((select disabled_at is not null from app.push_subscriptions where endp
 select throws_ok($$ update app.reseller_notifications set title = 'x', push_sent_at = now() where tenant_id = '2e100000-0000-4000-8000-000000000001' $$, 'P0001', null,
   'marking a push never allows rewriting the notification');
 
+-- Owners turn the portal on or off.
+select is(app.load_reseller_portal_availability('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001') - 'canHandleOrders' - 'canManage',
+  '{"entitled": true, "enabled": true, "canToggle": true, "advancedWholesaleEnabled": true}'::jsonb, 'the owner sees the portal is on and can change it');
+select is(app.load_reseller_portal_availability('1e100000-0000-4000-8000-000000000003', '2e100000-0000-4000-8000-000000000001')->>'canToggle', 'false', 'other members cannot change it');
+select throws_ok($$ select app.set_reseller_portal_enabled('1e100000-0000-4000-8000-000000000003', '2e100000-0000-4000-8000-000000000001', false, 'toggle-staff') $$, 'HCRA8', null, 'only the owner turns the portal off');
+select is(app.set_reseller_portal_enabled('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', false, 'toggle-off')->>'enabled', 'false', 'the owner turns the portal off');
+select throws_ok($$ select app.load_reseller_portal_admin('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001') $$, 'HCRP0', null, 'a portal that is off is unavailable');
+update app.tenant_entitlements set enabled = false where tenant_id = '2e100000-0000-4000-8000-000000000001' and feature_code = 'advanced_wholesale';
+select throws_ok($$ select app.set_reseller_portal_enabled('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', true, 'toggle-on-0') $$, 'HCRA9', null, 'the portal needs Advanced wholesale on first');
+update app.tenant_entitlements set enabled = true where tenant_id = '2e100000-0000-4000-8000-000000000001' and feature_code = 'advanced_wholesale';
+select is(app.set_reseller_portal_enabled('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', true, 'toggle-on')->>'enabled', 'true', 'the owner turns the portal back on');
+select is((select count(*)::integer from audit.audit_events where tenant_id = '2e100000-0000-4000-8000-000000000001' and action in ('reseller_portal.enabled', 'reseller_portal.disabled')), 2,
+  'each change is audited');
+update app.tenant_entitlements set enabled = false, entitled = false where tenant_id = '2e100000-0000-4000-8000-000000000002' and feature_code = 'reseller_portal';
+select throws_ok($$ select app.set_reseller_portal_enabled('1e100000-0000-4000-8000-000000000002', '2e100000-0000-4000-8000-000000000002', true, 'toggle-b') $$,
+  'HCRP0', null, 'a plan without the portal cannot turn it on');
+
+-- Managers handle portal orders but not portal settings.
+insert into auth.users (id, email, aud, role, email_confirmed_at) values ('1e100000-0000-4000-8000-000000000020', 'manager-a@example.invalid', 'authenticated', 'authenticated', now());
+insert into app.tenant_memberships (tenant_id, user_id, status, is_owner, joined_at) values ('2e100000-0000-4000-8000-000000000001', '1e100000-0000-4000-8000-000000000020', 'active', false, now());
+insert into app.membership_roles (tenant_id, user_id, role_id)
+  select '2e100000-0000-4000-8000-000000000001', '1e100000-0000-4000-8000-000000000020', id from app.roles where tenant_id = '2e100000-0000-4000-8000-000000000001' and code = 'manager';
+select ok(app.can_handle_reseller_portal_orders('1e100000-0000-4000-8000-000000000020', '2e100000-0000-4000-8000-000000000001') and not app.can_manage_reseller_portal('1e100000-0000-4000-8000-000000000020', '2e100000-0000-4000-8000-000000000001'), 'managers handle orders without managing the portal');
+select is(app.load_reseller_portal_admin('1e100000-0000-4000-8000-000000000020', '2e100000-0000-4000-8000-000000000001')->>'canManage', 'false', 'managers open the portal screen read-only for settings');
+select lives_ok($$ select app.review_payment_proof('1e100000-0000-4000-8000-000000000020', '2e100000-0000-4000-8000-000000000001', (select id from app.payment_proofs where file_id = 'be100000-0000-4000-8000-00000000000a'),
+  '{"decision":"accept"}', 'manager-proof') $$, 'a manager verifies a balance payment');
+select throws_ok($$ select app.save_reseller_payment_account('1e100000-0000-4000-8000-000000000020', '2e100000-0000-4000-8000-000000000001',
+  jsonb_build_object('method', 'gcash', 'providerName', 'GCash', 'accountName', 'Not the business', 'accountNumber', '09170000000', 'isActive', true),
+  'manager-acct-key-001', 'h', 'r') $$, 'HCRA1', null, 'a manager cannot change where resellers send money');
+select throws_ok($$ select app.list_pending_payment_proofs('1e100000-0000-4000-8000-000000000003', '2e100000-0000-4000-8000-000000000001') $$, 'HCRA1', null, 'members without either permission cannot handle orders');
+
+-- Loyalty points on portal sales use the invoice total after discounts.
+update app.loyalty_policies set enabled = true, spend_per_point = 100 where tenant_id = '2e100000-0000-4000-8000-000000000001';
+select is(app.award_portal_loyalty('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'), 'loyalty-1'), 25::bigint,
+  'a ₱2,500 portal sale earns 25 points at ₱100 per point');
+select is(app.award_portal_loyalty('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'), 'loyalty-2'), 0::bigint,
+  'points are awarded once per sale');
+select is((select balance_points from app.loyalty_accounts where tenant_id = '2e100000-0000-4000-8000-000000000001' and customer_id = (select customer_id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')),
+  25::bigint, 'the reseller''s balance shows the points');
+
 select lives_ok($$ select app.set_reseller_account_status('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
   (select id from app.reseller_accounts where tenant_id = '2e100000-0000-4000-8000-000000000001'), 'suspended', 'suspend-request') $$,
   'owner suspends the reseller account');
@@ -445,7 +485,7 @@ select throws_ok($$ select app.list_reseller_portal_orders('1e100000-0000-4000-8
 -- Reseller portal report: one range covers every order placed in this test.
 select is((app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'summary'->>'orderCount')::integer, 3, 'the report counts every portal order in the range');
 select is((app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'summary'->>'salesMinor')::bigint, 250000::bigint, 'sales count confirmed orders only');
-select is((app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'summary'->>'verifiedPaymentsMinor')::bigint, 250000::bigint, 'only accepted proofs count as received');
+select is((app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'summary'->>'verifiedPaymentsMinor')::bigint, 251000::bigint, 'only accepted proofs count as received');
 select is((app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'summary'->>'outstandingMinor')::bigint, 0::bigint, 'outstanding is confirmed sales minus verified payments');
 select is((select jsonb_object_agg(x->>'status', (x->>'orderCount')::integer) from jsonb_array_elements(app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'byStatus') x),
   '{"awaiting_payment": 0, "for_confirmation": 0, "confirmed": 1, "expired": 1, "rejected": 1}'::jsonb,

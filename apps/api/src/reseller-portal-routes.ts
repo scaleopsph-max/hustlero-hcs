@@ -11,6 +11,7 @@ import {
   portalShipmentUpdateRequestSchema,
   resellerPortalReportFilterSchema,
   resellerNotificationReadRequestSchema,
+  resellerPortalEnableRequestSchema,
   pushSubscriptionRequestSchema,
   pushUnsubscribeRequestSchema,
   type ResellerOrder,
@@ -66,6 +67,16 @@ const decisionIdempotencyPattern = /^[A-Za-z0-9_-]{16,120}$/
 const errorMap: Record<string, { status: ContentfulStatusCode; code: string; message: string }> = {
   HCSD0: { status: 403, code: 'REPORTING_ACCESS_DENIED', message: 'Your role cannot view these reports.' },
   HCSD1: { status: 400, code: 'INVALID_REPORT_FILTERS', message: 'Choose a valid date range of up to one year.' },
+  HCRA8: {
+    status: 403,
+    code: 'RESELLER_PORTAL_OWNER_ONLY',
+    message: 'Only the owner can turn the reseller portal on or off.',
+  },
+  HCRA9: {
+    status: 409,
+    code: 'ADVANCED_WHOLESALE_REQUIRED',
+    message: 'Turn on Advanced wholesale first, then the reseller portal.',
+  },
   HCPU1: { status: 400, code: 'INVALID_PUSH_SUBSCRIPTION', message: 'This browser could not turn on notifications.' },
   HCSN0: { status: 403, code: 'NOTIFICATION_ACCESS_DENIED', message: 'Sign in to this business to get notifications.' },
   HCRP9: {
@@ -456,6 +467,32 @@ export function registerResellerPortalRoutes(
   pushRoutes('/v1', 'member')
 
   // Back Office administration -----------------------------------------------
+
+  app.get('/v1/reseller-portal/availability', async (context) => {
+    const admin = await resolveAdmin(context)
+    if (admin instanceof Response) return admin
+    return run(context, async () =>
+      context.json(await dependencies.repository.loadAvailability(admin.userId, admin.tenantId, context.env)),
+    )
+  })
+
+  app.post('/v1/reseller-portal/enabled', async (context) => {
+    const admin = await resolveAdmin(context)
+    if (admin instanceof Response) return admin
+    const request = await readJson(context, resellerPortalEnableRequestSchema)
+    if (!request) return fail(context, 400, 'INVALID_RESELLER_PORTAL_REQUEST', 'Choose on or off.')
+    return run(context, async () =>
+      context.json(
+        await dependencies.repository.setEnabled(
+          admin.userId,
+          admin.tenantId,
+          request.enabled,
+          context.get('requestId'),
+          context.env,
+        ),
+      ),
+    )
+  })
 
   app.get('/v1/reseller-portal/admin', async (context) => {
     const admin = await resolveAdmin(context)

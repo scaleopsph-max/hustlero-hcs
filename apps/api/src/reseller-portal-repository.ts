@@ -16,6 +16,8 @@ import {
   portalShipmentUpdateResponseSchema,
   resellerPortalReportSchema,
   resellerStockIssuesSchema,
+  resellerPortalAvailabilitySchema,
+  type ResellerPortalAvailability,
   pushSubscriptionResponseSchema,
   type PushSubscriptionResponse,
   resellerNotificationsSchema,
@@ -193,6 +195,15 @@ export interface ResellerPortalRepository {
     endpoint: string,
     bindings: Bindings,
   ): Promise<PushSubscriptionResponse>
+  loadAvailability(userId: string, tenantId: string, bindings: Bindings): Promise<ResellerPortalAvailability>
+  /** Owner only: turns the portal on or off for the business. */
+  setEnabled(
+    userId: string,
+    tenantId: string,
+    enabled: boolean,
+    requestId: string,
+    bindings: Bindings,
+  ): Promise<ResellerPortalAvailability>
   /** Read-only report for the Back Office Reports page; dates are in the business's time zone. */
   loadReport(
     userId: string,
@@ -357,6 +368,20 @@ export const resellerPortalPostgresRepository: ResellerPortalRepository = {
       'select app.remove_push_subscription($1::uuid, $2::uuid, $3::text) response',
       [userId, tenantId, endpoint],
       (value) => pushSubscriptionResponseSchema.parse(value),
+    ),
+  loadAvailability: (userId, tenantId, bindings) =>
+    queryOne(
+      bindings,
+      'select app.load_reseller_portal_availability($1::uuid, $2::uuid) response',
+      [userId, tenantId],
+      (value) => resellerPortalAvailabilitySchema.parse(value),
+    ),
+  setEnabled: (userId, tenantId, enabled, requestId, bindings) =>
+    queryOne(
+      bindings,
+      'select app.set_reseller_portal_enabled($1::uuid, $2::uuid, $3::boolean, $4::text) response',
+      [userId, tenantId, enabled, requestId],
+      (value) => resellerPortalAvailabilitySchema.parse(value),
     ),
   loadReport: (userId, tenantId, from, to, bindings) =>
     queryOne(

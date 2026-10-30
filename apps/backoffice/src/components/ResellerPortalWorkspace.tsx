@@ -12,10 +12,12 @@ import {
   paymentProofReviewResponseSchema,
   portalShipmentUpdateResponseSchema,
   pendingPaymentProofsSchema,
+  resellerPortalAvailabilitySchema,
   sessionContextResponseSchema,
   type PendingPaymentProof,
   type ResellerOrderReviewRequest,
   type ResellerPortalAdmin,
+  type ResellerPortalAvailability,
 } from '@hcs/contracts'
 import { Button, Chip, Glass, cn, formatPeso, useToast } from '@hcs/ui'
 import { Check, Copy, RefreshCw, UserPlus, X } from 'lucide-react'
@@ -24,6 +26,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { selectActiveTenant } from '@/lib/active-tenant'
 import { LogisticsBoard } from './LogisticsBoard'
 import { PaymentAccountsCard } from './PaymentAccountsCard'
+import { PortalActivation, PortalOffSwitch } from './PortalActivation'
 import { fileUrl } from './ProductPhotos'
 import {
   applicationLink,
@@ -85,6 +88,7 @@ export function ResellerPortalWorkspace() {
   const [auth] = useState(() => (supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null))
   const [scope, setScope] = useState<Scope | null>(null)
   const [admin, setAdmin] = useState<ResellerPortalAdmin | null>(null)
+  const [availability, setAvailability] = useState<ResellerPortalAvailability | null>(null)
   const [busy, setBusy] = useState<string | null>('load')
   const [error, setError] = useState<string | null>(null)
   const toast = useToast()
@@ -105,6 +109,12 @@ export function ResellerPortalWorkspace() {
 
   const [proofs, setProofs] = useState<PendingPaymentProof[] | null>(null)
   const load = useCallback(async (next: Scope) => {
+    const status = resellerPortalAvailabilitySchema.parse(await call('/v1/reseller-portal/availability', next))
+    setAvailability(status)
+    if (!status.enabled) {
+      setAdmin(null)
+      return
+    }
     setAdmin(resellerPortalAdminSchema.parse(await call('/v1/reseller-portal/admin', next)))
     // Proofs need file storage; the rest of the screen works without it.
     try {
@@ -166,6 +176,40 @@ export function ResellerPortalWorkspace() {
     }
   }
 
+  async function setPortalEnabled(enabled: boolean) {
+    if (!scope) return
+    setBusy('enabled')
+    try {
+      const status = resellerPortalAvailabilitySchema.parse(
+        await call('/v1/reseller-portal/enabled', scope, { enabled }),
+      )
+      setAvailability(status)
+      await load(scope)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      toast.success(enabled ? 'The reseller portal is on.' : 'The reseller portal is off.')
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : 'The change was not saved. Try again.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  if (availability && !availability.enabled)
+    return (
+      <div className="flex flex-col gap-4 pb-10">
+        {error ? (
+          <div className="px-6">
+            <ErrorBanner text={error} />
+          </div>
+        ) : null}
+        <PortalActivation
+          availability={availability}
+          busy={busy === 'enabled'}
+          onEnable={() => void setPortalEnabled(true)}
+        />
+      </div>
+    )
+
   if (!admin)
     return (
       <div className="px-6 pb-10">
@@ -173,6 +217,7 @@ export function ResellerPortalWorkspace() {
       </div>
     )
 
+  const canManage = admin.canManage !== false
   const link = applicationLink(portalOrigin, admin.tenantSlug)
   const pendingApplications = admin.applications.filter((application) => application.status === 'pending')
   const awaiting = admin.awaitingPayment ?? []
@@ -188,7 +233,13 @@ export function ResellerPortalWorkspace() {
     { id: 'payments', label: 'Balance payments', count: proofs?.length ?? 0 },
     { id: 'resellers', label: 'Resellers', count: pendingApplications.length },
     { id: 'settings', label: 'Settings', count: admin.settings ? 0 : 1 },
-  ]
+  ].filter((entry) => canManage || (entry.id !== 'resellers' && entry.id !== 'settings')) as {
+    id: PortalTab
+    label: string
+    count: number
+  }[]
+  // Managers handle orders only; the Resellers and Settings tabs belong to portal managers.
+  const shownTab: PortalTab = tabs.some((entry) => entry.id === tab) ? tab : 'orders'
 
   return (
     <div className="flex flex-col gap-6 px-6 pb-10">
@@ -206,12 +257,12 @@ export function ResellerPortalWorkspace() {
               type="button"
               role="tab"
               id={`portal-tab-${entry.id}`}
-              aria-selected={tab === entry.id}
+              aria-selected={shownTab === entry.id}
               aria-controls={`portal-panel-${entry.id}`}
               onClick={() => chooseTab(entry.id)}
               className={cn(
                 'inline-flex h-9 flex-none items-center gap-2 rounded-control px-4 text-sm font-semibold',
-                tab === entry.id ? 'bg-ink-900 text-white' : 'text-ink-700 hover:bg-ink-900/5',
+                shownTab === entry.id ? 'bg-ink-900 text-white' : 'text-ink-700 hover:bg-ink-900/5',
               )}
             >
               {entry.label}
@@ -219,7 +270,7 @@ export function ResellerPortalWorkspace() {
                 <span
                   className={cn(
                     'min-w-5 rounded-full px-1.5 text-xs leading-5',
-                    tab === entry.id
+                    shownTab === entry.id
                       ? 'bg-gold-500 text-ink-950'
                       : 'bg-signal-light-attention-bg text-signal-light-attention-fg',
                   )}
@@ -243,7 +294,7 @@ export function ResellerPortalWorkspace() {
         </Button>
       </div>
 
-      {tab === 'orders' ? (
+      {shownTab === 'orders' ? (
         <div
           role="tabpanel"
           id="portal-panel-orders"
@@ -311,7 +362,7 @@ export function ResellerPortalWorkspace() {
         </div>
       ) : null}
 
-      {tab === 'logistics' ? (
+      {shownTab === 'logistics' ? (
         <div
           role="tabpanel"
           id="portal-panel-logistics"
@@ -337,7 +388,7 @@ export function ResellerPortalWorkspace() {
         </div>
       ) : null}
 
-      {tab === 'payments' ? (
+      {shownTab === 'payments' ? (
         <div
           role="tabpanel"
           id="portal-panel-payments"
@@ -379,7 +430,7 @@ export function ResellerPortalWorkspace() {
         </div>
       ) : null}
 
-      {tab === 'resellers' ? (
+      {shownTab === 'resellers' ? (
         <div
           role="tabpanel"
           id="portal-panel-resellers"
@@ -437,7 +488,7 @@ export function ResellerPortalWorkspace() {
         </div>
       ) : null}
 
-      {tab === 'settings' ? (
+      {shownTab === 'settings' ? (
         <div
           role="tabpanel"
           id="portal-panel-settings"
@@ -499,6 +550,10 @@ export function ResellerPortalWorkspace() {
               toast.success('QR code saved. Resellers see it when they pay.')
             }}
           />
+
+          {availability?.canToggle ? (
+            <PortalOffSwitch busy={busy === 'enabled'} onDisable={() => void setPortalEnabled(false)} />
+          ) : null}
         </div>
       ) : null}
     </div>

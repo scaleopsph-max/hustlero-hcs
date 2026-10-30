@@ -85,11 +85,10 @@ The credit limit caps confirmed orders that are not yet paid, including prepaid 
 - Enable Supabase email OTP and add `{{ .Token }}` to the Magic Link and Confirm signup templates (the portal accepts 6–10 digit codes; set Email OTP Length to 6 for the shortest code). Reseller sign-up must be allowed for OTP. Configure custom SMTP and raise the email rate limit: Supabase's built-in sender hit `429 email rate limit exceeded` after a few codes in Development (Development now sends through Gmail SMTP; Staging and Production should use a domain sender). Confirm rate limits for the public application endpoint at the edge.
 - Apply the migration only through the normal environment-specific gate.
 - Apply `20261030090000_reseller_portal_block_out_of_stock.sql`, `20261030120000_reseller_portal_pay_first.sql`, `20261030150000_reseller_payment_accounts.sql` `20261030180000_reseller_portal_logistics.sql`, `20261031090000_reseller_portal_report.sql` and `20261031120000_reseller_portal_fulfillment_payments.sql` (shipping completes the sale and records verified payments, ADR-045; each business needs active E-wallet and Bank Transfer payment methods), and deploy the API so its five-minute cron (development and staging only in `wrangler.jsonc`) sweeps expired payment holds. Add the production cron together with the production migration.
-- Turning the portal on needs `advanced_wholesale` and `reseller_portal` both entitled and enabled. The Admin console can grant entitlements but no screen yet enables `reseller_portal` (owner feature selection does not list it); Development was enabled by an audited manual update on 2026-10-30. Add the owner/admin enable control before Staging.
+- Turning the portal on needs `advanced_wholesale` on and `reseller_portal` entitled (Admin console). The owner then turns it on from the Back Office Reseller portal page (ADR-048, `20261031200000_reseller_portal_enable_and_manager_orders.sql`).
 
 - Push notifications (ADR-047): apply `20261031150000_reseller_cart_stock_issues.sql`, `20261031160000_reseller_portal_notifications.sql` and `20261031180000_push_notifications.sql`, then run `npm run push:keys -- <environment>` once per environment and redeploy the API, reseller portal, and Back Office. Production also needs the cron and keys.
 
 ## Open questions
 
-- Points basis: invoice total after promo discount (assumed) or before.
-- Whether managers should review portal orders by default (R1 grants owners and admins only).
+- Resolved 2026-10-30 (ADR-048): points use the invoice total after discount; managers handle portal orders.
