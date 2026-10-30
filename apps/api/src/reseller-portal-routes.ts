@@ -9,6 +9,7 @@ import {
   resellerPortalSettingsRequestSchema,
   resellerPaymentAccountSaveRequestSchema,
   portalShipmentUpdateRequestSchema,
+  resellerPortalReportFilterSchema,
   type ResellerOrder,
   type ResellerPaymentAccount,
   type ResellerPortalCatalog,
@@ -58,6 +59,8 @@ const idempotencyPattern = /^[A-Za-z0-9_-]{16,128}$/
 const decisionIdempotencyPattern = /^[A-Za-z0-9_-]{16,120}$/
 
 const errorMap: Record<string, { status: ContentfulStatusCode; code: string; message: string }> = {
+  HCSD0: { status: 403, code: 'REPORTING_ACCESS_DENIED', message: 'Your role cannot view these reports.' },
+  HCSD1: { status: 400, code: 'INVALID_REPORT_FILTERS', message: 'Choose a valid date range of up to one year.' },
   HCRP0: { status: 404, code: 'RESELLER_PORTAL_UNAVAILABLE', message: 'The reseller portal is not available.' },
   HCRP1: { status: 403, code: 'RESELLER_ACCESS_DENIED', message: 'This account does not have reseller access here.' },
   HCRP2: { status: 409, code: 'RESELLER_PORTAL_NOT_CONFIGURED', message: 'The reseller portal is not set up yet.' },
@@ -403,6 +406,28 @@ export function registerResellerPortalRoutes(
           orderId,
           request,
           context.get('requestId'),
+          context.env,
+        ),
+      ),
+    )
+  })
+
+  app.get('/v1/reports/reseller-portal', async (context) => {
+    const admin = await resolveAdmin(context)
+    if (admin instanceof Response) return admin
+    const filter = resellerPortalReportFilterSchema.safeParse({
+      from: context.req.query('from'),
+      to: context.req.query('to'),
+    })
+    if (!filter.success)
+      return fail(context, 400, 'INVALID_REPORT_FILTERS', 'Choose a valid date range of up to one year.')
+    return run(context, async () =>
+      context.json(
+        await dependencies.repository.loadReport(
+          admin.userId,
+          admin.tenantId,
+          filter.data.from,
+          filter.data.to,
           context.env,
         ),
       ),

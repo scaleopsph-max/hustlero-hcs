@@ -14,6 +14,8 @@ import {
   resellerPaymentAccountSchema,
   resellerPaymentAccountSaveResponseSchema,
   portalShipmentUpdateResponseSchema,
+  resellerPortalReportSchema,
+  type ResellerPortalReport,
   type PortalShipmentUpdateRequest,
   type PortalShipmentUpdateResponse,
   type ResellerAccountInviteRequest,
@@ -149,6 +151,14 @@ export interface ResellerPortalRepository {
     requestId: string,
     bindings: Bindings,
   ): Promise<PortalShipmentUpdateResponse>
+  /** Read-only report for the Back Office Reports page; dates are in the business's time zone. */
+  loadReport(
+    userId: string,
+    tenantId: string,
+    from: string,
+    to: string,
+    bindings: Bindings,
+  ): Promise<ResellerPortalReport>
 }
 
 function connectionString(bindings: Bindings): string {
@@ -268,6 +278,13 @@ export const resellerPortalPostgresRepository: ResellerPortalRepository = {
       'select app.save_reseller_payment_account($1::uuid, $2::uuid, $3::jsonb, $4::text, $5::text, $6::text) response',
       [userId, tenantId, JSON.stringify(request), command.idempotencyKey, command.requestHash, command.requestId],
       (value) => resellerPaymentAccountSaveResponseSchema.parse(value),
+    ),
+  loadReport: (userId, tenantId, from, to, bindings) =>
+    queryOne(
+      bindings,
+      'select app.load_reseller_portal_report($1::uuid, $2::uuid, $3::date, $4::date) response',
+      [userId, tenantId, from, to],
+      (value) => resellerPortalReportSchema.parse(value),
     ),
   updateShipment: (userId, tenantId, salesOrderId, request, requestId, bindings) =>
     queryOne(

@@ -347,6 +347,28 @@ select lives_ok($$ select app.set_reseller_account_status('1e100000-0000-4000-80
 select throws_ok($$ select app.list_reseller_portal_orders('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001') $$,
   'HCRP1', null, 'a suspended reseller loses portal access');
 
+-- Reseller portal report: one range covers every order placed in this test.
+select is((app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'summary'->>'orderCount')::integer, 3, 'the report counts every portal order in the range');
+select is((app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'summary'->>'salesMinor')::bigint, 250000::bigint, 'sales count confirmed orders only');
+select is((app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'summary'->>'verifiedPaymentsMinor')::bigint, 50000::bigint, 'only accepted proofs count as received');
+select is((app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'summary'->>'outstandingMinor')::bigint, 200000::bigint, 'outstanding is confirmed sales minus verified payments');
+select is((select jsonb_object_agg(x->>'status', (x->>'orderCount')::integer) from jsonb_array_elements(app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'byStatus') x),
+  '{"awaiting_payment": 0, "for_confirmation": 0, "confirmed": 1, "expired": 1, "rejected": 1}'::jsonb,
+  'orders are split into awaiting payment, for confirmation, confirmed, expired, and rejected');
+select is(app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'byReseller'->0->>'customerName', 'Maria Santos', 'sales are grouped per reseller');
+select is(app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'topProducts'->0->>'sku', 'COF-250', 'top products list the best-selling variant');
+select is(app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'payments'->'receipts'->0->>'reference', 'GC-1029-3845', 'payments list each verified reference');
+select is(app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'logistics'->'byCourier'->0->>'courier', 'jnt', 'logistics groups shipments per courier');
+select is(app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'logistics'->'shipments'->0->>'trackingNumber', 'JT0012345678', 'logistics lists tracking numbers');
+select is((app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date + 2, current_date + 3)->'summary'->>'orderCount')::integer, 0,
+  'a later range shows nothing');
+select throws_ok($$ select app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000003', '2e100000-0000-4000-8000-000000000001', current_date, current_date) $$,
+  'HCSD0', null, 'staff without reports or portal permission cannot read the report');
+select throws_ok($$ select app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date, current_date - 1) $$,
+  'HCSD1', null, 'an inverted range is rejected');
+select is((app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000002', '2e100000-0000-4000-8000-000000000002', current_date - 1, current_date + 1)->'summary'->>'orderCount')::integer, 0,
+  'another business sees none of these orders');
+
 -- Database roles: only the API role may execute the entry points.
 select ok(has_function_privilege('hcs_hyperdrive', 'app.submit_reseller_portal_order(uuid,uuid,jsonb,text,text,text)', 'execute'),
   'API role executes portal order submission');
@@ -364,5 +386,7 @@ select ok(not has_function_privilege('hcs_hyperdrive', 'app.create_reseller_acco
   'API role cannot call private portal helpers');
 select ok(not has_table_privilege('hcs_hyperdrive', 'app.reseller_accounts', 'select'), 'API role has no direct table access');
 
+select ok(has_function_privilege('hcs_hyperdrive', 'app.load_reseller_portal_report(uuid,uuid,date,date)', 'execute'),
+  'API role loads the reseller portal report');
 select * from finish();
 rollback;

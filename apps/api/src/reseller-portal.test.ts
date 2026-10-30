@@ -430,6 +430,45 @@ describe('reseller portal API', () => {
     )
   })
 
+  it('loads the reseller portal report for a valid date range', async () => {
+    const report = {
+      from: '2026-10-01',
+      to: '2026-10-31',
+      timezone: 'Asia/Manila',
+      summary: {
+        orderCount: 0,
+        confirmedCount: 0,
+        salesMinor: 0,
+        verifiedPaymentsMinor: 0,
+        outstandingMinor: 0,
+        shipmentCount: 0,
+        deliveredCount: 0,
+      },
+      byStatus: [],
+      byReseller: [],
+      topProducts: [],
+      payments: { byMethod: [], receipts: [] },
+      logistics: { byStatus: [], byCourier: [], shipments: [] },
+    }
+    const loadReport = vi.fn(async () => report)
+    const app = portalApp(repository({ loadReport }))
+    const headers = { authorization: 'Bearer owner-token', 'x-tenant-id': tenantId }
+    const inverted = await app.request(
+      '/v1/reports/reseller-portal?from=2026-10-31&to=2026-10-01',
+      { headers },
+      bindings,
+    )
+    expect(inverted.status).toBe(400)
+    expect(loadReport).not.toHaveBeenCalled()
+    const loaded = await app.request('/v1/reports/reseller-portal?from=2026-10-01&to=2026-10-31', { headers }, bindings)
+    expect(loaded.status).toBe(200)
+    expect(await loaded.json()).toEqual(report)
+    expect(loadReport).toHaveBeenCalledWith(ownerId, tenantId, '2026-10-01', '2026-10-31', bindings)
+    loadReport.mockRejectedValueOnce(postgresError('HCSD0'))
+    const denied = await app.request('/v1/reports/reseller-portal?from=2026-10-01&to=2026-10-31', { headers }, bindings)
+    expect(denied.status).toBe(403)
+  })
+
   it('reviews held orders and decides applications with validated decisions', async () => {
     const repo = repository()
     const app = portalApp(repo)
