@@ -28,7 +28,7 @@ export function SignIn() {
       options: { shouldCreateUser: true },
     })
     setBusy(false)
-    if (sendError) setError('Hindi naipadala ang code. I-check ang email at subukan ulit.')
+    if (sendError) setError('The code was not sent. Check the email and try again.')
     else setStep('code')
   }
 
@@ -43,7 +43,7 @@ export function SignIn() {
       type: 'email',
     })
     setBusy(false)
-    if (verifyError) setError('Mali o expired na ang code. Humingi ng bagong code.')
+    if (verifyError) setError('The code is wrong or expired. Request a new code.')
   }
 
   return (
@@ -52,18 +52,18 @@ export function SignIn() {
         <Logo size={44} />
         <div>
           <p className="font-display text-h3">Reseller Portal</p>
-          <p className="text-small text-ink-300">Order at wholesale price, anytime.</p>
+          <p className="text-small text-ink-300">Order at your wholesale price, anytime.</p>
         </div>
       </div>
 
       <Glass className="rounded-sheet p-6">
         {!auth ? (
-          <p className="text-ink-200">Hindi pa naka-configure ang sign-in ng portal na ito.</p>
+          <p className="text-ink-200">Sign-in is not set up for this portal yet.</p>
         ) : step === 'email' ? (
           <form className="flex flex-col gap-5" onSubmit={sendCode}>
             <div>
-              <h1 className="text-h3">Mag-sign in</h1>
-              <p className="mt-1 text-ink-300">Gamitin ang email na inaprubahan ng business.</p>
+              <h1 className="text-h3">Sign in</h1>
+              <p className="mt-1 text-ink-300">Use the email the business approved.</p>
             </div>
             <Field
               label="Email"
@@ -77,15 +77,15 @@ export function SignIn() {
             />
             <Button type="submit" variant="primary" disabled={busy || !email}>
               <Mail size={18} className="mr-2" />
-              {busy ? 'Pinapadala…' : 'Ipadala ang code'}
+              {busy ? 'Sending…' : 'Send code'}
             </Button>
           </form>
         ) : (
           <form className="flex flex-col gap-5" onSubmit={verifyCode}>
             <div>
-              <h1 className="text-h3">Ilagay ang code</h1>
+              <h1 className="text-h3">Enter the code</h1>
               <p className="mt-1 text-ink-300">
-                Nagpadala kami ng 6-digit code sa <span className="font-semibold text-ink-50">{email}</span>.
+                We sent a 6-digit code to <span className="font-semibold text-ink-50">{email}</span>.
               </p>
             </div>
             <Field
@@ -100,7 +100,7 @@ export function SignIn() {
               {...(error ? { error } : {})}
             />
             <Button type="submit" variant="primary" disabled={busy || code.length !== 6}>
-              {busy ? 'Chine-check…' : 'Mag-sign in'}
+              {busy ? 'Checking…' : 'Sign in'}
             </Button>
             <button
               type="button"
@@ -111,7 +111,7 @@ export function SignIn() {
                 setError(null)
               }}
             >
-              Ibang email o bagong code
+              Use another email or get a new code
             </button>
           </form>
         )}

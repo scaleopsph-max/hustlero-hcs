@@ -48,10 +48,10 @@ export function VariantSheet({
   const photo = group.imageUrl ?? group.thumbUrl
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center" role="presentation">
+    <div className="fixed inset-0 z-40 flex items-end justify-center sm:items-center sm:p-6" role="presentation">
       <button
         type="button"
-        aria-label="Isara"
+        aria-label="Close"
         tabIndex={-1}
         className="absolute inset-0 bg-ink-950/70 backdrop-blur-md"
         onClick={onClose}
@@ -60,9 +60,9 @@ export function VariantSheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="glass-strong relative flex bg-ink-900/80 max-h-[88dvh] w-full max-w-md flex-col rounded-t-sheet border-x border-t border-white/15 motion-safe:animate-[sheet-up_220ms_ease-out]"
+        className="glass-strong relative flex max-h-[88dvh] w-full max-w-lg flex-col rounded-t-sheet border-x border-t border-white/15 bg-ink-900/80 motion-safe:animate-[sheet-up_220ms_ease-out] sm:max-h-[80dvh] sm:rounded-sheet sm:border-b"
       >
-        <div className="mx-auto mt-2.5 h-1 w-10 flex-none rounded-full bg-white/25" aria-hidden />
+        <div className="mx-auto mt-2.5 h-1 w-10 flex-none rounded-full bg-white/25 sm:hidden" aria-hidden />
         <header className="flex flex-none items-start gap-3 px-5 pb-4 pt-3">
           {photo ? (
             <img src={fileUrl(photo)} alt="" className="size-20 flex-none rounded-[18px] object-cover" />
@@ -84,7 +84,7 @@ export function VariantSheet({
             ref={closeButton}
             type="button"
             onClick={onClose}
-            aria-label="Isara ang variants"
+            aria-label="Close variants"
             className="flex size-11 flex-none items-center justify-center rounded-full border border-white/15 bg-white/10"
           >
             <X size={18} />
@@ -114,11 +114,11 @@ export function VariantSheet({
                     <p className="text-h4 text-gold-300">{formatPeso(variant.unitPriceMinor)}</p>
                     <p className="text-caption text-ink-400">
                       SRP {formatPeso(variant.srpMinor)}
-                      {marginMinor > 0 ? ` · kita ${formatPeso(marginMinor)}/pc` : ''}
+                      {marginMinor > 0 ? ` · profit ${formatPeso(marginMinor)}/pc` : ''}
                     </p>
                     {variant.thresholdMilli > 1000 ? (
                       <p className="text-caption text-ink-400">
-                        Min. {variant.thresholdMilli / 1000} pcs sa {variant.pricingGroupName}
+                        Min. {variant.thresholdMilli / 1000} pcs in {variant.pricingGroupName}
                       </p>
                     ) : null}
                   </div>
@@ -133,13 +133,15 @@ export function VariantSheet({
           })}
         </ul>
 
-        <footer className="flex flex-none items-center justify-between gap-3 border-t border-white/10 px-5 pb-[max(env(safe-area-inset-bottom),16px)] pt-4">
+        <footer className="flex flex-none items-center justify-between gap-3 border-t border-white/10 px-5 pb-[max(env(safe-area-inset-bottom),16px)] pt-4 sm:pb-4">
           <div aria-live="polite">
-            <p className="text-small text-ink-300">{quantityMilli / 1000} pcs sa cart</p>
+            <p className="text-small text-ink-300">
+              {quantityMilli / 1000} {quantityMilli === 1000 ? 'pc' : 'pcs'} in cart
+            </p>
             <p className="font-semibold">{formatPeso(subtotalMinor)}</p>
           </div>
           <Button variant="primary" onClick={onClose} className="min-w-32">
-            Tapos na
+            Done
           </Button>
         </footer>
       </div>

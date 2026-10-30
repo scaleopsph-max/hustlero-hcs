@@ -10,9 +10,9 @@ import { fileUrl, newIdempotencyKey } from '@/lib/portal-api'
 
 const PDF_MAX_BYTES = 5 * 1024 * 1024
 const proofStatus: Record<'pending' | 'accepted' | 'rejected', { text: string; tone: ChipTone }> = {
-  pending: { text: 'Chine-check pa', tone: 'attention' },
-  accepted: { text: 'Na-verify', tone: 'success' },
-  rejected: { text: 'Hindi tinanggap', tone: 'critical' },
+  pending: { text: 'Checking', tone: 'attention' },
+  accepted: { text: 'Verified', tone: 'success' },
+  rejected: { text: 'Not accepted', tone: 'critical' },
 }
 
 /** Lists an order's payment proofs and lets the reseller send a GCash or bank screenshot or PDF. */
@@ -40,13 +40,13 @@ export function PaymentProofs({
 
   async function submit(event: FormEvent) {
     event.preventDefault()
-    if (!file) return setError('Piliin ang screenshot o PDF ng bayad.')
+    if (!file) return setError('Choose a screenshot or PDF of your payment.')
     const amountMinor = parsePeso(amount)
     if (!/^\d[\d,]*(\.\d{0,2})?$/.test(amount.trim()) || amountMinor < 1)
-      return setError('Ilagay ang halagang binayaran, hal. 3510.00.')
-    if (reference.trim().length < 4) return setError('Ilagay ang reference number mula sa GCash o bangko.')
+      return setError('Enter the amount you paid, e.g. 3510.00.')
+    if (reference.trim().length < 4) return setError('Enter the reference number from GCash or your bank.')
     const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
-    if (isPdf && file.size > PDF_MAX_BYTES) return setError('Masyadong malaki ang PDF. Hanggang 5 MB lang.')
+    if (isPdf && file.size > PDF_MAX_BYTES) return setError('The PDF is too large. The limit is 5 MB.')
     setBusy(true)
     setError(null)
     try {
@@ -69,7 +69,7 @@ export function PaymentProofs({
       setFile(null)
       setReference('')
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Hindi naipadala ang proof. Subukan ulit.')
+      setError(cause instanceof Error ? cause.message : 'The proof was not sent. Please try again.')
     } finally {
       setBusy(false)
     }
@@ -80,7 +80,7 @@ export function PaymentProofs({
       <div className="flex items-center justify-between gap-2">
         <p className="text-small font-semibold">Proof of payment</p>
         {verifiedMinor > 0 ? (
-          <span className="text-caption text-signal-dark-success-fg">Na-verify: {formatPeso(verifiedMinor)}</span>
+          <span className="text-caption text-signal-dark-success-fg">Verified: {formatPeso(verifiedMinor)}</span>
         ) : null}
       </div>
       {proofs.length ? (
@@ -92,7 +92,7 @@ export function PaymentProofs({
                 target="_blank"
                 rel="noreferrer"
                 className="flex-none"
-                aria-label={`Tingnan ang proof ${proof.reference}`}
+                aria-label={`View proof ${proof.reference}`}
               >
                 {proof.thumbUrl ? (
                   <img src={fileUrl(proof.thumbUrl)} alt="" className="size-11 rounded-[10px] object-cover" />
@@ -120,13 +120,13 @@ export function PaymentProofs({
           ))}
         </ul>
       ) : (
-        <p className="text-small text-ink-400">Wala pang naipadalang proof para sa order na ito.</p>
+        <p className="text-small text-ink-400">No payment proof sent for this order yet.</p>
       )}
 
       {accepting && !open ? (
         <Button size="sm" onClick={() => setOpen(true)}>
           <Upload size={16} className="mr-2" />
-          Mag-upload ng proof
+          Upload proof
         </Button>
       ) : null}
       {open ? (
@@ -149,7 +149,7 @@ export function PaymentProofs({
             ))}
           </div>
           <label className="flex flex-col gap-1.5 text-small font-semibold" htmlFor={`proof-amount-${order.id}`}>
-            Halagang binayaran (₱)
+            Amount paid (₱)
             <input
               id={`proof-amount-${order.id}`}
               className="field"
@@ -166,7 +166,7 @@ export function PaymentProofs({
               maxLength={64}
               value={reference}
               onChange={(event) => setReference(event.target.value)}
-              placeholder="hal. 1029 384 556 7"
+              placeholder="e.g. 1029 384 556 7"
             />
           </label>
           <label className="flex flex-col gap-1.5 text-small font-semibold" htmlFor={`proof-file-${order.id}`}>
@@ -182,10 +182,10 @@ export function PaymentProofs({
           {error ? <p className="text-small text-signal-dark-critical-fg">{error}</p> : null}
           <div className="flex gap-2">
             <Button type="submit" variant="primary" disabled={busy} className="flex-1">
-              {busy ? 'Ina-upload…' : 'Ipadala ang proof'}
+              {busy ? 'Uploading…' : 'Send proof'}
             </Button>
             <Button onClick={() => setOpen(false)} disabled={busy}>
-              Kanselahin
+              Cancel
             </Button>
           </div>
         </form>

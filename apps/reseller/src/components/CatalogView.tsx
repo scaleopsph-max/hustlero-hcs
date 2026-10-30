@@ -43,12 +43,12 @@ export function CatalogView({
   return (
     <section className="flex flex-col gap-4">
       <label className="relative block">
-        <span className="sr-only">Hanapin ang produkto</span>
+        <span className="sr-only">Search products</span>
         <Search size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400" />
         <input
           type="search"
           className="field w-full pl-10"
-          placeholder="Hanapin ang produkto o SKU"
+          placeholder="Search product or SKU"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
         />
@@ -62,10 +62,10 @@ export function CatalogView({
             setAvailableOnly(false)
           }}
         >
-          Lahat
+          All
         </FilterChip>
         <FilterChip active={availableOnly} onClick={() => setAvailableOnly((value) => !value)}>
-          May stock
+          In stock
         </FilterChip>
         {categories.map((name) => (
           <FilterChip
@@ -79,7 +79,7 @@ export function CatalogView({
       </div>
 
       {visible.length === 0 ? (
-        <p className="py-10 text-center text-ink-300">Walang produktong tugma sa hinahanap mo.</p>
+        <p className="py-10 text-center text-ink-300">No products match your search.</p>
       ) : (
         <ul className="flex flex-col gap-3">
           {visible.map((group) => (
@@ -124,7 +124,7 @@ function ProductCard({ group, cart, onOpen }: { group: ProductGroup; cart: CartL
         type="button"
         onClick={onOpen}
         aria-haspopup="dialog"
-        aria-label={`${group.productName}, ${group.variants.length} variants. Piliin ang variant.`}
+        aria-label={`${group.productName}, ${group.variants.length} variants. Choose a variant.`}
         className="flex w-full items-center gap-3 p-4 text-left"
       >
         <ProductPhoto group={group} />
@@ -137,7 +137,7 @@ function ProductCard({ group, cart, onOpen }: { group: ProductGroup; cart: CartL
           <Chip tone={stock.tone}>{stock.text}</Chip>
           {inCartMilli > 0 ? (
             <span className="rounded-full bg-gold-500 px-2.5 py-0.5 text-caption font-semibold text-ink-950">
-              {inCartMilli / 1000} sa cart
+              {inCartMilli / 1000} in cart
             </span>
           ) : (
             <ChevronRight size={20} className="text-ink-400" aria-hidden />
@@ -180,11 +180,11 @@ function SingleProductCard({
           <p className="text-h4 text-gold-300">{formatPeso(item.unitPriceMinor)}</p>
           <p className="text-caption text-ink-400">
             SRP {formatPeso(item.srpMinor)}
-            {marginMinor > 0 ? ` · kita ${formatPeso(marginMinor)}/pc` : ''}
+            {marginMinor > 0 ? ` · profit ${formatPeso(marginMinor)}/pc` : ''}
           </p>
           {item.thresholdMilli > 1000 ? (
             <p className="text-caption text-ink-400">
-              Min. {item.thresholdMilli / 1000} pcs sa {item.pricingGroupName}
+              Min. {item.thresholdMilli / 1000} pcs in {item.pricingGroupName}
             </p>
           ) : null}
         </div>

@@ -47,17 +47,17 @@ export function CartView({
           <Clock size={48} className="text-signal-dark-attention-fg" />
         )}
         <div>
-          <p className="text-h3">{confirmed ? 'Confirmed na ang order!' : 'Natanggap ang order'}</p>
+          <p className="text-h3">{confirmed ? 'Order confirmed!' : 'Order received'}</p>
           <p className="mt-1 text-ink-300">
             Order {placed.orderNumber} · {formatPeso(placed.totalMinor)}
           </p>
         </div>
         <p className="text-ink-200">
           {confirmed
-            ? 'Naka-reserve na ang stock para sa iyo. Hintayin ang abiso para sa bayad at pagpapadala.'
+            ? 'Your stock is reserved. Watch for updates on payment and delivery.'
             : placed.reviewReason
               ? reviewReasonLabel[placed.reviewReason]
-              : 'Ire-review muna ng team ang order mo.'}
+              : 'The team will review your order first.'}
         </p>
         <Button
           variant="primary"
@@ -66,7 +66,7 @@ export function CartView({
             onOrderPlaced()
           }}
         >
-          Tingnan ang orders
+          View orders
         </Button>
       </Glass>
     )
@@ -76,9 +76,9 @@ export function CartView({
     return (
       <Glass className="flex flex-col items-center gap-4 rounded-sheet px-6 py-12 text-center">
         <ShoppingCart size={40} className="text-ink-300" />
-        <p className="text-h4">Wala pang laman ang cart</p>
+        <p className="text-h4">Your cart is empty</p>
         <Button variant="primary" onClick={onBrowse}>
-          Mamili ng produkto
+          Browse products
         </Button>
       </Glass>
     )
@@ -105,7 +105,7 @@ export function CartView({
       setPlaced(await onSubmit(request, attempt.current.key))
       attempt.current = null
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Hindi naipadala ang order. Subukan ulit.')
+      setError(submitError instanceof Error ? submitError.message : 'The order was not sent. Please try again.')
     } finally {
       setBusy(false)
     }
@@ -145,27 +145,27 @@ export function CartView({
       </ul>
 
       {summary.missingVariantIds.length > 0 ? (
-        <Notice>May {summary.missingVariantIds.length} item na hindi na available at hindi isasama sa order.</Notice>
+        <Notice>{summary.missingVariantIds.length} item(s) are no longer available and will not be included.</Notice>
       ) : null}
       {summary.shortfalls.map((shortfall) => (
         <Notice key={shortfall.pricingGroupId}>
-          Kulang pa ng {formatQuantity(shortfall.neededMilli)} pcs sa {shortfall.pricingGroupName} para sa wholesale
+          Add {formatQuantity(shortfall.neededMilli)} more pcs of {shortfall.pricingGroupName} to get the wholesale
           price.
         </Notice>
       ))}
       {summary.hasOutOfStock ? (
-        <Notice>May out-of-stock na item. Pwede mo pa ring i-submit; ire-review ito ng team.</Notice>
+        <Notice>Some items are out of stock. You can still submit; the team will review the order.</Notice>
       ) : null}
 
       <Glass className="flex flex-col gap-4 rounded-glass p-4">
         <fieldset className="flex flex-col gap-2">
-          <legend className="mb-2 text-small font-semibold">Paano mo makukuha?</legend>
+          <legend className="mb-2 text-small font-semibold">How will you get it?</legend>
           <div className="grid grid-cols-2 gap-2">
             <Choice selected={method === 'delivery'} onSelect={() => setMethod('delivery')} name="method">
               Delivery
             </Choice>
             <Choice selected={method === 'pickup'} onSelect={() => setMethod('pickup')} name="method">
-              Pickup sa {catalog.fulfillmentLocationName}
+              Pickup at {catalog.fulfillmentLocationName}
             </Choice>
           </div>
         </fieldset>
@@ -184,7 +184,7 @@ export function CartView({
           </label>
         ) : null}
         <fieldset className="flex flex-col gap-2">
-          <legend className="mb-2 text-small font-semibold">Paraan ng bayad</legend>
+          <legend className="mb-2 text-small font-semibold">Payment method</legend>
           <div className="grid grid-cols-2 gap-2">
             {(['gcash', 'bank_transfer'] as const).map((option) => (
               <Choice key={option} selected={payment === option} onSelect={() => setPayment(option)} name="payment">
@@ -201,17 +201,19 @@ export function CartView({
 
       <Glass variant="strong" className="flex flex-col gap-3 rounded-sheet p-5">
         <div className="flex items-baseline justify-between">
-          <span className="text-ink-300">Total ({summary.itemCount} item)</span>
+          <span className="text-ink-300">
+            Total ({summary.itemCount} {summary.itemCount === 1 ? 'item' : 'items'})
+          </span>
           <span className="text-pos-price">{formatPeso(summary.totalMinor)}</span>
         </div>
         {summary.potentialProfitMinor > 0 ? (
           <p className="text-small text-signal-dark-success-fg">
-            Tantiyang kita mo kapag naibenta sa SRP: {formatPeso(summary.potentialProfitMinor)}
+            Estimated profit if sold at SRP: {formatPeso(summary.potentialProfitMinor)}
           </p>
         ) : null}
         {error ? <p className="text-small text-signal-dark-critical-fg">{error}</p> : null}
         <Button type="submit" variant="primary" size="xl" disabled={blocked}>
-          {busy ? 'Pinapadala…' : 'I-submit ang order'}
+          {busy ? 'Sending…' : 'Submit order'}
         </Button>
       </Glass>
     </form>

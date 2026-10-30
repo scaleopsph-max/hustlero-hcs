@@ -25,7 +25,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="fil" className={`${display.variable} ${sans.variable}`}>
+    <html lang="en" className={`${display.variable} ${sans.variable}`}>
       <body className="app-pos min-h-dvh">
         {children}
         <ServiceWorkerRegister />

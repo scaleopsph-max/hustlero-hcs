@@ -54,13 +54,13 @@ export async function portalRequest<T>(
       body: options.body === undefined ? null : isForm ? (options.body as FormData) : JSON.stringify(options.body),
     })
   } catch {
-    throw new PortalApiError('Walang internet connection. Subukan ulit kapag may signal na.', 0, 'OFFLINE')
+    throw new PortalApiError('No internet connection. Try again when you are back online.', 0, 'OFFLINE')
   }
   const data: unknown = await response.json().catch(() => null)
   if (!response.ok) {
     const error = (data as { error?: { message?: string; code?: string } } | null)?.error
     throw new PortalApiError(
-      error?.message ?? 'Hindi natuloy ang request. Subukan ulit.',
+      error?.message ?? 'The request did not go through. Please try again.',
       response.status,
       error?.code ?? null,
     )

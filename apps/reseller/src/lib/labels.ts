@@ -17,11 +17,11 @@ export const orderStatusLabel: Record<ResellerOrder['status'], { text: string; t
 
 /** What the reseller sees while an order waits for review. */
 export const reviewReasonLabel: Record<ResellerReviewReason, string> = {
-  manual_review: 'Ire-review muna ng team ang order mo bago i-confirm.',
-  credit_settings_missing: 'Inaayos pa ng team ang payment terms mo. Ire-review nila ang order.',
-  credit_review: 'Kailangang i-check ng team ang account mo bago i-confirm.',
-  stock_insufficient: 'Kulang ang stock sa ngayon. Ire-review ng team kung kailan ito maipapadala.',
-  credit_limit: 'Lagpas ang order sa available credit mo. Ire-review ng team o mag-settle muna ng balance.',
+  manual_review: 'The team will review your order before confirming it.',
+  credit_settings_missing: 'The team is still setting up your payment terms and will review the order.',
+  credit_review: 'The team needs to check your account before confirming.',
+  stock_insufficient: 'Stock is short right now. The team will review when it can ship.',
+  credit_limit: 'This order is over your available credit. The team will review it, or settle your balance first.',
 }
 
 export const paymentLabel = { gcash: 'GCash', bank_transfer: 'Bank transfer' } as const

@@ -48,7 +48,7 @@ export function ApplicationForm() {
       ...(form.message.trim() ? { message: form.message } : {}),
     })
     if (!parsed.success) {
-      setError('I-check ang pangalan, email, at mobile number (hal. 09171234567).')
+      setError('Check your name, email, and mobile number (e.g. 09171234567).')
       return
     }
     setBusy(true)
@@ -64,7 +64,7 @@ export function ApplicationForm() {
       )
       setReceived(true)
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Hindi naipadala. Subukan ulit.')
+      setError(submitError instanceof Error ? submitError.message : 'Not sent. Please try again.')
     } finally {
       setBusy(false)
     }
@@ -83,7 +83,7 @@ export function ApplicationForm() {
         <div className="flex items-center gap-3">
           <Logo size={44} />
           <div>
-            <p className="font-display text-h3">Maging reseller</p>
+            <p className="font-display text-h3">Become a reseller</p>
             {portal ? <p className="text-small text-ink-300">{portal.businessName}</p> : null}
           </div>
         </div>
@@ -91,40 +91,33 @@ export function ApplicationForm() {
         {unavailable ? (
           <StateCard
             kind="locked"
-            title="Hindi available ang application form"
-            why="Hindi namin mahanap ang business na ito. I-check ang link na ibinigay sa iyo."
+            title="Application form unavailable"
+            why="We could not find this business. Check the link you were given."
           />
         ) : !portal ? (
           <p className="text-ink-300" role="status">
-            Naglo-load…
+            Loading…
           </p>
         ) : !portal.applicationsOpen ? (
           <StateCard
             kind="locked"
-            title="Sarado muna ang applications"
-            why={`Hindi tumatanggap ng bagong reseller ang ${portal.businessName} sa ngayon. Subukan ulit sa susunod.`}
+            title="Applications are closed"
+            why={`${portal.businessName} is not accepting new resellers right now. Please try again later.`}
           />
         ) : received ? (
           <Glass className="flex flex-col items-center gap-4 rounded-sheet px-6 py-10 text-center">
             <CircleCheck size={48} className="text-signal-dark-success-fg" />
-            <p className="text-h3">Natanggap ang application mo</p>
+            <p className="text-h3">Application received</p>
             <p className="text-ink-200">
-              Ire-review ito ng {portal.businessName}. Kapag na-approve, mag-sign in sa portal gamit ang{' '}
-              {form.email.trim()}.
+              {portal.businessName} will review it. Once approved, sign in to the portal with {form.email.trim()}.
             </p>
           </Glass>
         ) : (
           <Glass className="rounded-sheet p-6">
             <form className="flex flex-col gap-4" onSubmit={submit}>
+              <Field label="Full name" autoComplete="name" required value={form.fullName} onChange={set('fullName')} />
               <Field
-                label="Buong pangalan"
-                autoComplete="name"
-                required
-                value={form.fullName}
-                onChange={set('fullName')}
-              />
-              <Field
-                label="Pangalan ng tindahan (optional)"
+                label="Store name (optional)"
                 autoComplete="organization"
                 value={form.businessName}
                 onChange={set('businessName')}
@@ -137,7 +130,7 @@ export function ApplicationForm() {
                 required
                 value={form.email}
                 onChange={set('email')}
-                hint="Ito ang gagamitin mo sa pag-sign in."
+                hint="You will use this email to sign in."
               />
               <Field
                 label="Mobile number"
@@ -150,7 +143,7 @@ export function ApplicationForm() {
               />
               <Field label="City (optional)" autoComplete="address-level2" value={form.city} onChange={set('city')} />
               <label className="flex flex-col gap-2">
-                <span className="text-sm font-semibold">Mensahe (optional)</span>
+                <span className="text-sm font-semibold">Message (optional)</span>
                 <textarea
                   className="field h-auto min-h-24 py-3"
                   maxLength={1000}
@@ -160,7 +153,7 @@ export function ApplicationForm() {
               </label>
               {error ? <p className="text-small text-signal-dark-critical-fg">{error}</p> : null}
               <Button type="submit" variant="primary" disabled={busy}>
-                {busy ? 'Pinapadala…' : 'Ipadala ang application'}
+                {busy ? 'Sending…' : 'Send application'}
               </Button>
             </form>
           </Glass>

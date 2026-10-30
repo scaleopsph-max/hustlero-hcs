@@ -113,7 +113,7 @@ export function PortalApp() {
   const cartCount = useMemo(() => (catalog ? summarizeCart(cart, catalog.items).itemCount : 0), [cart, catalog])
 
   async function submitOrder(request: ResellerOrderSubmitRequest, idempotencyKey: string) {
-    if (!token || !tenantId) throw new Error('Mag-sign in ulit.')
+    if (!token || !tenantId) throw new Error('Please sign in again.')
     const response = await portalRequest(
       '/v1/portal/orders',
       (value) => resellerOrderSubmitResponseSchema.parse(value),
@@ -135,7 +135,7 @@ export function PortalApp() {
   }
 
   async function uploadProof(orderId: string, body: FormData, idempotencyKey: string) {
-    if (!token || !tenantId) throw new Error('Mag-sign in ulit.')
+    if (!token || !tenantId) throw new Error('Please sign in again.')
     await portalRequest(
       `/v1/portal/orders/${orderId}/payment-proofs`,
       (value) => paymentProofUploadResponseSchema.parse(value),
@@ -173,11 +173,11 @@ export function PortalApp() {
       <Centered>
         <StateCard
           kind="restricted"
-          title="Hindi ma-load ang portal"
+          title="The portal could not load"
           why={error}
           action={
             <Button variant="confirm" onClick={() => window.location.reload()}>
-              Subukan ulit
+              Try again
             </Button>
           }
         />
@@ -188,9 +188,9 @@ export function PortalApp() {
       <Centered>
         <StateCard
           kind="locked"
-          title="Wala pang reseller access ang email na ito"
-          why="Kapag na-approve ng business ang application mo, mag-sign in ulit gamit ang parehong email."
-          action={<Button onClick={signOut}>Ibang email</Button>}
+          title="This email has no reseller access yet"
+          why="Once the business approves your application, sign in again with the same email."
+          action={<Button onClick={signOut}>Use another email</Button>}
         />
       </Centered>
     )
@@ -257,14 +257,14 @@ export function PortalApp() {
 
 function messageOf(error: unknown): string {
   if (error instanceof PortalApiError) return error.message
-  return 'May problema sa pag-load. Subukan ulit.'
+  return 'Something went wrong while loading. Please try again.'
 }
 
 function Loading() {
   return (
     <Centered>
       <p className="text-ink-300" role="status">
-        Naglo-load…
+        Loading…
       </p>
     </Centered>
   )
@@ -275,7 +275,7 @@ function Centered({ children }: { children: ReactNode }) {
 }
 
 const tabs: { id: Tab; label: string; Icon: LucideIcon }[] = [
-  { id: 'catalog', label: 'Produkto', Icon: Store },
+  { id: 'catalog', label: 'Products', Icon: Store },
   { id: 'cart', label: 'Cart', Icon: ShoppingCart },
   { id: 'orders', label: 'Orders', Icon: ClipboardList },
   { id: 'account', label: 'Account', Icon: UserRound },

@@ -24,13 +24,13 @@ export function AccountView({
     <section className="flex flex-col gap-4">
       <div>
         <h1 className="text-h3">{account.customerName}</h1>
-        <p className="text-ink-300">Reseller ng {account.businessName}</p>
+        <p className="text-ink-300">Reseller of {account.businessName}</p>
       </div>
 
       <Glass className="grid grid-cols-2 gap-4 rounded-glass p-4">
         <Stat
           label="Payment terms"
-          value={account.paymentTerm ? paymentTermLabel[account.paymentTerm] : 'Hindi pa naka-set'}
+          value={account.paymentTerm ? paymentTermLabel[account.paymentTerm] : 'Not set yet'}
         />
         <Stat label="Price list" value={account.priceListName} />
         <Stat
@@ -47,13 +47,13 @@ export function AccountView({
         <Star size={24} className="flex-none text-gold-300" />
         <div>
           <p className="font-semibold">{account.pointsBalance.toLocaleString('en-PH')} points</p>
-          <p className="text-small text-ink-200">Sa susunod na update, kikita ka ng 1 point sa bawat ₱100 na order.</p>
+          <p className="text-small text-ink-200">Points are coming soon: 1 point for every ₱100 you order.</p>
         </div>
       </Glass>
 
       {session.accounts.length > 1 ? (
         <Glass className="flex flex-col gap-2 rounded-glass p-4">
-          <p className="text-small font-semibold">Ibang business</p>
+          <p className="text-small font-semibold">Other businesses</p>
           {session.accounts.map((entry) => (
             <Button
               key={entry.tenantId}
@@ -69,7 +69,7 @@ export function AccountView({
 
       <Button onClick={onSignOut}>
         <LogOut size={18} className="mr-2" />
-        Mag-sign out
+        Sign out
       </Button>
     </section>
   )

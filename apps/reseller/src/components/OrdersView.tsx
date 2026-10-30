@@ -27,8 +27,8 @@ export function OrdersView({
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <h1 className="text-h3">Mga order</h1>
-        <Button size="sm" onClick={onRefresh} disabled={loading} aria-label="I-refresh ang orders">
+        <h1 className="text-h3">Orders</h1>
+        <Button size="sm" onClick={onRefresh} disabled={loading} aria-label="Refresh orders">
           <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
         </Button>
       </div>
@@ -36,7 +36,7 @@ export function OrdersView({
       {orders.length === 0 ? (
         <Glass className="flex flex-col items-center gap-3 rounded-sheet px-6 py-12 text-center">
           <PackageSearch size={40} className="text-ink-300" />
-          <p className="text-ink-200">{loading ? 'Kinukuha ang orders…' : 'Wala ka pang order.'}</p>
+          <p className="text-ink-200">{loading ? 'Loading orders…' : 'You have no orders yet.'}</p>
         </Glass>
       ) : (
         <ul className="flex flex-col gap-3">
@@ -55,7 +55,8 @@ export function OrdersView({
                     <div className="min-w-0">
                       <p className="font-semibold">{order.orderNumber}</p>
                       <p className="text-small text-ink-300">
-                        {formatDateTime(order.createdAt)} · {order.lines.length} item
+                        {formatDateTime(order.createdAt)} · {order.lines.length}{' '}
+                        {order.lines.length === 1 ? 'item' : 'items'}
                       </p>
                     </div>
                     <div className="flex flex-none flex-col items-end gap-1.5">
@@ -74,7 +75,7 @@ export function OrdersView({
                       ) : null}
                       {order.status === 'cancelled' && order.reviewDecisionReason ? (
                         <p className="rounded-control bg-white/10 px-3 py-2 text-small text-ink-200">
-                          Dahilan: {order.reviewDecisionReason}
+                          Reason: {order.reviewDecisionReason}
                         </p>
                       ) : null}
                       <ul className="flex flex-col gap-2">
@@ -85,7 +86,7 @@ export function OrdersView({
                               {line.fulfilledQuantityMilli > 0 &&
                               line.fulfilledQuantityMilli < line.orderedQuantityMilli ? (
                                 <span className="block text-ink-400">
-                                  {formatQuantity(line.fulfilledQuantityMilli)} na ang na-release
+                                  {formatQuantity(line.fulfilledQuantityMilli)} released so far
                                 </span>
                               ) : null}
                             </span>
@@ -94,15 +95,15 @@ export function OrdersView({
                         ))}
                       </ul>
                       <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-small text-ink-300">
-                        <dt>Kukunin</dt>
+                        <dt>Fulfillment</dt>
                         <dd className="text-ink-100">
                           {order.fulfillmentMethod === 'pickup'
-                            ? `Pickup sa ${order.locationName}`
+                            ? `Pickup at ${order.locationName}`
                             : (order.deliveryAddress ?? 'Delivery')}
                         </dd>
                         {order.paymentPreference ? (
                           <>
-                            <dt>Bayad</dt>
+                            <dt>Payment</dt>
                             <dd className="text-ink-100">{paymentLabel[order.paymentPreference]}</dd>
                           </>
                         ) : null}
@@ -117,7 +118,7 @@ export function OrdersView({
                       </dl>
                       <PaymentProofs order={order} onUpload={onUploadProof} />
                       <Button size="sm" onClick={() => onReorder(order)}>
-                        Order ulit
+                        Order again
                       </Button>
                     </div>
                   ) : null}

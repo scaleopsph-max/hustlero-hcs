@@ -19,7 +19,7 @@ export function QuantityStepper({
       <button
         type="button"
         className="flex size-11 items-center justify-center rounded-control border border-white/20 bg-white/5 disabled:opacity-40"
-        aria-label={`Bawasan ang ${label}`}
+        aria-label={`Decrease ${label}`}
         disabled={units === 0}
         onClick={() => set(units - 1)}
       >
@@ -28,7 +28,7 @@ export function QuantityStepper({
       <input
         className="h-11 w-14 rounded-control border border-white/20 bg-white/5 text-center font-semibold"
         inputMode="numeric"
-        aria-label={`Quantity ng ${label}`}
+        aria-label={`Quantity of ${label}`}
         value={units === 0 ? '' : String(units)}
         placeholder="0"
         onChange={(event) => {
@@ -39,7 +39,7 @@ export function QuantityStepper({
       <button
         type="button"
         className="flex size-11 items-center justify-center rounded-control bg-gold-500 text-ink-950"
-        aria-label={`Dagdagan ang ${label}`}
+        aria-label={`Increase ${label}`}
         onClick={() => set(units + 1)}
       >
         <Plus size={18} />
