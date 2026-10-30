@@ -464,3 +464,47 @@ export type PortalCourier = z.infer<typeof portalCourierSchema>
 export type ResellerShipment = z.infer<typeof resellerShipmentSchema>
 export type PortalShipmentUpdateRequest = z.infer<typeof portalShipmentUpdateRequestSchema>
 export type PortalShipmentUpdateResponse = z.infer<typeof portalShipmentUpdateResponseSchema>
+
+/** A cart item the business cannot fill right now; returned with RESELLER_ITEM_OUT_OF_STOCK / RESELLER_STOCK_SHORT. */
+export const resellerStockIssueSchema = z.object({
+  variantId: uuid,
+  productName: z.string().min(1),
+  variantName: z.string(),
+  requestedMilli: milli,
+  availableMilli: milli,
+})
+export const resellerStockIssuesSchema = z.object({ stockIssues: z.array(resellerStockIssueSchema) })
+
+export const resellerNotificationKindSchema = z.enum([
+  'order_confirmed',
+  'ready_for_pickup',
+  'shipped',
+  'delivered',
+  'picked_up',
+  'payment_verified',
+  'payment_rejected',
+  'order_expired',
+  'order_rejected',
+])
+export const resellerNotificationSchema = z.object({
+  id: uuid,
+  kind: resellerNotificationKindSchema,
+  title: z.string().min(1),
+  message: z.string().min(1),
+  salesOrderId: uuid.nullable(),
+  createdAt: timestamp,
+  readAt: timestamp.nullable(),
+})
+export const resellerNotificationsSchema = z.object({
+  unreadCount: z.number().int().nonnegative(),
+  items: z.array(resellerNotificationSchema),
+})
+export const resellerNotificationReadRequestSchema = z.strictObject({ notificationId: uuid.optional() })
+export const resellerNotificationReadResponseSchema = z.object({ unreadCount: z.number().int().nonnegative() })
+
+export type ResellerStockIssue = z.infer<typeof resellerStockIssueSchema>
+export type ResellerNotificationKind = z.infer<typeof resellerNotificationKindSchema>
+export type ResellerNotification = z.infer<typeof resellerNotificationSchema>
+export type ResellerNotifications = z.infer<typeof resellerNotificationsSchema>
+export type ResellerNotificationReadRequest = z.infer<typeof resellerNotificationReadRequestSchema>
+export type ResellerNotificationReadResponse = z.infer<typeof resellerNotificationReadResponseSchema>

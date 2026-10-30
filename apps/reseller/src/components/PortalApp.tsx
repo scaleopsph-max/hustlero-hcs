@@ -2,17 +2,21 @@
 
 import {
   paymentProofUploadResponseSchema,
+  resellerNotificationReadResponseSchema,
+  resellerNotificationsSchema,
   resellerOrderSubmitResponseSchema,
   resellerOrdersSchema,
   resellerPortalCatalogSchema,
   resellerPortalSessionSchema,
+  type ResellerNotification,
+  type ResellerNotifications,
   type ResellerOrder,
   type ResellerOrderSubmitRequest,
   type ResellerPortalCatalog,
   type ResellerPortalSession,
 } from '@hcs/contracts'
 import { Button, Glass, Logo, StateCard, Surface, cn, useToast } from '@hcs/ui'
-import { ClipboardList, Store, ShoppingCart, UserRound, type LucideIcon } from 'lucide-react'
+import { Bell, ClipboardList, Store, ShoppingCart, UserRound, type LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import { readCart, setCartQuantity, summarizeCart, writeCart, type CartLine } from '@/lib/cart'
@@ -21,6 +25,7 @@ import { PortalApiError, portalAuth, portalRequest, readSelectedTenant, saveSele
 import { AccountView } from './AccountView'
 import { CartView } from './CartView'
 import { CatalogView } from './CatalogView'
+import { NotificationsSheet } from './NotificationsSheet'
 import { OrdersView } from './OrdersView'
 import { SignIn } from './SignIn'
 
@@ -45,6 +50,8 @@ export function PortalApp() {
   const [tab, setTab] = useState<Tab>('catalog')
   const [focusOrderId, setFocusOrderId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [notifications, setNotifications] = useState<ResellerNotifications>({ unreadCount: 0, items: [] })
+  const [inboxOpen, setInboxOpen] = useState(false)
 
   useEffect(() => {
     if (!auth) {
@@ -92,6 +99,69 @@ export function PortalApp() {
       setOrdersLoading(false)
     }
   }, [token, tenantId])
+
+  const loadNotifications = useCallback(async () => {
+    if (!token || !tenantId) return
+    try {
+      setNotifications(
+        await portalRequest('/v1/portal/notifications', (value) => resellerNotificationsSchema.parse(value), {
+          token,
+          tenantId,
+        }),
+      )
+    } catch {
+      // Updates are a convenience; the orders list stays the source of truth.
+    }
+  }, [token, tenantId])
+
+  // New updates arrive when the app opens, every minute while it is open, and when the reseller comes back to it.
+  useEffect(() => {
+    if (!token || !tenantId) return
+    void loadNotifications()
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void loadNotifications()
+    }, 60_000)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void loadNotifications()
+        void loadOrders()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [token, tenantId, loadNotifications, loadOrders])
+
+  async function markRead(notificationId: string | null) {
+    if (!token || !tenantId) return
+    setNotifications((current) => ({
+      unreadCount: notificationId
+        ? current.unreadCount - (current.items.some((item) => item.id === notificationId && !item.readAt) ? 1 : 0)
+        : 0,
+      items: current.items.map((item) =>
+        notificationId === null || item.id === notificationId
+          ? { ...item, readAt: item.readAt ?? new Date().toISOString() }
+          : item,
+      ),
+    }))
+    await portalRequest(
+      '/v1/portal/notifications/read',
+      (value) => resellerNotificationReadResponseSchema.parse(value),
+      { token, tenantId, method: 'POST', body: notificationId ? { notificationId } : {} },
+    ).catch(() => undefined)
+  }
+
+  function openNotification(notification: ResellerNotification) {
+    void markRead(notification.id)
+    setInboxOpen(false)
+    if (notification.salesOrderId) {
+      setFocusOrderId(notification.salesOrderId)
+      setTab('orders')
+      void loadOrders()
+    }
+  }
 
   useEffect(() => {
     if (!token || !tenantId) return
@@ -203,11 +273,36 @@ export function PortalApp() {
       <div className="mx-auto flex min-h-dvh w-full max-w-xl flex-col">
         <header className="sticky top-0 z-10 flex items-center gap-3 bg-ink-950/80 px-4 pb-3 pt-[max(env(safe-area-inset-top),12px)] backdrop-blur-glass">
           <Logo size={32} />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="truncate font-display font-bold leading-tight">{catalog.account.businessName}</p>
             <p className="truncate text-caption text-ink-400">{catalog.account.priceListName}</p>
           </div>
+          <button
+            type="button"
+            onClick={() => {
+              setInboxOpen(true)
+              void loadNotifications()
+            }}
+            aria-label={notifications.unreadCount > 0 ? `Updates, ${notifications.unreadCount} new` : 'Updates'}
+            className="relative flex size-11 flex-none items-center justify-center rounded-full border border-white/15 bg-white/10"
+          >
+            <Bell size={20} />
+            {notifications.unreadCount > 0 ? (
+              <span className="absolute -right-1 -top-1 flex min-w-5 items-center justify-center rounded-full bg-gold-500 px-1 text-[11px] font-bold text-ink-950">
+                {notifications.unreadCount > 9 ? '9+' : notifications.unreadCount}
+              </span>
+            ) : null}
+          </button>
         </header>
+        {inboxOpen ? (
+          <NotificationsSheet
+            items={notifications.items}
+            unreadCount={notifications.unreadCount}
+            onOpen={openNotification}
+            onMarkAllRead={() => void markRead(null)}
+            onClose={() => setInboxOpen(false)}
+          />
+        ) : null}
         <main className="flex-1 px-4 pb-28 pt-2">
           {error ? (
             <p className="mb-3 rounded-control bg-signal-dark-critical-bg px-3 py-2 text-small text-signal-dark-critical-fg">
@@ -231,6 +326,16 @@ export function PortalApp() {
                 setTab('orders')
               }}
               onBrowse={() => setTab('catalog')}
+              onStockChanged={() =>
+                token && tenantId
+                  ? portalRequest('/v1/portal/catalog', (value) => resellerPortalCatalogSchema.parse(value), {
+                      token,
+                      tenantId,
+                    })
+                      .then(setCatalog)
+                      .catch(() => undefined)
+                  : undefined
+              }
             />
           ) : tab === 'orders' ? (
             <OrdersView

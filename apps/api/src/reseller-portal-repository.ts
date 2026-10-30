@@ -15,6 +15,12 @@ import {
   resellerPaymentAccountSaveResponseSchema,
   portalShipmentUpdateResponseSchema,
   resellerPortalReportSchema,
+  resellerStockIssuesSchema,
+  resellerNotificationsSchema,
+  resellerNotificationReadResponseSchema,
+  type ResellerStockIssue,
+  type ResellerNotifications,
+  type ResellerNotificationReadResponse,
   type ResellerPortalReport,
   type PortalShipmentUpdateRequest,
   type PortalShipmentUpdateResponse,
@@ -151,6 +157,26 @@ export interface ResellerPortalRepository {
     requestId: string,
     bindings: Bindings,
   ): Promise<PortalShipmentUpdateResponse>
+  /** Cart items that cannot be filled right now; used after a stock refusal. */
+  checkCartStock(
+    authUserId: string,
+    tenantId: string,
+    lines: Array<{ variantId: string; quantityMilli: number }>,
+    bindings: Bindings,
+  ): Promise<ResellerStockIssue[]>
+  loadNotifications(
+    authUserId: string,
+    tenantId: string,
+    limit: number,
+    bindings: Bindings,
+  ): Promise<ResellerNotifications>
+  /** Marks one notification read, or all of them when notificationId is null. */
+  markNotificationsRead(
+    authUserId: string,
+    tenantId: string,
+    notificationId: string | null,
+    bindings: Bindings,
+  ): Promise<ResellerNotificationReadResponse>
   /** Read-only report for the Back Office Reports page; dates are in the business's time zone. */
   loadReport(
     userId: string,
@@ -278,6 +304,27 @@ export const resellerPortalPostgresRepository: ResellerPortalRepository = {
       'select app.save_reseller_payment_account($1::uuid, $2::uuid, $3::jsonb, $4::text, $5::text, $6::text) response',
       [userId, tenantId, JSON.stringify(request), command.idempotencyKey, command.requestHash, command.requestId],
       (value) => resellerPaymentAccountSaveResponseSchema.parse(value),
+    ),
+  checkCartStock: (authUserId, tenantId, lines, bindings) =>
+    queryOne(
+      bindings,
+      'select app.reseller_cart_stock_issues($1::uuid, $2::uuid, $3::jsonb) response',
+      [authUserId, tenantId, JSON.stringify(lines)],
+      (value) => resellerStockIssuesSchema.parse(value).stockIssues,
+    ),
+  loadNotifications: (authUserId, tenantId, limit, bindings) =>
+    queryOne(
+      bindings,
+      'select app.load_reseller_notifications($1::uuid, $2::uuid, $3::integer) response',
+      [authUserId, tenantId, limit],
+      (value) => resellerNotificationsSchema.parse(value),
+    ),
+  markNotificationsRead: (authUserId, tenantId, notificationId, bindings) =>
+    queryOne(
+      bindings,
+      'select app.mark_reseller_notifications_read($1::uuid, $2::uuid, $3::uuid) response',
+      [authUserId, tenantId, notificationId],
+      (value) => resellerNotificationReadResponseSchema.parse(value),
     ),
   loadReport: (userId, tenantId, from, to, bindings) =>
     queryOne(

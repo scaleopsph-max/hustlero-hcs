@@ -373,6 +373,36 @@ select lives_ok($$ select app.save_reseller_payment_account('1e100000-0000-4000-
 select is(jsonb_array_length(app.load_reseller_portal_catalog('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001')->'payment'->'accounts'), 1, 'hidden accounts are not shown to resellers');
 select is(jsonb_array_length(app.load_reseller_portal_admin('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001')->'paymentAccounts'), 2, 'the Back Office still lists hidden accounts');
 
+-- Reseller notifications: one per event, derived from the orders, shipments, and proofs.
+select is((select array_agg(x->>'kind' order by x->>'kind') from jsonb_array_elements(app.load_reseller_notifications('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', 50)->'items') x),
+  array['delivered', 'order_confirmed', 'order_expired', 'order_rejected', 'payment_verified', 'shipped'],
+  'the reseller is told about confirmation, shipping, delivery, a balance payment, expiry, and rejection');
+select is((select x->>'message' from jsonb_array_elements(app.load_reseller_notifications('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', 50)->'items') x where x->>'kind' = 'shipped'),
+  'Shipped by J&T Express · tracking JT0012345678.', 'the shipped notice names the courier and tracking number');
+select is((select x->>'message' from jsonb_array_elements(app.load_reseller_notifications('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', 50)->'items') x where x->>'kind' = 'order_expired'),
+  'Payment was not received within 4 hours.', 'the expiry notice says why');
+select is((select count(*)::integer from app.reseller_notifications where tenant_id = '2e100000-0000-4000-8000-000000000001'), 6, 'loading again adds no duplicates');
+select is((app.load_reseller_notifications('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', 50)->>'unreadCount')::integer, 6, 'all are unread at first');
+select is((app.mark_reseller_notifications_read('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', (select id from app.reseller_notifications where tenant_id = '2e100000-0000-4000-8000-000000000001' and kind = 'shipped'))->>'unreadCount')::integer, 5,
+  'opening one marks it read');
+select is((app.mark_reseller_notifications_read('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', null)->>'unreadCount')::integer, 0, 'mark all read clears the badge');
+select throws_ok($$ select app.mark_reseller_notifications_read('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', gen_random_uuid()) $$, 'HCRA4', null, 'unknown notifications are refused');
+select throws_ok($$ select app.load_reseller_notifications('1e100000-0000-4000-8000-000000000012', '2e100000-0000-4000-8000-000000000001', 10) $$, 'HCRP1', null,
+  'a stranger cannot read reseller notifications');
+select throws_ok($$ update app.reseller_notifications set title = 'changed' where tenant_id = '2e100000-0000-4000-8000-000000000001' $$, 'P0001', null, 'notification history cannot be rewritten');
+-- Back Office bell: a pending balance payment reaches the portal managers.
+select lives_ok($$ select app.record_payment_proof('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'),
+  pg_temp.proof('be100000-0000-4000-8000-00000000000a', 1000), 'portal-proof-key-10', 'proof-hash-10', 'proof-request-10') $$, 'the reseller sends another payment');
+select is((select x->>'title' from jsonb_array_elements(app.load_notification_center('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', false, 50, 0)->'items') x
+  where x->>'title' like 'Balance payment%'), 'Balance payment for RP-000001', 'the owner is told a balance payment is waiting');
+select ok(not exists(select 1 from jsonb_array_elements(app.load_notification_center('1e100000-0000-4000-8000-000000000003', '2e100000-0000-4000-8000-000000000001', false, 50, 0)->'items') x
+  where x->>'title' like 'Balance payment%'), 'members without portal permission are not told');
+-- Cart stock check names the short items.
+select is(app.reseller_cart_stock_issues('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', '[{"variantId":"8e100000-0000-4000-8000-000000000001","quantityMilli":999000}]')->'stockIssues'->0->>'variantName',
+  '250g', 'the cart check names the item without enough stock');
+select is(jsonb_array_length(app.reseller_cart_stock_issues('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', '[{"variantId":"8e100000-0000-4000-8000-000000000001","quantityMilli":1000}]')->'stockIssues'), 0,
+  'items with enough stock are not listed');
+
 select lives_ok($$ select app.set_reseller_account_status('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
   (select id from app.reseller_accounts where tenant_id = '2e100000-0000-4000-8000-000000000001'), 'suspended', 'suspend-request') $$,
   'owner suspends the reseller account');
@@ -422,6 +452,8 @@ select ok(not has_function_privilege('hcs_hyperdrive', 'app.fulfill_portal_order
   'API role cannot complete sales outside the shipment command');
 select ok(not has_function_privilege('hcs_hyperdrive', 'app.update_portal_shipment_core(uuid,uuid,uuid,jsonb,text)', 'execute'),
   'API role cannot skip sale completion');
+select ok(has_function_privilege('hcs_hyperdrive', 'app.load_reseller_notifications(uuid,uuid,integer)', 'execute'), 'API role loads reseller notifications');
+select ok(not has_function_privilege('hcs_hyperdrive', 'app.sync_reseller_notifications(uuid,uuid)', 'execute'), 'API role cannot write notifications directly');
 select ok(has_function_privilege('hcs_hyperdrive', 'app.load_reseller_portal_report(uuid,uuid,date,date)', 'execute'),
   'API role loads the reseller portal report');
 select * from finish();

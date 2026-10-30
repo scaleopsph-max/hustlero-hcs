@@ -1,6 +1,11 @@
 'use client'
 
-import type { ResellerOrderSubmitRequest, ResellerOrderSubmitResponse, ResellerPortalCatalog } from '@hcs/contracts'
+import type {
+  ResellerOrderSubmitRequest,
+  ResellerOrderSubmitResponse,
+  ResellerPortalCatalog,
+  ResellerStockIssue,
+} from '@hcs/contracts'
 import { Button, Glass, cn, formatPeso } from '@hcs/ui'
 import { CircleCheck, Clock, ShoppingCart, TriangleAlert, Upload } from 'lucide-react'
 import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
@@ -8,6 +13,7 @@ import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react
 import { formatQuantity, summarizeCart, type CartLine } from '@/lib/cart'
 import { formatTime, paymentLabel, reviewReasonLabel, stockLabel } from '@/lib/labels'
 import { newIdempotencyKey } from '@/lib/portal-api'
+import { readStockIssues, stockIssueText } from '@/lib/stock-issues'
 
 import { PaymentInstructions } from './PaymentInstructions'
 import { QuantityStepper } from './QuantityStepper'
@@ -19,6 +25,7 @@ export function CartView({
   onSubmit,
   onOrderPlaced,
   onBrowse,
+  onStockChanged,
 }: {
   catalog: ResellerPortalCatalog
   cart: CartLine[]
@@ -26,6 +33,8 @@ export function CartView({
   onSubmit: (request: ResellerOrderSubmitRequest, idempotencyKey: string) => Promise<ResellerOrderSubmitResponse>
   onOrderPlaced: (salesOrderId: string) => void
   onBrowse: () => void
+  /** Reloads catalog stock badges after the business refused an order for stock. */
+  onStockChanged?: () => void
 }) {
   const summary = useMemo(() => summarizeCart(cart, catalog.items), [cart, catalog.items])
   const holdHours = catalog.payment?.holdHours ?? 4
@@ -36,6 +45,8 @@ export function CartView({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [placed, setPlaced] = useState<ResellerOrderSubmitResponse | null>(null)
+  // Items the last refusal named; an item drops off once its quantity fits.
+  const [stockIssues, setStockIssues] = useState<Map<string, ResellerStockIssue>>(new Map())
   // One key per attempted order; kept across retries so a lost response never doubles the order.
   const attempt = useRef<{ key: string; fingerprint: string } | null>(null)
 
@@ -132,6 +143,9 @@ export function CartView({
       setPlaced(await onSubmit(request, attempt.current.key))
       attempt.current = null
     } catch (submitError) {
+      const issues = readStockIssues(submitError)
+      setStockIssues(issues)
+      if (issues.size > 0) onStockChanged?.()
       setError(submitError instanceof Error ? submitError.message : 'The order was not sent. Please try again.')
     } finally {
       setBusy(false)
@@ -143,9 +157,16 @@ export function CartView({
       <ul className="flex flex-col gap-3">
         {summary.rows.map((row) => {
           const label = `${row.item.productName} ${row.item.variantName}`
+          const issue = stockIssues.get(row.variantId)
+          const short = issue !== undefined && row.quantityMilli > issue.availableMilli
           return (
             <li key={row.variantId}>
-              <Glass className="flex flex-col gap-3 rounded-glass p-4">
+              <Glass
+                className={cn(
+                  'flex flex-col gap-3 rounded-glass p-4',
+                  short && 'ring-2 ring-signal-dark-critical-fg/70',
+                )}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-semibold leading-tight">{row.item.productName}</p>
@@ -160,10 +181,30 @@ export function CartView({
                   </div>
                   <p className="font-semibold">{formatPeso(row.lineTotalMinor)}</p>
                 </div>
+                {short && issue ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-control bg-signal-dark-critical-bg px-3 py-2">
+                    <p className="flex items-start gap-2 text-small text-signal-dark-critical-fg">
+                      <TriangleAlert size={16} className="mt-0.5 flex-none" />
+                      {stockIssueText(issue)}
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => {
+                        onQuantity(row.variantId, issue.availableMilli)
+                        setError(null)
+                      }}
+                    >
+                      {issue.availableMilli > 0 ? `Set to ${formatQuantity(issue.availableMilli)}` : 'Remove'}
+                    </Button>
+                  </div>
+                ) : null}
                 <QuantityStepper
                   label={label}
                   quantityMilli={row.quantityMilli}
-                  canIncrease={row.item.stockStatus !== 'out_of_stock'}
+                  canIncrease={
+                    row.item.stockStatus !== 'out_of_stock' && !(issue && row.quantityMilli >= issue.availableMilli)
+                  }
                   onChange={(quantityMilli) => onQuantity(row.variantId, quantityMilli)}
                 />
               </Glass>

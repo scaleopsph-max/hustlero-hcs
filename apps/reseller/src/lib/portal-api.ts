@@ -9,6 +9,7 @@ export class PortalApiError extends Error {
     message: string,
     readonly status: number,
     readonly code: string | null,
+    readonly details: Record<string, unknown> | null = null,
   ) {
     super(message)
   }
@@ -58,11 +59,13 @@ export async function portalRequest<T>(
   }
   const data: unknown = await response.json().catch(() => null)
   if (!response.ok) {
-    const error = (data as { error?: { message?: string; code?: string } } | null)?.error
+    const error = (data as { error?: { message?: string; code?: string; details?: Record<string, unknown> } } | null)
+      ?.error
     throw new PortalApiError(
       error?.message ?? 'The request did not go through. Please try again.',
       response.status,
       error?.code ?? null,
+      error?.details ?? null,
     )
   }
   return parse(data)

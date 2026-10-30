@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { orderBadge, timeLeft } from './labels'
+import { orderBadge, timeAgo, timeLeft } from './labels'
 
 describe('pay-first labels', () => {
   it('shows where an order is in the payment step', () => {
@@ -26,5 +26,15 @@ describe('pay-first labels', () => {
     expect(timeLeft('2026-10-30T11:52:00Z', now)).toBe('3h 52m left')
     expect(timeLeft('2026-10-30T08:12:00Z', now)).toBe('12m left')
     expect(timeLeft('2026-10-30T07:59:00Z', now)).toBeNull()
+  })
+})
+
+describe('timeAgo', () => {
+  const now = Date.parse('2026-10-30T12:00:00Z')
+  it('reads like a feed', () => {
+    expect(timeAgo('2026-10-30T11:59:40Z', now)).toBe('Just now')
+    expect(timeAgo('2026-10-30T11:55:00Z', now)).toBe('5m ago')
+    expect(timeAgo('2026-10-30T09:00:00Z', now)).toBe('3h ago')
+    expect(timeAgo('2026-10-28T09:00:00Z', now)).toBe('Oct 28, 5:00 PM')
   })
 })

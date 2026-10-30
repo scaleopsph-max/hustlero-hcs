@@ -10,6 +10,7 @@ import {
   resellerPaymentAccountSaveRequestSchema,
   portalShipmentUpdateRequestSchema,
   resellerPortalReportFilterSchema,
+  resellerNotificationReadRequestSchema,
   type ResellerOrder,
   type ResellerPaymentAccount,
   type ResellerPortalCatalog,
@@ -329,8 +330,8 @@ export function registerResellerPortalRoutes(
       return fail(context, 400, 'INVALID_RESELLER_ORDER', 'Check the items, delivery details, and payment method.')
     const portalCommand = await command(context, request)
     if (!portalCommand) return fail(context, 400, 'IDEMPOTENCY_KEY_REQUIRED', 'Provide a valid Idempotency-Key.')
-    return run(context, async () =>
-      context.json(
+    try {
+      return context.json(
         await dependencies.repository.submitOrder(
           reseller.userId,
           reseller.tenantId,
@@ -339,6 +340,57 @@ export function registerResellerPortalRoutes(
           context.env,
         ),
         201,
+      )
+    } catch (error) {
+      const code = dependencies.postgresErrorCode(error)
+      const mapped = code === 'HCRP7' || code === 'HCRP8' ? errorMap[code] : undefined
+      if (!mapped) return run(context, () => Promise.reject(error))
+      // Name the items so the reseller knows exactly what to lower or remove.
+      const stockIssues = await Promise.resolve()
+        .then(() =>
+          dependencies.repository.checkCartStock(reseller.userId, reseller.tenantId, request.lines, context.env),
+        )
+        .catch(() => [])
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: mapped.code,
+            message: stockMessage(stockIssues) ?? mapped.message,
+            requestId: context.get('requestId'),
+            details: { stockIssues },
+          },
+        }),
+        mapped.status,
+      )
+    }
+  })
+
+  app.get('/v1/portal/notifications', async (context) => {
+    const reseller = await resolveReseller(context, true)
+    if (reseller instanceof Response) return reseller
+    const limit = Number(context.req.query('limit') ?? 30)
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+      return fail(context, 400, 'INVALID_NOTIFICATION_FILTERS', 'Choose between 1 and 100 notifications.')
+    return run(context, async () =>
+      context.json(
+        await dependencies.repository.loadNotifications(reseller.userId, reseller.tenantId, limit, context.env),
+      ),
+    )
+  })
+
+  app.post('/v1/portal/notifications/read', async (context) => {
+    const reseller = await resolveReseller(context, true)
+    if (reseller instanceof Response) return reseller
+    const request = await readJson(context, resellerNotificationReadRequestSchema)
+    if (!request) return fail(context, 400, 'INVALID_NOTIFICATION_REQUEST', 'Choose a notification to mark read.')
+    return run(context, async () =>
+      context.json(
+        await dependencies.repository.markNotificationsRead(
+          reseller.userId,
+          reseller.tenantId,
+          request.notificationId ?? null,
+          context.env,
+        ),
       ),
     )
   })
@@ -541,4 +593,16 @@ export function registerResellerPortalRoutes(
       ),
     )
   })
+}
+
+/** "Barako Coffee Beans 1kg bag is out of stock. Tablea 10 tablets: only 108 left." */
+export function stockMessage(
+  issues: Array<{ productName: string; variantName: string; availableMilli: number }>,
+): string | null {
+  if (issues.length === 0) return null
+  const parts = issues.map((issue) => {
+    const name = `${issue.productName} ${issue.variantName}`.trim()
+    return issue.availableMilli <= 0 ? `${name} is out of stock` : `${name}: only ${issue.availableMilli / 1000} left`
+  })
+  return `${parts.join('. ')}. Lower or remove ${issues.length === 1 ? 'this item' : 'these items'} and try again.`
 }

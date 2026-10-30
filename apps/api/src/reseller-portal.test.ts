@@ -323,8 +323,19 @@ describe('reseller portal API', () => {
     expect(apiErrorResponseSchema.parse(await response.json()).error.code).toBe('RESELLER_ITEM_OUT_OF_STOCK')
   })
 
-  it('refuses orders larger than the available stock', async () => {
-    const app = portalApp(repository({ submitOrder: vi.fn(async () => Promise.reject(postgresError('HCRP8'))) }))
+  it('refuses orders larger than the available stock and names the short items', async () => {
+    const checkCartStock = vi.fn(async () => [
+      {
+        variantId,
+        productName: 'Barako Coffee Beans',
+        variantName: '1kg bag',
+        requestedMilli: 10_000,
+        availableMilli: 4_000,
+      },
+    ])
+    const app = portalApp(
+      repository({ submitOrder: vi.fn(async () => Promise.reject(postgresError('HCRP8'))), checkCartStock }),
+    )
     const response = await app.request(
       '/v1/portal/orders',
       {
@@ -340,7 +351,46 @@ describe('reseller portal API', () => {
       bindings,
     )
     expect(response.status).toBe(409)
-    expect(apiErrorResponseSchema.parse(await response.json()).error.code).toBe('RESELLER_STOCK_SHORT')
+    const { error } = apiErrorResponseSchema.parse(await response.json())
+    expect(error.code).toBe('RESELLER_STOCK_SHORT')
+    expect(error.message).toBe('Barako Coffee Beans 1kg bag: only 4 left. Lower or remove this item and try again.')
+    expect(error.details).toEqual({
+      stockIssues: [
+        {
+          variantId,
+          productName: 'Barako Coffee Beans',
+          variantName: '1kg bag',
+          requestedMilli: 10_000,
+          availableMilli: 4_000,
+        },
+      ],
+    })
+    expect(checkCartStock).toHaveBeenCalledWith(resellerUserId, tenantId, orderRequest.lines, bindings)
+  })
+
+  it('lists reseller notifications and marks them read', async () => {
+    const loadNotifications = vi.fn(async () => ({ unreadCount: 0, items: [] }))
+    const markNotificationsRead = vi.fn(async () => ({ unreadCount: 0 }))
+    const app = portalApp(repository({ loadNotifications, markNotificationsRead }))
+    const headers = {
+      authorization: 'Bearer reseller-token',
+      'content-type': 'application/json',
+      'x-tenant-id': tenantId,
+    }
+    expect((await app.request('/v1/portal/notifications?limit=500', { headers }, bindings)).status).toBe(400)
+    const listed = await app.request('/v1/portal/notifications', { headers }, bindings)
+    expect(listed.status).toBe(200)
+    expect(loadNotifications).toHaveBeenCalledWith(resellerUserId, tenantId, 30, bindings)
+    const bad = await app.request(
+      '/v1/portal/notifications/read',
+      { method: 'POST', headers, body: JSON.stringify({ notificationId: 'nope' }) },
+      bindings,
+    )
+    expect(bad.status).toBe(400)
+    const all = await app.request('/v1/portal/notifications/read', { method: 'POST', headers, body: '{}' }, bindings)
+    expect(all.status).toBe(200)
+    expect(markNotificationsRead).toHaveBeenCalledWith(resellerUserId, tenantId, null, bindings)
+    expect((await app.request('/v1/portal/notifications', {}, bindings)).status).toBe(401)
   })
 
   it('signs payment QR links and never returns storage keys', async () => {

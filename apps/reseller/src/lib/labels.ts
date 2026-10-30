@@ -95,3 +95,14 @@ export function timeLeft(deadline: string, now: number): string | null {
 }
 
 export const courierLabel = { jnt: 'J&T Express', lalamove: 'Lalamove', other: 'Courier' } as const
+
+/** "Just now", "5m ago", "3h ago", then the date and time. */
+export function timeAgo(value: string, now: number = Date.now()): string {
+  const ms = now - new Date(value).getTime()
+  if (Number.isNaN(ms)) return value
+  const minutes = Math.floor(ms / 60_000)
+  if (minutes < 1) return 'Just now'
+  if (minutes < 60) return `${minutes}m ago`
+  if (minutes < 24 * 60) return `${Math.floor(minutes / 60)}h ago`
+  return formatDateTime(value)
+}
