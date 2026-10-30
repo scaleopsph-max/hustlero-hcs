@@ -1,7 +1,7 @@
 'use client'
 
 import type { ResellerPaymentAccount } from '@hcs/contracts'
-import { cn } from '@hcs/ui'
+import { cn, useToast } from '@hcs/ui'
 import { Check, Copy, Wallet } from 'lucide-react'
 import { useState } from 'react'
 
@@ -73,6 +73,7 @@ export function PaymentInstructions({
 
 function AccountCard({ account }: { account: ResellerPaymentAccount }) {
   const [copied, setCopied] = useState(false)
+  const toast = useToast()
   return (
     <div className="flex flex-col items-center gap-3 rounded-control bg-ink-950/40 p-3 text-center">
       {account.qrUrl ? (
@@ -102,7 +103,10 @@ function AccountCard({ account }: { account: ResellerPaymentAccount }) {
             onClick={() => {
               void navigator.clipboard
                 ?.writeText(account.accountNumber.replace(/\s+/g, ''))
-                .then(() => setCopied(true))
+                .then(() => {
+                  setCopied(true)
+                  toast.success(`${account.providerName} number copied.`)
+                })
                 .catch(() => undefined)
             }}
           >

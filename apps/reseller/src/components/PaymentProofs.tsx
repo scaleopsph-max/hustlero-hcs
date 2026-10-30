@@ -1,7 +1,7 @@
 'use client'
 
 import type { ResellerOrder } from '@hcs/contracts'
-import { Button, Chip, formatPeso, parsePeso, preparePhoto, type ChipTone } from '@hcs/ui'
+import { Button, Chip, formatPeso, parsePeso, preparePhoto, useToast, type ChipTone } from '@hcs/ui'
 import { FileText, Upload } from 'lucide-react'
 import { useRef, useState, type FormEvent } from 'react'
 
@@ -39,6 +39,7 @@ export function PaymentProofs({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const attempt = useRef<{ key: string; fingerprint: string } | null>(null)
+  const toast = useToast()
   const accepting = order.status !== 'cancelled'
 
   async function submit(event: FormEvent) {
@@ -68,6 +69,7 @@ export function PaymentProofs({
         attempt.current = { key: newIdempotencyKey('proof'), fingerprint }
       await onUpload(order.id, body, attempt.current.key)
       attempt.current = null
+      toast.success('Payment proof sent. The team will check it and confirm your order.')
       setOpen(false)
       setFile(null)
       setReference('')

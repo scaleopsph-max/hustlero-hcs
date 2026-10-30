@@ -16,7 +16,7 @@ import {
   type ResellerOrderReviewRequest,
   type ResellerPortalAdmin,
 } from '@hcs/contracts'
-import { Button, Chip, Glass, cn, formatPeso } from '@hcs/ui'
+import { Button, Chip, Glass, cn, formatPeso, useToast } from '@hcs/ui'
 import { Check, Copy, RefreshCw, UserPlus, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
@@ -84,7 +84,7 @@ export function ResellerPortalWorkspace() {
   const [admin, setAdmin] = useState<ResellerPortalAdmin | null>(null)
   const [busy, setBusy] = useState<string | null>('load')
   const [error, setError] = useState<string | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
+  const toast = useToast()
   const keys = useRef(new Map<string, string>())
   const [tab, setTab] = useState<PortalTab>('orders')
   // Read the hash after mounting so the server and first client render agree.
@@ -148,15 +148,14 @@ export function ResellerPortalWorkspace() {
     if (!scope) return false
     setBusy(target)
     setError(null)
-    setMessage(null)
     try {
       parse(await call(path, scope, body, commandKey(keys.current, `${target}:${JSON.stringify(body)}`)))
       keys.current.delete(`${target}:${JSON.stringify(body)}`)
-      setMessage(done)
       await load(scope)
+      if (done) toast.success(done)
       return true
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The change was not saved. Try again.')
+      toast.error(cause instanceof Error ? cause.message : 'The change was not saved. Try again.')
       return false
     } finally {
       setBusy(null)
@@ -183,14 +182,6 @@ export function ResellerPortalWorkspace() {
   return (
     <div className="flex flex-col gap-6 px-6 pb-10">
       {error ? <ErrorBanner text={error} /> : null}
-      {message ? (
-        <p
-          role="status"
-          className="rounded-control bg-signal-light-success-bg px-4 py-3 text-sm text-signal-light-success-fg"
-        >
-          {message}
-        </p>
-      ) : null}
 
       <div className="flex flex-wrap items-center gap-3">
         <div
@@ -232,7 +223,9 @@ export function ResellerPortalWorkspace() {
           size="sm"
           className="ml-auto"
           disabled={busy !== null || !scope}
-          onClick={() => scope && void run('refresh', '/v1/reseller-portal/admin', undefined, () => null, '')}
+          onClick={() =>
+            scope && void run('refresh', '/v1/reseller-portal/admin', undefined, () => null, 'Up to date.')
+          }
         >
           <RefreshCw size={16} className="mr-2" />
           Refresh
@@ -420,6 +413,7 @@ export function ResellerPortalWorkspace() {
           <SettingsCard
             admin={admin}
             busy={busy !== null}
+            saving={busy === 'settings'}
             link={link}
             onSave={(body) =>
               run(
@@ -435,13 +429,13 @@ export function ResellerPortalWorkspace() {
           <PaymentAccountsCard
             accounts={admin.paymentAccounts ?? []}
             busy={busy !== null}
-            onSave={(body, target) =>
+            onSave={(body, target, done) =>
               run(
                 target,
                 '/v1/reseller-portal/payment-accounts',
                 body,
                 (v) => resellerPaymentAccountSaveResponseSchema.parse(v),
-                'Payment account saved. Resellers see it when they pay.',
+                done,
               )
             }
             onUploadQr={async (accountId, body) => {
@@ -464,8 +458,8 @@ export function ResellerPortalWorkspace() {
                   (data as { error?: { message?: string } } | null)?.error?.message ?? 'The QR code was not uploaded.',
                 )
               paymentQrUploadResponseSchema.parse(data)
-              setMessage('QR code saved. Resellers see it when they pay.')
               await load(scope)
+              toast.success('QR code saved. Resellers see it when they pay.')
             }}
           />
         </div>
@@ -486,6 +480,7 @@ function ProofCard({
   const [reason, setReason] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
   const mismatch = proof.amountMinor !== proof.orderTotalMinor
+  const [acting, setActing] = useState<'accept' | 'reject' | null>(null)
   return (
     <Glass variant="data" className="flex flex-col gap-3 rounded-panel p-5 md:flex-row">
       <a
@@ -539,20 +534,28 @@ function ProofCard({
               onChange={(event) => setReason(event.target.value)}
             />
           </label>
-          <Button variant="confirm" disabled={busy} onClick={() => onDecide({ decision: 'accept' })}>
+          <Button
+            variant="confirm"
+            disabled={busy}
+            onClick={() => {
+              setActing('accept')
+              onDecide({ decision: 'accept' })
+            }}
+          >
             <Check size={16} className="mr-2" />
-            Mark verified
+            {busy && acting === 'accept' ? 'Verifying…' : 'Mark verified'}
           </Button>
           <Button
             disabled={busy}
             onClick={() => {
               if (reason.trim().length < 2) return setProblem('Tell the reseller why the proof is rejected.')
               setProblem(null)
+              setActing('reject')
               onDecide({ decision: 'reject', reason: reason.trim() })
             }}
           >
             <X size={16} className="mr-2" />
-            Reject
+            {busy && acting === 'reject' ? 'Rejecting…' : 'Reject'}
           </Button>
         </div>
         {problem ? <p className="text-sm text-signal-light-critical-fg">{problem}</p> : null}
@@ -584,11 +587,13 @@ function Section({ title, empty, children }: { title: string; empty: string; chi
 function SettingsCard({
   admin,
   busy,
+  saving,
   link,
   onSave,
 }: {
   admin: ResellerPortalAdmin
   busy: boolean
+  saving: boolean
   link: string | null
   onSave: (body: unknown) => void
 }) {
@@ -671,7 +676,7 @@ function SettingsCard({
         </label>
         <div className="flex flex-wrap items-center gap-3 md:col-span-2">
           <Button type="submit" variant="confirm" disabled={busy || !location}>
-            Save settings
+            {saving ? 'Saving…' : 'Save settings'}
           </Button>
           {link ? (
             <Button
@@ -710,10 +715,12 @@ function ReviewCard({
     .filter((proof) => proof.status !== 'rejected')
     .reduce((sum, proof) => sum + proof.amountMinor, 0)
   const balanceMinor = Math.max(0, order.totalMinor - paidMinor)
+  const [acting, setActing] = useState<'approve' | 'reject' | null>(null)
   function decide(decision: 'approve' | 'reject') {
     const request = orderReviewRequest(decision, note)
     if (typeof request === 'string') return setProblem(request)
     setProblem(null)
+    setActing(decision)
     onDecide(request)
   }
   return (
@@ -814,11 +821,15 @@ function ReviewCard({
         </label>
         <Button variant="confirm" disabled={busy} onClick={() => decide('approve')}>
           <Check size={16} className="mr-2" />
-          {proofs.length ? 'Verify payment & confirm order' : 'Confirm order'}
+          {busy && acting === 'approve'
+            ? 'Confirming…'
+            : proofs.length
+              ? 'Verify payment & confirm order'
+              : 'Confirm order'}
         </Button>
         <Button disabled={busy} onClick={() => decide('reject')}>
           <X size={16} className="mr-2" />
-          Reject order
+          {busy && acting === 'reject' ? 'Rejecting…' : 'Reject order'}
         </Button>
       </div>
       {problem ? <p className="text-sm text-signal-light-critical-fg">{problem}</p> : null}
@@ -855,10 +866,12 @@ function ApplicationCard({
   const [problem, setProblem] = useState<string | null>(null)
   const pending = application.status === 'pending'
 
+  const [acting, setActing] = useState<'approve' | 'reject' | null>(null)
   function decide(decision: 'approve' | 'reject') {
     const request = decision === 'approve' ? approvalRequest(form) : rejectionRequest(form.note)
     if (typeof request === 'string') return setProblem(request)
     setProblem(null)
+    setActing(decision)
     onDecide(request)
   }
 
@@ -954,11 +967,11 @@ function ApplicationCard({
             </label>
             <Button variant="confirm" disabled={busy} onClick={() => decide('approve')}>
               <Check size={16} className="mr-2" />
-              Approve
+              {busy && acting === 'approve' ? 'Approving…' : 'Approve'}
             </Button>
             <Button disabled={busy} onClick={() => decide('reject')}>
               <X size={16} className="mr-2" />
-              Reject
+              {busy && acting === 'reject' ? 'Rejecting…' : 'Reject'}
             </Button>
           </div>
           {problem ? <p className="text-sm text-signal-light-critical-fg">{problem}</p> : null}
@@ -1030,7 +1043,11 @@ function AccountsCard({
                       disabled={busy !== null}
                       onClick={() => onStatus(account.id, account.status === 'suspended' ? 'active' : 'suspended')}
                     >
-                      {account.status === 'suspended' ? 'Restore access' : 'Suspend'}
+                      {busy === `account:${account.id}`
+                        ? 'Saving…'
+                        : account.status === 'suspended'
+                          ? 'Restore access'
+                          : 'Suspend'}
                     </Button>
                   </td>
                 </tr>
@@ -1095,11 +1112,11 @@ function AccountsCard({
             </label>
             <Button type="submit" variant="confirm" disabled={busy !== null}>
               <UserPlus size={16} className="mr-2" />
-              Invite
+              {busy === 'invite' ? 'Inviting…' : 'Invite'}
             </Button>
           </form>
           <p className="mt-2 text-caption text-ink-500">
-            Set credit settings in Wholesale credit so their orders can auto-confirm.
+            Set credit settings in Wholesale credit before you confirm their orders.
           </p>
         </Glass>
       ) : null}

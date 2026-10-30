@@ -6,7 +6,7 @@ import {
   productImageUploadResponseSchema,
   type ProductImage,
 } from '@hcs/contracts'
-import { Button, Glass, cn, preparePhoto } from '@hcs/ui'
+import { Button, Glass, cn, preparePhoto, useToast } from '@hcs/ui'
 import { ArrowLeft, ArrowRight, ImagePlus, Star, Trash2 } from 'lucide-react'
 import { useRef, useState, type ReactNode } from 'react'
 
@@ -58,6 +58,7 @@ export function ProductPhotos({
   onChanged: () => Promise<void>
 }) {
   const input = useRef<HTMLInputElement>(null)
+  const toast = useToast()
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
@@ -66,6 +67,7 @@ export function ProductPhotos({
     if (!files?.length) return
     const room = MAX_PHOTOS - images.length
     const chosen = [...files].slice(0, room)
+    let added = 0
     setError(
       files.length > room ? `Only ${room} more photo${room === 1 ? '' : 's'} fit. The first ${room} were added.` : null,
     )
@@ -83,8 +85,10 @@ export function ProductPhotos({
             idempotencyKey: `photo-${crypto.randomUUID()}`,
           }),
         )
+        added += 1
       } catch (cause) {
         setError(`${file.name}: ${cause instanceof Error ? cause.message : 'upload failed.'}`)
+        toast.error(`${file.name} was not uploaded.`)
         break
       }
     }
@@ -92,6 +96,7 @@ export function ProductPhotos({
     setBusy('Refreshing…')
     await onChanged()
     setBusy(null)
+    if (added) toast.success(`${added} photo${added === 1 ? '' : 's'} added. POS and resellers see them right away.`)
   }
 
   async function reorder(fileIds: string[]) {
@@ -106,6 +111,7 @@ export function ProductPhotos({
         }),
       )
       await onChanged()
+      toast.success('Photo order saved.')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The order was not saved.')
     } finally {
@@ -122,6 +128,7 @@ export function ProductPhotos({
       )
       setConfirmRemove(null)
       await onChanged()
+      toast.success('Photo removed.')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The photo was not removed.')
     } finally {

@@ -1,8 +1,8 @@
 'use client'
 
 import type { ResellerPaymentAccount, ResellerPaymentAccountSaveRequest } from '@hcs/contracts'
-import { Button, Chip, Glass, preparePhoto } from '@hcs/ui'
-import { Eye, EyeOff, ImagePlus, Plus, QrCode, Save } from 'lucide-react'
+import { Button, Chip, Glass, preparePhoto, useToast } from '@hcs/ui'
+import { Eye, EyeOff, ImagePlus, Loader2, Pencil, Plus, QrCode, Save } from 'lucide-react'
 import { useRef, useState } from 'react'
 
 import { accountRequest, type PaymentAccountDraft as Draft } from '@/lib/reseller-portal-admin'
@@ -25,7 +25,7 @@ export function PaymentAccountsCard({
 }: {
   accounts: ResellerPaymentAccount[]
   busy: boolean
-  onSave: (body: ResellerPaymentAccountSaveRequest, target: string) => Promise<boolean>
+  onSave: (body: ResellerPaymentAccountSaveRequest, target: string, done: string) => Promise<boolean>
   onUploadQr: (accountId: string, body: FormData) => Promise<void>
 }) {
   const [adding, setAdding] = useState(accounts.length === 0)
@@ -57,7 +57,8 @@ export function PaymentAccountsCard({
           submitLabel="Add account"
           onCancel={accounts.length ? () => setAdding(false) : undefined}
           onSubmit={async (body) => {
-            if (await onSave(body, 'payment-account:new')) setAdding(false)
+            if (await onSave(body, 'payment-account:new', 'Payment account added. Resellers see it when they pay.'))
+              setAdding(false)
           }}
         />
       ) : null}
@@ -73,12 +74,14 @@ function AccountRow({
 }: {
   account: ResellerPaymentAccount
   busy: boolean
-  onSave: (body: ResellerPaymentAccountSaveRequest, target: string) => Promise<boolean>
+  onSave: (body: ResellerPaymentAccountSaveRequest, target: string, done: string) => Promise<boolean>
   onUploadQr: (accountId: string, body: FormData) => Promise<void>
 }) {
+  const toast = useToast()
   const input = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
-  const [problem, setProblem] = useState<string | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
   const draft: Draft = {
     method: account.method,
     providerName: account.providerName,
@@ -88,30 +91,27 @@ function AccountRow({
   async function upload(file: File | undefined) {
     if (!file) return
     setUploading(true)
-    setProblem(null)
     try {
       const prepared = await preparePhoto(file)
       const body = new FormData()
       body.append('image', prepared.image, prepared.filename)
       await onUploadQr(account.id, body)
     } catch (cause) {
-      setProblem(cause instanceof Error ? cause.message : 'The QR code was not uploaded.')
+      toast.error(cause instanceof Error ? cause.message : 'The QR code was not uploaded. Try again.')
     } finally {
       setUploading(false)
       if (input.current) input.current.value = ''
     }
   }
   return (
-    <div
-      className={`flex flex-col gap-4 rounded-control border border-ink-900/10 p-4 md:flex-row ${account.isActive ? '' : 'opacity-60'}`}
-    >
+    <div className={`flex flex-col gap-4 rounded-control border border-ink-900/10 bg-white/60 p-4 sm:flex-row`}>
       <div className="flex flex-none flex-col items-center gap-2">
         {account.qrUrl ? (
           <a href={fileUrl(account.qrUrl)} target="_blank" rel="noreferrer" aria-label="Open QR code">
             <img
               src={fileUrl(account.qrUrl)}
               alt={`${account.providerName} QR code`}
-              className="size-32 rounded-control bg-white object-contain p-1 ring-1 ring-ink-900/10"
+              className={`size-32 rounded-control bg-white object-contain p-1 ring-1 ring-ink-900/10 ${account.isActive ? '' : 'opacity-50'}`}
             />
           </a>
         ) : (
@@ -129,40 +129,86 @@ function AccountRow({
           onChange={(event) => void upload(event.target.files?.[0])}
         />
         <Button size="sm" disabled={busy || uploading} onClick={() => input.current?.click()}>
-          <ImagePlus size={16} className="mr-2" />
+          {uploading ? <Loader2 size={16} className="mr-2 animate-spin" /> : <ImagePlus size={16} className="mr-2" />}
           {uploading ? 'Uploading…' : account.qrUrl ? 'Replace QR' : 'Upload QR'}
         </Button>
-        {problem ? <p className="max-w-40 text-center text-xs text-signal-light-critical-fg">{problem}</p> : null}
       </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <div className="flex items-center gap-2">
-          <Chip surface="light" tone={account.isActive ? 'success' : 'neutral'}>
-            {account.isActive ? 'Shown to resellers' : 'Hidden'}
-          </Chip>
-        </div>
-        <AccountForm
-          busy={busy}
-          initial={draft}
-          submitLabel="Save"
-          onSubmit={(body) =>
-            onSave({ ...body, id: account.id, isActive: account.isActive }, `payment-account:${account.id}`)
-          }
-          extra={
-            <Button
-              size="sm"
-              disabled={busy}
-              onClick={() =>
-                void onSave(
-                  { ...draft, id: account.id, isActive: !account.isActive },
-                  `payment-account:${account.id}:visibility`,
-                )
-              }
-            >
-              {account.isActive ? <EyeOff size={16} className="mr-2" /> : <Eye size={16} className="mr-2" />}
-              {account.isActive ? 'Hide' : 'Show'}
-            </Button>
-          }
-        />
+      <div className="flex min-w-0 flex-1 flex-col gap-3">
+        {editing ? (
+          <AccountForm
+            busy={busy || saving}
+            initial={draft}
+            submitLabel="Save changes"
+            onCancel={() => setEditing(false)}
+            onSubmit={async (body) => {
+              setSaving(true)
+              const saved = await onSave(
+                { ...body, id: account.id, isActive: account.isActive },
+                `payment-account:${account.id}`,
+                'Changes saved.',
+              )
+              setSaving(false)
+              if (saved) setEditing(false)
+            }}
+          />
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <Chip surface="light" tone={account.method === 'gcash' ? 'info' : 'neutral'}>
+                {account.method === 'gcash' ? 'GCash' : 'Bank transfer'}
+              </Chip>
+              <Chip surface="light" tone={account.isActive ? 'success' : 'neutral'}>
+                {account.isActive ? 'Shown to resellers' : 'Hidden'}
+              </Chip>
+            </div>
+            <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+              <div className="min-w-0">
+                <dt className="text-xs text-ink-500">{account.method === 'gcash' ? 'Wallet' : 'Bank'}</dt>
+                <dd className="truncate font-semibold">{account.providerName}</dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-xs text-ink-500">Account name</dt>
+                <dd className="truncate font-semibold">{account.accountName}</dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-xs text-ink-500">
+                  {account.method === 'gcash' ? 'GCash number' : 'Account number'}
+                </dt>
+                <dd className="truncate font-semibold tabular-nums">{account.accountNumber}</dd>
+              </div>
+            </dl>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" disabled={busy} onClick={() => setEditing(true)}>
+                <Pencil size={16} className="mr-2" />
+                Edit
+              </Button>
+              <Button
+                size="sm"
+                disabled={busy || saving}
+                onClick={async () => {
+                  setSaving(true)
+                  await onSave(
+                    { ...draft, id: account.id, isActive: !account.isActive },
+                    `payment-account:${account.id}:visibility`,
+                    account.isActive
+                      ? `${account.providerName} is now hidden from resellers.`
+                      : `${account.providerName} is shown to resellers again.`,
+                  )
+                  setSaving(false)
+                }}
+              >
+                {saving ? (
+                  <Loader2 size={16} className="mr-2 animate-spin" />
+                ) : account.isActive ? (
+                  <EyeOff size={16} className="mr-2" />
+                ) : (
+                  <Eye size={16} className="mr-2" />
+                )}
+                {account.isActive ? 'Hide from resellers' : 'Show to resellers'}
+              </Button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
@@ -174,17 +220,16 @@ function AccountForm({
   submitLabel,
   onSubmit,
   onCancel,
-  extra,
 }: {
   initial: Draft
   busy: boolean
   submitLabel: string
   onSubmit: (body: ResellerPaymentAccountSaveRequest) => Promise<unknown>
   onCancel?: (() => void) | undefined
-  extra?: React.ReactNode
 }) {
   const [draft, setDraft] = useState(initial)
   const [problem, setProblem] = useState<string | null>(null)
+  const changed = (Object.keys(initial) as (keyof Draft)[]).some((key) => draft[key].trim() !== initial[key].trim())
   const set = (key: keyof Draft) => (event: { target: { value: string } }) =>
     setDraft((current) => ({ ...current, [key]: event.target.value }))
   return (
@@ -253,11 +298,16 @@ function AccountForm({
         />
       </label>
       <div className="flex flex-wrap items-center gap-2 md:col-span-2">
-        <Button type="submit" variant="confirm" size="sm" disabled={busy}>
-          {submitLabel === 'Save' ? <Save size={16} className="mr-2" /> : <Plus size={16} className="mr-2" />}
-          {submitLabel}
+        <Button type="submit" variant="confirm" size="sm" disabled={busy || !changed}>
+          {busy ? (
+            <Loader2 size={16} className="mr-2 animate-spin" />
+          ) : submitLabel === 'Add account' ? (
+            <Plus size={16} className="mr-2" />
+          ) : (
+            <Save size={16} className="mr-2" />
+          )}
+          {busy ? 'Saving…' : submitLabel}
         </Button>
-        {extra}
         {onCancel ? (
           <Button size="sm" disabled={busy} onClick={onCancel}>
             Cancel

@@ -11,7 +11,7 @@ import {
   type ResellerPortalCatalog,
   type ResellerPortalSession,
 } from '@hcs/contracts'
-import { Button, Glass, Logo, StateCard, Surface, cn } from '@hcs/ui'
+import { Button, Glass, Logo, StateCard, Surface, cn, useToast } from '@hcs/ui'
 import { ClipboardList, Store, ShoppingCart, UserRound, type LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 
@@ -33,6 +33,7 @@ const glows = [
 
 export function PortalApp() {
   const auth = portalAuth()
+  const toast = useToast()
   const [token, setToken] = useState<string | null>(null)
   const [authReady, setAuthReady] = useState(false)
   const [session, setSession] = useState<ResellerPortalSession | null>(null)
@@ -158,6 +159,7 @@ export function PortalApp() {
         .filter((line) => available.has(line.variantId))
         .map((line) => ({ variantId: line.variantId, quantityMilli: line.orderedQuantityMilli })),
     )
+    toast.success(`Items from ${order.orderNumber} added to your cart.`)
     setTab('cart')
   }
 
