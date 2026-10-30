@@ -125,6 +125,7 @@ export function VariantSheet({
                   <QuantityStepper
                     label={`${group.productName} ${variant.variantName}`}
                     quantityMilli={quantityInCart(cart, variant.variantId)}
+                    canIncrease={variant.stockStatus !== 'out_of_stock'}
                     onChange={(next) => onQuantity(variant.variantId, next)}
                   />
                 </div>

@@ -85,7 +85,7 @@ export function CartView({
   }
 
   const deliveryMissing = method === 'delivery' && address.trim().length < 5
-  const blocked = summary.shortfalls.length > 0 || deliveryMissing || busy
+  const blocked = summary.shortfalls.length > 0 || summary.hasOutOfStock || deliveryMissing || busy
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -136,6 +136,7 @@ export function CartView({
                 <QuantityStepper
                   label={label}
                   quantityMilli={row.quantityMilli}
+                  canIncrease={row.item.stockStatus !== 'out_of_stock'}
                   onChange={(quantityMilli) => onQuantity(row.variantId, quantityMilli)}
                 />
               </Glass>
@@ -154,7 +155,7 @@ export function CartView({
         </Notice>
       ))}
       {summary.hasOutOfStock ? (
-        <Notice>Some items are out of stock. You can still submit; the team will review the order.</Notice>
+        <Notice>Some items are out of stock and cannot be ordered. Remove them to submit the order.</Notice>
       ) : null}
 
       <Glass className="flex flex-col gap-4 rounded-glass p-4">

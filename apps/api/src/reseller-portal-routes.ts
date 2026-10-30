@@ -63,6 +63,11 @@ const errorMap: Record<string, { status: ContentfulStatusCode; code: string; mes
     message: 'Add more items to reach the wholesale minimum quantity.',
   },
   HCRP6: { status: 409, code: 'RESELLER_APPLICATIONS_CLOSED', message: 'Reseller applications are closed right now.' },
+  HCRP7: {
+    status: 409,
+    code: 'RESELLER_ITEM_OUT_OF_STOCK',
+    message: 'An item in your cart is out of stock. Remove it and submit again.',
+  },
   HCRA1: {
     status: 403,
     code: 'RESELLER_PORTAL_ADMIN_DENIED',

@@ -171,6 +171,13 @@ select throws_ok($$ select app.submit_reseller_portal_order('1e100000-0000-4000-
   '{"lines":[{"variantId":"8e100000-0000-4000-8000-000000000001","quantityMilli":20000}],"fulfillmentMethod":"pickup","paymentPreference":"gcash"}',
   'portal-order-key-01', 'different-hash', 'order-request-1c') $$, 'HCS08', null, 'a reused key with a different order is rejected');
 
+-- Out-of-stock items cannot be ordered at all; nothing is saved.
+select throws_ok($$ select app.submit_reseller_portal_order('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001',
+  '{"lines":[{"variantId":"8e100000-0000-4000-8000-000000000001","quantityMilli":2000},{"variantId":"8e100000-0000-4000-8000-000000000003","quantityMilli":2000}],"fulfillmentMethod":"pickup","paymentPreference":"gcash"}',
+  'portal-order-key-oos', 'order-hash-oos', 'order-request-oos') $$, 'HCRP7', null, 'an order with an out-of-stock item is rejected');
+select is((select count(*)::integer from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001'
+  and source = 'reseller_portal'), 1, 'a rejected out-of-stock order saves nothing');
+
 -- Holds: insufficient stock and credit go to the review queue without touching stock.
 select is(app.submit_reseller_portal_order('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001',
   '{"lines":[{"variantId":"8e100000-0000-4000-8000-000000000002","quantityMilli":9000}],"fulfillmentMethod":"pickup","paymentPreference":"bank_transfer"}',

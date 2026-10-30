@@ -191,6 +191,7 @@ function SingleProductCard({
         <QuantityStepper
           label={`${item.productName} ${item.variantName}`}
           quantityMilli={quantityInCart(cart, item.variantId)}
+          canIncrease={item.stockStatus !== 'out_of_stock'}
           onChange={(quantityMilli) => onQuantity(item.variantId, quantityMilli)}
         />
       </div>
