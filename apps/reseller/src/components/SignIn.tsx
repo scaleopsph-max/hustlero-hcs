@@ -85,21 +85,21 @@ export function SignIn() {
             <div>
               <h1 className="text-h3">Enter the code</h1>
               <p className="mt-1 text-ink-300">
-                We sent a 6-digit code to <span className="font-semibold text-ink-50">{email}</span>.
+                We sent a sign-in code to <span className="font-semibold text-ink-50">{email}</span>.
               </p>
             </div>
             <Field
-              label="6-digit code"
+              label="Sign-in code"
               inputMode="numeric"
               autoComplete="one-time-code"
-              pattern="[0-9]{6}"
-              maxLength={6}
+              pattern="[0-9]{6,10}"
+              maxLength={10}
               required
               value={code}
               onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))}
               {...(error ? { error } : {})}
             />
-            <Button type="submit" variant="primary" disabled={busy || code.length !== 6}>
+            <Button type="submit" variant="primary" disabled={busy || code.length < 6}>
               {busy ? 'Checking…' : 'Sign in'}
             </Button>
             <button
