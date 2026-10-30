@@ -2,7 +2,7 @@
 
 import type { PortalCourier, PortalShipment, PortalShipmentStatus, PortalShipmentUpdateRequest } from '@hcs/contracts'
 import { Button, Chip, Glass, cn, formatPeso } from '@hcs/ui'
-import { Check, MapPin, Package, PackageCheck, Phone, Store, Truck } from 'lucide-react'
+import { Check, MapPin, Package, PackageCheck, Phone, ReceiptText, Store, Truck } from 'lucide-react'
 import { useState } from 'react'
 
 const control =
@@ -154,6 +154,15 @@ function ShipmentCard({
             {shipment.shippedAt ? <span className="text-ink-500">· {time(shipment.shippedAt)}</span> : null}
           </p>
         ) : null}
+        {shipment.invoiceNumber ? (
+          <p className="flex items-center gap-2">
+            <ReceiptText size={16} className="flex-none" />
+            {shipment.invoiceNumber}
+            <span className={shipment.balanceMinor ? 'font-semibold text-signal-light-warning-fg' : 'text-ink-500'}>
+              · {shipment.balanceMinor ? `${formatPeso(shipment.balanceMinor)} still to pay` : 'Paid in full'}
+            </span>
+          </p>
+        ) : null}
         {shipment.deliveredAt ? (
           <p className="flex items-center gap-2 text-signal-light-success-fg">
             <Check size={16} className="flex-none" />
@@ -170,10 +179,15 @@ function ShipmentCard({
       ) : null}
 
       {shipment.status === 'packed' && pickup ? (
-        <Button variant="confirm" disabled={anyBusy} onClick={() => void onUpdate({ status: 'delivered' })}>
-          <PackageCheck size={16} className="mr-2" />
-          {busy ? 'Saving…' : 'Mark picked up'}
-        </Button>
+        <>
+          <p className="text-xs text-ink-500">
+            Handing it over takes the items out of stock, issues the invoice, and records the verified payments.
+          </p>
+          <Button variant="confirm" disabled={anyBusy} onClick={() => void onUpdate({ status: 'delivered' })}>
+            <PackageCheck size={16} className="mr-2" />
+            {busy ? 'Saving…' : 'Mark picked up'}
+          </Button>
+        </>
       ) : null}
 
       {shipment.status === 'packed' && !pickup ? (
@@ -219,6 +233,9 @@ function ShipmentCard({
             <Truck size={16} className="mr-2" />
             {busy ? 'Saving…' : 'Mark shipped'}
           </Button>
+          <p className="text-xs text-ink-500 sm:col-span-3">
+            Shipping takes the items out of stock, issues the invoice, and records the verified payments.
+          </p>
           {problem ? <p className="text-sm text-signal-light-critical-fg sm:col-span-3">{problem}</p> : null}
         </form>
       ) : null}

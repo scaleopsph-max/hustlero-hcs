@@ -155,6 +155,10 @@ export const portalShipmentSchema = z.object({
   packedAt: timestamp.nullable(),
   shippedAt: timestamp.nullable(),
   deliveredAt: timestamp.nullable(),
+  /** Set once shipping (or pickup) completed the sale. */
+  invoiceNumber: z.string().nullable().optional(),
+  /** What the reseller still owes on the invoice; null before the sale is completed. */
+  balanceMinor: z.number().int().nullable().optional(),
   lines: z.array(
     z.object({
       productName: z.string().min(1),
@@ -291,7 +295,14 @@ export const portalShipmentUpdateRequestSchema = z
     path: ['courier'],
   })
 
-export const portalShipmentUpdateResponseSchema = z.object({ salesOrderId: uuid, status: portalShipmentStatusSchema })
+export const portalShipmentUpdateResponseSchema = z.object({
+  salesOrderId: uuid,
+  status: portalShipmentStatusSchema,
+  /** Present when this step completed the sale: stock released, invoice issued, verified payments recorded. */
+  invoiceNumber: z.string().nullable().optional(),
+  recordedPaymentMinor: z.number().int().nonnegative().optional(),
+  balanceMinor: z.number().int().optional(),
+})
 
 export const resellerApplicationDecisionRequestSchema = z.discriminatedUnion('decision', [
   z.strictObject({

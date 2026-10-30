@@ -61,6 +61,22 @@ const decisionIdempotencyPattern = /^[A-Za-z0-9_-]{16,120}$/
 const errorMap: Record<string, { status: ContentfulStatusCode; code: string; message: string }> = {
   HCSD0: { status: 403, code: 'REPORTING_ACCESS_DENIED', message: 'Your role cannot view these reports.' },
   HCSD1: { status: 400, code: 'INVALID_REPORT_FILTERS', message: 'Choose a valid date range of up to one year.' },
+  HCRP9: {
+    status: 409,
+    code: 'PAYMENT_METHOD_REQUIRED',
+    message:
+      'Turn on an E-wallet and a Bank Transfer payment method in Payment methods so verified payments can be recorded.',
+  },
+  HCSQ1: {
+    status: 403,
+    code: 'WHOLESALE_ORDER_ACCESS_DENIED',
+    message: 'Your role cannot release stock or issue invoices. Ask an owner or a wholesale manager.',
+  },
+  HCQ11: {
+    status: 409,
+    code: 'STOCK_RESERVATION_MISMATCH',
+    message: 'The reserved stock for this order no longer matches inventory. Check Inventory, then try again.',
+  },
   HCRP0: { status: 404, code: 'RESELLER_PORTAL_UNAVAILABLE', message: 'The reseller portal is not available.' },
   HCRP1: { status: 403, code: 'RESELLER_ACCESS_DENIED', message: 'This account does not have reseller access here.' },
   HCRP2: { status: 409, code: 'RESELLER_PORTAL_NOT_CONFIGURED', message: 'The reseller portal is not set up yet.' },

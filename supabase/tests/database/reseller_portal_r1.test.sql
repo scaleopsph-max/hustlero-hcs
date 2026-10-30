@@ -240,6 +240,38 @@ select is(app.update_portal_shipment('1e100000-0000-4000-8000-000000000001', '2e
   'shipped', 'owner ships with J&T and a tracking number');
 select is((select o->'shipment'->>'trackingNumber' from jsonb_array_elements(app.list_reseller_portal_orders('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001')->'orders') o
   where o->>'orderNumber' = 'RP-000001'), 'JT0012345678', 'the reseller sees the courier tracking number');
+
+-- Shipping completes the sale: stock leaves the warehouse, the invoice is issued, and the verified downpayment is recorded.
+select is((select status from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'), 'fulfilled', 'shipping fulfills the portal order');
+select is((select sum(quantity) from app.inventory_movements where tenant_id = '2e100000-0000-4000-8000-000000000001' and movement_type = 'SALE'
+  and source_reference = (select id::text from app.invoices where tenant_id = '2e100000-0000-4000-8000-000000000001' and sales_order_id = (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'))), -10.000::numeric, 'shipping takes the 10 units out of stock');
+select is((select reserved from app.inventory_balances where tenant_id = '2e100000-0000-4000-8000-000000000001' and variant_id = '8e100000-0000-4000-8000-000000000001'), 0.000::numeric,
+  'the shipped units are no longer reserved');
+select is((select total from app.invoices where tenant_id = '2e100000-0000-4000-8000-000000000001' and sales_order_id = (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')), 2500.00::numeric, 'one invoice covers the whole order');
+select is((select payment_term from app.wholesale_invoice_charges where tenant_id = '2e100000-0000-4000-8000-000000000001' and sales_order_id = (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')),
+  (select payment_term from app.wholesale_order_credit_snapshots where tenant_id = '2e100000-0000-4000-8000-000000000001' and sales_order_id = (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')), 'the invoice is charged with the confirmed credit term');
+select is((select p.amount || ':' || p.reference || ':' || m.method_type || ':' || r.reference_last_four from app.payment_proofs proof
+  join app.wholesale_payments p on p.tenant_id = proof.tenant_id and p.id = proof.wholesale_payment_id
+  join app.payment_methods m on m.tenant_id = p.tenant_id and m.id = p.payment_method_id
+  join app.wholesale_payment_references r on r.tenant_id = p.tenant_id and r.payment_id = p.id
+  where proof.file_id = 'be100000-0000-4000-8000-000000000001'), '500.00:GC-1029-3845:e_wallet:3845',
+  'the verified GCash proof is recorded as an e-wallet payment with its reference');
+select is(app.wholesale_invoice_open_balance('2e100000-0000-4000-8000-000000000001', (select id from app.invoices where tenant_id = '2e100000-0000-4000-8000-000000000001' and sales_order_id = (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'))), 2000.00::numeric,
+  'the invoice balance is the order total less the downpayment');
+select is(app.wholesale_credit_exposure('2e100000-0000-4000-8000-000000000001', (select customer_id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')), 2000.00::numeric,
+  'exposure is unchanged by completing the sale');
+select is((select payload->>'invoiceNumber' from app.portal_shipment_json('2e100000-0000-4000-8000-000000000001', (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')) payload), (select invoice_number::text from app.invoices where tenant_id = '2e100000-0000-4000-8000-000000000001' and sales_order_id = (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')),
+  'Logistics shows the invoice number');
+select is(app.fulfill_portal_order('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'), 'again')->>'recordedPaymentMinor', '0', 'completing again records nothing twice');
+-- A balance payment accepted after shipping is recorded right away.
+select lives_ok($$ select app.record_payment_proof('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'),
+  pg_temp.proof('be100000-0000-4000-8000-000000000009', 200000), 'portal-proof-key-09', 'proof-hash-9', 'proof-request-9') $$, 'the reseller sends the balance after shipping');
+select lives_ok($$ select app.review_payment_proof('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
+  (select id from app.payment_proofs where file_id = 'be100000-0000-4000-8000-000000000009'), '{"decision":"accept"}', 'balance-review') $$, 'owner verifies the balance payment');
+select is(app.wholesale_invoice_open_balance('2e100000-0000-4000-8000-000000000001', (select id from app.invoices where tenant_id = '2e100000-0000-4000-8000-000000000001' and sales_order_id = (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'))), 0.00::numeric,
+  'the balance payment is recorded against the invoice as soon as it is verified');
+select is((select count(*)::integer from app.wholesale_payments where tenant_id = '2e100000-0000-4000-8000-000000000001' and customer_id = (select customer_id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')), 2,
+  'each verified proof is one recorded payment');
 select throws_ok($$ select app.update_portal_shipment('1e100000-0000-4000-8000-000000000003', '2e100000-0000-4000-8000-000000000001', (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'), '{"status":"delivered"}', 'ship-5') $$,
   'HCRA1', null, 'members without portal permission cannot update shipments');
 select is(app.update_portal_shipment('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'), '{"status":"delivered"}', 'ship-6')->>'status', 'delivered', 'owner marks it delivered');
@@ -281,7 +313,7 @@ select is(app.expire_reseller_payment_holds(null), 1, 'the sweep cancels the exp
 select is((select status || ':' || review_decision_reason from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000003'),
   'cancelled:Payment was not received within 4 hours.', 'the reseller sees why the order was cancelled');
 select is((select reserved from app.inventory_balances where tenant_id = '2e100000-0000-4000-8000-000000000001'
-  and variant_id = '8e100000-0000-4000-8000-000000000001'), 10.000::numeric, 'expiry releases the hold');
+  and variant_id = '8e100000-0000-4000-8000-000000000001'), 0.000::numeric, 'expiry releases the hold (the shipped order no longer reserves stock)');
 select is(app.expire_reseller_payment_holds(null), 0, 'the sweep is idempotent');
 select is((select jsonb_array_length(app.list_reseller_portal_orders('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001')->'orders')),
   3, 'reseller sees every portal order with its status');
@@ -350,14 +382,14 @@ select throws_ok($$ select app.list_reseller_portal_orders('1e100000-0000-4000-8
 -- Reseller portal report: one range covers every order placed in this test.
 select is((app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'summary'->>'orderCount')::integer, 3, 'the report counts every portal order in the range');
 select is((app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'summary'->>'salesMinor')::bigint, 250000::bigint, 'sales count confirmed orders only');
-select is((app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'summary'->>'verifiedPaymentsMinor')::bigint, 50000::bigint, 'only accepted proofs count as received');
-select is((app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'summary'->>'outstandingMinor')::bigint, 200000::bigint, 'outstanding is confirmed sales minus verified payments');
+select is((app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'summary'->>'verifiedPaymentsMinor')::bigint, 250000::bigint, 'only accepted proofs count as received');
+select is((app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'summary'->>'outstandingMinor')::bigint, 0::bigint, 'outstanding is confirmed sales minus verified payments');
 select is((select jsonb_object_agg(x->>'status', (x->>'orderCount')::integer) from jsonb_array_elements(app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'byStatus') x),
   '{"awaiting_payment": 0, "for_confirmation": 0, "confirmed": 1, "expired": 1, "rejected": 1}'::jsonb,
   'orders are split into awaiting payment, for confirmation, confirmed, expired, and rejected');
 select is(app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'byReseller'->0->>'customerName', 'Maria Santos', 'sales are grouped per reseller');
 select is(app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'topProducts'->0->>'sku', 'COF-250', 'top products list the best-selling variant');
-select is(app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'payments'->'receipts'->0->>'reference', 'GC-1029-3845', 'payments list each verified reference');
+select is(app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'payments'->'receipts'->1->>'reference', 'GC-1029-3845', 'payments list each verified reference');
 select is(app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'logistics'->'byCourier'->0->>'courier', 'jnt', 'logistics groups shipments per courier');
 select is(app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'logistics'->'shipments'->0->>'trackingNumber', 'JT0012345678', 'logistics lists tracking numbers');
 select is((app.load_reseller_portal_report('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date + 2, current_date + 3)->'summary'->>'orderCount')::integer, 0,
@@ -386,6 +418,10 @@ select ok(not has_function_privilege('hcs_hyperdrive', 'app.create_reseller_acco
   'API role cannot call private portal helpers');
 select ok(not has_table_privilege('hcs_hyperdrive', 'app.reseller_accounts', 'select'), 'API role has no direct table access');
 
+select ok(not has_function_privilege('hcs_hyperdrive', 'app.fulfill_portal_order(uuid,uuid,uuid,text)', 'execute'),
+  'API role cannot complete sales outside the shipment command');
+select ok(not has_function_privilege('hcs_hyperdrive', 'app.update_portal_shipment_core(uuid,uuid,uuid,jsonb,text)', 'execute'),
+  'API role cannot skip sale completion');
 select ok(has_function_privilege('hcs_hyperdrive', 'app.load_reseller_portal_report(uuid,uuid,date,date)', 'execute'),
   'API role loads the reseller portal report');
 select * from finish();

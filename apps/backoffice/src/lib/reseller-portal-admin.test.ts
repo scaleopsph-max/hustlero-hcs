@@ -7,6 +7,7 @@ import {
   commandKey,
   orderReviewRequest,
   rejectionRequest,
+  shipmentMessage,
 } from './reseller-portal-admin'
 
 const priceListId = '41000000-0000-4000-8000-000000000001'
@@ -84,5 +85,33 @@ describe('payment account form', () => {
     expect(accountRequest({ ...draft, providerName: '' })).toMatch(/provider/)
     expect(accountRequest({ ...draft, accountName: 'J' })).toMatch(/account name/)
     expect(accountRequest({ ...draft, accountNumber: '12' })).toMatch(/number/)
+  })
+})
+
+describe('shipmentMessage', () => {
+  const delivery = { orderNumber: 'RP-000001', method: 'delivery' as const }
+  it('names the invoice, recorded payment, and balance when shipping completes the sale', () => {
+    expect(
+      shipmentMessage(delivery, 'shipped', {
+        invoiceNumber: 'INV-1',
+        recordedPaymentMinor: 50_000,
+        balanceMinor: 200_000,
+      }),
+    ).toBe(
+      'RP-000001 shipped. The reseller can see the tracking number. Stock released, invoice INV-1 issued. ₱500.00 payment recorded. ₱2,000.00 still to pay.',
+    )
+    expect(
+      shipmentMessage({ ...delivery, method: 'pickup' }, 'delivered', {
+        invoiceNumber: 'INV-2',
+        recordedPaymentMinor: 0,
+        balanceMinor: 0,
+      }),
+    ).toBe('RP-000001 marked picked up. Stock released, invoice INV-2 issued. Paid in full.')
+  })
+  it('does not repeat the sale when a shipped delivery is marked delivered', () => {
+    expect(
+      shipmentMessage(delivery, 'delivered', { invoiceNumber: 'INV-1', recordedPaymentMinor: 0, balanceMinor: 0 }),
+    ).toBe('RP-000001 marked delivered.')
+    expect(shipmentMessage(delivery, 'packed', {})).toBe('RP-000001 packed.')
   })
 })

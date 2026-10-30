@@ -2,12 +2,13 @@ import {
   resellerApplicationDecisionRequestSchema,
   resellerOrderReviewRequestSchema,
   resellerPaymentAccountSaveRequestSchema,
+  type PortalShipmentUpdateResponse,
   type ResellerApplicationDecisionRequest,
   type ResellerOrderReviewRequest,
   type ResellerPaymentAccountSaveRequest,
   type ResellerReviewReason,
 } from '@hcs/contracts'
-import { parsePeso } from '@hcs/ui'
+import { formatPeso, parsePeso } from '@hcs/ui'
 
 export const reviewReasonText: Record<ResellerReviewReason, string> = {
   manual_review: 'Manual review is on for every portal order.',
@@ -99,4 +100,24 @@ export function accountRequest(
   if (draft.providerName.trim().length < 2) return 'Enter the provider, for example GCash or BDO Savings.'
   if (draft.accountName.trim().length < 2) return 'Enter the account name exactly as it appears in the app.'
   return 'Enter the account or mobile number (4 to 40 characters).'
+}
+
+/** Toast after a Logistics step; names the invoice and recorded payment when the step completed the sale. */
+export function shipmentMessage(
+  shipment: { orderNumber: string; method: 'delivery' | 'pickup' },
+  status: 'packed' | 'shipped' | 'delivered',
+  result: Pick<PortalShipmentUpdateResponse, 'invoiceNumber' | 'recordedPaymentMinor' | 'balanceMinor'>,
+): string {
+  const step =
+    status === 'packed'
+      ? `${shipment.orderNumber} packed.`
+      : status === 'shipped'
+        ? `${shipment.orderNumber} shipped. The reseller can see the tracking number.`
+        : `${shipment.orderNumber} marked ${shipment.method === 'pickup' ? 'picked up' : 'delivered'}.`
+  if (!result.invoiceNumber || status === 'packed') return step
+  const paid = result.recordedPaymentMinor ? ` ${formatPeso(result.recordedPaymentMinor)} payment recorded.` : ''
+  // A delivery is completed when it ships; marking it delivered only reports new payments.
+  if (status === 'delivered' && shipment.method === 'delivery') return `${step}${paid}`
+  const balance = result.balanceMinor ? ` ${formatPeso(result.balanceMinor)} still to pay.` : ' Paid in full.'
+  return `${step} Stock released, invoice ${result.invoiceNumber} issued.${paid}${balance}`
 }

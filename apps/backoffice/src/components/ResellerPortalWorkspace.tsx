@@ -32,6 +32,7 @@ import {
   orderReviewRequest,
   rejectionRequest,
   reviewReasonText,
+  shipmentMessage,
 } from '@/lib/reseller-portal-admin'
 import { createClient } from '@/lib/supabase-browser'
 
@@ -140,21 +141,22 @@ export function ResellerPortalWorkspace() {
   }, [auth, load])
 
   /** Runs one command with a stable idempotency key per target, then reloads. */
-  async function run(
+  async function run<T>(
     target: string,
     path: string,
     body: unknown,
-    parse: (value: unknown) => unknown,
-    done: string,
+    parse: (value: unknown) => T,
+    done: string | ((result: T) => string),
   ): Promise<boolean> {
     if (!scope) return false
     setBusy(target)
     setError(null)
     try {
-      parse(await call(path, scope, body, commandKey(keys.current, `${target}:${JSON.stringify(body)}`)))
+      const result = parse(await call(path, scope, body, commandKey(keys.current, `${target}:${JSON.stringify(body)}`)))
       keys.current.delete(`${target}:${JSON.stringify(body)}`)
       await load(scope)
-      if (done) toast.success(done)
+      const message = typeof done === 'function' ? done(result) : done
+      if (message) toast.success(message)
       return true
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : 'The change was not saved. Try again.')
@@ -328,11 +330,7 @@ export function ResellerPortalWorkspace() {
                 `/v1/reseller-portal/shipments/${shipment.salesOrderId}`,
                 body,
                 (v) => portalShipmentUpdateResponseSchema.parse(v),
-                body.status === 'packed'
-                  ? `${shipment.orderNumber} packed.`
-                  : body.status === 'shipped'
-                    ? `${shipment.orderNumber} shipped. The reseller can see the tracking number.`
-                    : `${shipment.orderNumber} marked ${shipment.method === 'pickup' ? 'picked up' : 'delivered'}.`,
+                (result) => shipmentMessage(shipment, body.status, result),
               )
             }
           />
