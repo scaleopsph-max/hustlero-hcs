@@ -74,7 +74,7 @@ describe('reseller cart', () => {
       [small, large, tea],
     )
     expect(summary.shortfalls).toEqual([
-      { pricingGroupId: small.pricingGroupId, pricingGroupName: 'Coffee', neededMilli: 3_000 },
+      { pricingGroupId: small.pricingGroupId, pricingGroupName: 'Coffee', thresholdMilli: 6_000, neededMilli: 3_000 },
     ])
   })
 

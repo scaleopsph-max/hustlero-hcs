@@ -150,8 +150,8 @@ export function CartView({
       ) : null}
       {summary.shortfalls.map((shortfall) => (
         <Notice key={shortfall.pricingGroupId}>
-          Add {formatQuantity(shortfall.neededMilli)} more pcs of {shortfall.pricingGroupName} to get the wholesale
-          price.
+          {shortfall.pricingGroupName} has a minimum of {formatQuantity(shortfall.thresholdMilli)} pcs per order. Add{' '}
+          {formatQuantity(shortfall.neededMilli)} more to submit.
         </Notice>
       ))}
       {summary.hasOutOfStock ? (

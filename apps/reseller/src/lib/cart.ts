@@ -8,7 +8,12 @@ export type CartRow = CartLine & {
   potentialProfitMinor: number
 }
 
-export type GroupShortfall = { pricingGroupId: string; pricingGroupName: string; neededMilli: number }
+export type GroupShortfall = {
+  pricingGroupId: string
+  pricingGroupName: string
+  thresholdMilli: number
+  neededMilli: number
+}
 
 export type CartSummary = {
   rows: CartRow[]
@@ -71,6 +76,7 @@ export function summarizeCart(lines: CartLine[], items: ResellerCatalogItem[]): 
     .map(({ pricingGroupId, pricingGroupName, thresholdMilli, orderedMilli }) => ({
       pricingGroupId,
       pricingGroupName,
+      thresholdMilli,
       neededMilli: thresholdMilli - orderedMilli,
     }))
 
