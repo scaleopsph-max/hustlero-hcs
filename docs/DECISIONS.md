@@ -130,7 +130,7 @@ authorized by these development decisions.
 - **Reason:** No patched `braces` release exists as of 2026-10-07, and forcing Tailwind 4 does not remove the vinext path. Cloudflare's current `miniflare` release pins vulnerable `sharp` 0.35.4 exactly, while the emulator is not shipped in the deployed worker. Blocking delivery on these isolated build-time paths would not reduce tenant runtime risk.
 - **Review trigger:** Remove each exception immediately when a patched `braces` or Cloudflare `miniflare` dependency chain becomes available. Any introduction of user-controlled glob or image input into these build tools invalidates this decision.
 
-## Reseller portal blocks out-of-stock items
+## ADR-041: Reseller portal blocks out-of-stock items
 
 - **Date:** 2026-10-30
 - **Status:** Accepted
