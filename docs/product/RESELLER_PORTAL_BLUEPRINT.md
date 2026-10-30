@@ -77,13 +77,14 @@ The credit limit caps confirmed orders that are not yet paid, including prepaid 
 3. The team checks the reference in GCash or the bank app and clicks **Verify payment & confirm order** (or **Reject order** with a reason, which releases the stock).
 4. No proof within 4 hours: the order is cancelled automatically ("Payment was not received within 4 hours.") and the stock returns.
 5. Balance payments on confirmed orders are verified one by one under **Balance payments to verify**. Payments are still recorded through Wholesale payments.
+6. Confirmed orders move to the **Logistics** tab: To pack → Packed → Shipped (J&T, Lalamove or other, with tracking) → Delivered; pickup orders go Packed (ready for pickup) → Picked up. The reseller's order shows each step and the tracking number (ADR-043).
 
 ## Before Staging
 
 - Create the `hustlero-hcs-reseller` Worker and set `RESELLER_ORIGIN` for the API and `NEXT_PUBLIC_RESELLER_PORTAL_URL` for the Back Office per environment.
 - Enable Supabase email OTP and add `{{ .Token }}` to the Magic Link and Confirm signup templates (the portal accepts 6–10 digit codes; set Email OTP Length to 6 for the shortest code). Reseller sign-up must be allowed for OTP. Configure custom SMTP and raise the email rate limit: Supabase's built-in sender hit `429 email rate limit exceeded` after a few codes in Development (Development now sends through Gmail SMTP; Staging and Production should use a domain sender). Confirm rate limits for the public application endpoint at the edge.
 - Apply the migration only through the normal environment-specific gate.
-- Apply `20261030090000_reseller_portal_block_out_of_stock.sql`, `20261030120000_reseller_portal_pay_first.sql` and `20261030150000_reseller_payment_accounts.sql`, and deploy the API so its five-minute cron (development and staging only in `wrangler.jsonc`) sweeps expired payment holds. Add the production cron together with the production migration.
+- Apply `20261030090000_reseller_portal_block_out_of_stock.sql`, `20261030120000_reseller_portal_pay_first.sql`, `20261030150000_reseller_payment_accounts.sql` and `20261030180000_reseller_portal_logistics.sql`, and deploy the API so its five-minute cron (development and staging only in `wrangler.jsonc`) sweeps expired payment holds. Add the production cron together with the production migration.
 - Turning the portal on needs `advanced_wholesale` and `reseller_portal` both entitled and enabled. The Admin console can grant entitlements but no screen yet enables `reseller_portal` (owner feature selection does not list it); Development was enabled by an audited manual update on 2026-10-30. Add the owner/admin enable control before Staging.
 
 ## Open questions

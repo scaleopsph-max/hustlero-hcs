@@ -10,6 +10,7 @@ import {
   resellerPaymentAccountSaveResponseSchema,
   paymentQrUploadResponseSchema,
   paymentProofReviewResponseSchema,
+  portalShipmentUpdateResponseSchema,
   pendingPaymentProofsSchema,
   sessionContextResponseSchema,
   type PendingPaymentProof,
@@ -21,6 +22,7 @@ import { Check, Copy, RefreshCw, UserPlus, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { selectActiveTenant } from '@/lib/active-tenant'
+import { LogisticsBoard } from './LogisticsBoard'
 import { PaymentAccountsCard } from './PaymentAccountsCard'
 import { fileUrl } from './ProductPhotos'
 import {
@@ -50,8 +52,8 @@ const stockTone = { in_stock: 'success', low_stock: 'warning', out_of_stock: 'cr
 const stockText = { in_stock: 'In stock', low_stock: 'Low', out_of_stock: 'Out' } as const
 
 type Scope = { token: string; tenantId: string }
-type PortalTab = 'orders' | 'payments' | 'resellers' | 'settings'
-const portalTabs: PortalTab[] = ['orders', 'payments', 'resellers', 'settings']
+type PortalTab = 'orders' | 'logistics' | 'payments' | 'resellers' | 'settings'
+const portalTabs: PortalTab[] = ['orders', 'logistics', 'payments', 'resellers', 'settings']
 
 /** The tab named in the URL hash, so a refresh or shared link opens the same section. */
 function readTab(): PortalTab {
@@ -174,6 +176,13 @@ export function ResellerPortalWorkspace() {
   const awaiting = admin.awaitingPayment ?? []
   const tabs: { id: PortalTab; label: string; count: number }[] = [
     { id: 'orders', label: 'Orders', count: admin.reviewQueue.length },
+    {
+      id: 'logistics',
+      label: 'Logistics',
+      count: (admin.shipments ?? []).filter(
+        (shipment) => shipment.status !== 'delivered' && shipment.status !== 'shipped',
+      ).length,
+    },
     { id: 'payments', label: 'Balance payments', count: proofs?.length ?? 0 },
     { id: 'resellers', label: 'Resellers', count: pendingApplications.length },
     { id: 'settings', label: 'Settings', count: admin.settings ? 0 : 1 },
@@ -259,7 +268,7 @@ export function ResellerPortalWorkspace() {
                     body,
                     (v) => resellerOrderReviewResponseSchema.parse(v),
                     body.decision === 'approve'
-                      ? `${order.orderNumber} confirmed and its payment proofs verified. Record the payment in Wholesale payments using the proof reference.`
+                      ? `${order.orderNumber} confirmed. It moved to Logistics, ready to pack.`
                       : `${order.orderNumber} rejected and its stock released. The reseller sees your reason.`,
                   )
                 }
@@ -297,6 +306,36 @@ export function ResellerPortalWorkspace() {
               </Glass>
             ))}
           </Section>
+        </div>
+      ) : null}
+
+      {tab === 'logistics' ? (
+        <div
+          role="tabpanel"
+          id="portal-panel-logistics"
+          aria-labelledby="portal-tab-logistics"
+          className="flex flex-col gap-4"
+        >
+          <p className="text-sm text-ink-500">
+            Confirmed portal orders to pack and send. Resellers see each step and the tracking number on their order.
+          </p>
+          <LogisticsBoard
+            shipments={admin.shipments ?? []}
+            busy={busy}
+            onUpdate={(shipment, body) =>
+              run(
+                `shipment:${shipment.salesOrderId}`,
+                `/v1/reseller-portal/shipments/${shipment.salesOrderId}`,
+                body,
+                (v) => portalShipmentUpdateResponseSchema.parse(v),
+                body.status === 'packed'
+                  ? `${shipment.orderNumber} packed.`
+                  : body.status === 'shipped'
+                    ? `${shipment.orderNumber} shipped. The reseller can see the tracking number.`
+                    : `${shipment.orderNumber} marked ${shipment.method === 'pickup' ? 'picked up' : 'delivered'}.`,
+              )
+            }
+          />
         </div>
       ) : null}
 

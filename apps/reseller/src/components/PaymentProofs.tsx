@@ -40,7 +40,12 @@ export function PaymentProofs({
   const [error, setError] = useState<string | null>(null)
   const attempt = useRef<{ key: string; fingerprint: string } | null>(null)
   const toast = useToast()
-  const accepting = order.status !== 'cancelled'
+  const pendingMinor = proofs
+    .filter((proof) => proof.status === 'pending')
+    .reduce((sum, proof) => sum + proof.amountMinor, 0)
+  // Once verified payments cover the order, the proof form closes.
+  const paidInFull = verifiedMinor >= order.totalMinor
+  const accepting = order.status !== 'cancelled' && !paidInFull && verifiedMinor + pendingMinor < order.totalMinor
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -89,7 +94,9 @@ export function PaymentProofs({
             Verified: {formatPeso(verifiedMinor)}
             {remainingMinor > 0 ? (
               <span className="text-signal-dark-warning-fg"> · Balance {formatPeso(remainingMinor)}</span>
-            ) : null}
+            ) : (
+              ' · Paid in full'
+            )}
           </span>
         ) : null}
       </div>

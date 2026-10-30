@@ -223,6 +223,28 @@ select is((select array_agg(reason || ':' || quantity_delta order by reason) fro
   array['order_confirmed:10.000', 'payment_hold:10.000', 'payment_hold_released:-10.000'], 'the ledger shows hold, release, and confirmation');
 select ok(exists(select 1 from app.wholesale_order_credit_snapshots s join app.sales_orders o on o.tenant_id = s.tenant_id and o.id = s.sales_order_id
   where o.order_number = 'RP-000001'), 'confirmation snapshots the credit terms like Back Office confirmation');
+select is(app.wholesale_verified_prepayments('2e100000-0000-4000-8000-000000000001', (select customer_id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')), 500.00::numeric,
+  'the verified downpayment counts as paid toward credit exposure');
+select is(app.wholesale_credit_exposure('2e100000-0000-4000-8000-000000000001', (select customer_id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')), 2000.00::numeric, 'exposure is the order total less the verified payment');
+
+-- Logistics: the confirmed order waits to be packed, then moves forward one step at a time.
+select is((select status from app.sales_order_shipments where tenant_id = '2e100000-0000-4000-8000-000000000001' and sales_order_id = (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')), 'to_pack',
+  'a confirmed portal order goes to Logistics as to pack');
+select is(jsonb_array_length(app.load_reseller_portal_admin('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001')->'shipments'), 1, 'the Back Office lists the shipment');
+select throws_ok($$ select app.update_portal_shipment('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'), '{"status":"shipped","courier":"jnt"}', 'ship-1') $$,
+  'HCRA5', null, 'an order must be packed before it ships');
+select is(app.update_portal_shipment('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'), '{"status":"packed"}', 'ship-2')->>'status', 'packed', 'owner marks the order packed');
+select throws_ok($$ select app.update_portal_shipment('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'), '{"status":"shipped"}', 'ship-3') $$,
+  'HCRP3', null, 'shipping a delivery needs a courier');
+select is(app.update_portal_shipment('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'), '{"status":"shipped","courier":"jnt","trackingNumber":"JT0012345678"}', 'ship-4')->>'status',
+  'shipped', 'owner ships with J&T and a tracking number');
+select is((select o->'shipment'->>'trackingNumber' from jsonb_array_elements(app.list_reseller_portal_orders('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001')->'orders') o
+  where o->>'orderNumber' = 'RP-000001'), 'JT0012345678', 'the reseller sees the courier tracking number');
+select throws_ok($$ select app.update_portal_shipment('1e100000-0000-4000-8000-000000000003', '2e100000-0000-4000-8000-000000000001', (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'), '{"status":"delivered"}', 'ship-5') $$,
+  'HCRA1', null, 'members without portal permission cannot update shipments');
+select is(app.update_portal_shipment('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'), '{"status":"delivered"}', 'ship-6')->>'status', 'delivered', 'owner marks it delivered');
+select throws_ok($$ select app.update_portal_shipment('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'), '{"status":"delivered"}', 'ship-7') $$,
+  'HCRA5', null, 'a delivered shipment cannot move again');
 
 -- Reject: the hold is released and the pending proof is rejected with the same reason.
 select is(app.submit_reseller_portal_order('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001',
@@ -330,6 +352,8 @@ select ok(has_function_privilege('hcs_hyperdrive', 'app.submit_reseller_portal_o
   'API role executes portal order submission');
 select ok(not has_function_privilege('hcs_hyperdrive', 'app.reseller_payment_accounts_json(uuid,boolean)', 'execute'),
   'API role cannot read payment accounts without a caller check');
+select ok(has_function_privilege('hcs_hyperdrive', 'app.update_portal_shipment(uuid,uuid,uuid,jsonb,text)', 'execute'),
+  'API role updates shipments');
 select ok(has_function_privilege('hcs_hyperdrive', 'app.expire_reseller_payment_holds(uuid)', 'execute'),
   'API role runs the payment-window sweep');
 select ok(not has_function_privilege('hcs_hyperdrive', 'app.release_reseller_payment_hold(uuid,uuid,uuid,uuid)', 'execute'),

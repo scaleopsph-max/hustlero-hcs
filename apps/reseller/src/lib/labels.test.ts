@@ -7,6 +7,18 @@ describe('pay-first labels', () => {
     expect(orderBadge({ status: 'submitted', reviewReason: 'awaiting_payment' }).text).toBe('Awaiting payment')
     expect(orderBadge({ status: 'submitted', reviewReason: 'payment_review' }).text).toBe('Payment sent')
     expect(orderBadge({ status: 'confirmed', reviewReason: null }).text).toBe('Confirmed')
+    const shipment = { courier: null, trackingNumber: null, packedAt: null, shippedAt: null, deliveredAt: null }
+    expect(
+      orderBadge({ status: 'confirmed', reviewReason: null, shipment: { ...shipment, status: 'to_pack' } }).text,
+    ).toBe('Packing')
+    expect(
+      orderBadge({
+        status: 'confirmed',
+        reviewReason: null,
+        fulfillmentMethod: 'pickup',
+        shipment: { ...shipment, status: 'packed' },
+      }).text,
+    ).toBe('Ready for pickup')
   })
 
   it('counts down the payment window', () => {

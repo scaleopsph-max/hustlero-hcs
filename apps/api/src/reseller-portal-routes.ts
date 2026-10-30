@@ -8,6 +8,7 @@ import {
   resellerOrderSubmitRequestSchema,
   resellerPortalSettingsRequestSchema,
   resellerPaymentAccountSaveRequestSchema,
+  portalShipmentUpdateRequestSchema,
   type ResellerOrder,
   type ResellerPaymentAccount,
   type ResellerPortalCatalog,
@@ -127,7 +128,8 @@ const errorMap: Record<string, { status: ContentfulStatusCode; code: string; mes
   HCCR1: {
     status: 409,
     code: 'WHOLESALE_CREDIT_LIMIT_EXCEEDED',
-    message: 'The order exceeds the customer credit limit. Use an approved credit override.',
+    message:
+      "The unpaid balance is over this reseller's credit limit. Ask for the rest of the payment, or raise the limit in Wholesale credit.",
   },
   HCCR2: {
     status: 409,
@@ -380,6 +382,27 @@ export function registerResellerPortalRoutes(
           admin.tenantId,
           request,
           portalCommand,
+          context.env,
+        ),
+      ),
+    )
+  })
+
+  app.post('/v1/reseller-portal/shipments/:orderId', async (context) => {
+    const admin = await resolveAdmin(context)
+    if (admin instanceof Response) return admin
+    const orderId = context.req.param('orderId')
+    const request = await readJson(context, portalShipmentUpdateRequestSchema)
+    if (!uuidPattern.test(orderId) || !request)
+      return fail(context, 400, 'INVALID_SHIPMENT_UPDATE', 'Choose the next step, and the courier when shipping.')
+    return run(context, async () =>
+      context.json(
+        await dependencies.repository.updateShipment(
+          admin.userId,
+          admin.tenantId,
+          orderId,
+          request,
+          context.get('requestId'),
           context.env,
         ),
       ),

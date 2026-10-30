@@ -13,6 +13,9 @@ import {
   resellerPortalSettingsResponseSchema,
   resellerPaymentAccountSchema,
   resellerPaymentAccountSaveResponseSchema,
+  portalShipmentUpdateResponseSchema,
+  type PortalShipmentUpdateRequest,
+  type PortalShipmentUpdateResponse,
   type ResellerAccountInviteRequest,
   type ResellerAccountInviteResponse,
   type ResellerAccountStatusRequest,
@@ -138,6 +141,14 @@ export interface ResellerPortalRepository {
     command: PortalCommand,
     bindings: Bindings,
   ): Promise<ResellerPaymentAccountSaveResponse>
+  updateShipment(
+    userId: string,
+    tenantId: string,
+    salesOrderId: string,
+    request: PortalShipmentUpdateRequest,
+    requestId: string,
+    bindings: Bindings,
+  ): Promise<PortalShipmentUpdateResponse>
 }
 
 function connectionString(bindings: Bindings): string {
@@ -257,5 +268,12 @@ export const resellerPortalPostgresRepository: ResellerPortalRepository = {
       'select app.save_reseller_payment_account($1::uuid, $2::uuid, $3::jsonb, $4::text, $5::text, $6::text) response',
       [userId, tenantId, JSON.stringify(request), command.idempotencyKey, command.requestHash, command.requestId],
       (value) => resellerPaymentAccountSaveResponseSchema.parse(value),
+    ),
+  updateShipment: (userId, tenantId, salesOrderId, request, requestId, bindings) =>
+    queryOne(
+      bindings,
+      'select app.update_portal_shipment($1::uuid, $2::uuid, $3::uuid, $4::jsonb, $5::text) response',
+      [userId, tenantId, salesOrderId, JSON.stringify(request), requestId],
+      (value) => portalShipmentUpdateResponseSchema.parse(value),
     ),
 }

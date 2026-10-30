@@ -399,6 +399,37 @@ describe('reseller portal API', () => {
     expect(repo.loadAdmin).toHaveBeenCalledWith(ownerId, tenantId, bindings)
   })
 
+  it('moves shipments forward and requires a courier to ship', async () => {
+    const updateShipment = vi.fn(async () => ({ salesOrderId: orderId, status: 'shipped' as const }))
+    const app = portalApp(repository({ updateShipment }))
+    const headers = { authorization: 'Bearer owner-token', 'content-type': 'application/json', 'x-tenant-id': tenantId }
+    const missingCourier = await app.request(
+      `/v1/reseller-portal/shipments/${orderId}`,
+      { method: 'POST', headers, body: JSON.stringify({ status: 'shipped' }) },
+      bindings,
+    )
+    expect(missingCourier.status).toBe(400)
+    expect(updateShipment).not.toHaveBeenCalled()
+    const shipped = await app.request(
+      `/v1/reseller-portal/shipments/${orderId}`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ status: 'shipped', courier: 'jnt', trackingNumber: 'JT0012345678' }),
+      },
+      bindings,
+    )
+    expect(shipped.status).toBe(200)
+    expect(updateShipment).toHaveBeenCalledWith(
+      ownerId,
+      tenantId,
+      orderId,
+      { status: 'shipped', courier: 'jnt', trackingNumber: 'JT0012345678' },
+      expect.any(String),
+      bindings,
+    )
+  })
+
   it('reviews held orders and decides applications with validated decisions', async () => {
     const repo = repository()
     const app = portalApp(repo)

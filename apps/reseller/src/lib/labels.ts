@@ -50,7 +50,26 @@ export function formatDateTime(value: string): string {
 }
 
 /** The badge for an order: pay-first orders show where they are in the payment step. */
-export function orderBadge(order: Pick<ResellerOrder, 'status' | 'reviewReason'>): { text: string; tone: ChipTone } {
+export function orderBadge(
+  order: Pick<ResellerOrder, 'status' | 'reviewReason'> &
+    Partial<Pick<ResellerOrder, 'shipment' | 'fulfillmentMethod'>>,
+): {
+  text: string
+  tone: ChipTone
+} {
+  if (order.status !== 'cancelled' && order.shipment) {
+    const pickup = order.fulfillmentMethod === 'pickup'
+    switch (order.shipment.status) {
+      case 'to_pack':
+        return { text: 'Packing', tone: 'info' }
+      case 'packed':
+        return pickup ? { text: 'Ready for pickup', tone: 'attention' } : { text: 'Packed', tone: 'info' }
+      case 'shipped':
+        return { text: 'Shipped', tone: 'info' }
+      case 'delivered':
+        return { text: pickup ? 'Picked up' : 'Delivered', tone: 'success' }
+    }
+  }
   if (order.status === 'submitted' && order.reviewReason === 'awaiting_payment')
     return { text: 'Awaiting payment', tone: 'attention' }
   if (order.status === 'submitted' && order.reviewReason === 'payment_review')
@@ -74,3 +93,5 @@ export function timeLeft(deadline: string, now: number): string | null {
   const hours = Math.floor(minutes / 60)
   return hours > 0 ? `${hours}h ${minutes % 60}m left` : `${minutes}m left`
 }
+
+export const courierLabel = { jnt: 'J&T Express', lalamove: 'Lalamove', other: 'Courier' } as const

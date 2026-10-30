@@ -124,6 +124,47 @@ export const resellerPortalCatalogSchema = z.object({
   items: z.array(resellerCatalogItemSchema),
 })
 
+export const portalShipmentStatusSchema = z.enum(['to_pack', 'packed', 'shipped', 'delivered'])
+export const portalCourierSchema = z.enum(['jnt', 'lalamove', 'other'])
+
+/** Where a confirmed order is in packing and delivery, as the reseller sees it. */
+export const resellerShipmentSchema = z.object({
+  status: portalShipmentStatusSchema,
+  courier: portalCourierSchema.nullable(),
+  trackingNumber: z.string().nullable(),
+  packedAt: timestamp.nullable(),
+  shippedAt: timestamp.nullable(),
+  deliveredAt: timestamp.nullable(),
+})
+
+/** A shipment in the Back Office Logistics list. */
+export const portalShipmentSchema = z.object({
+  salesOrderId: uuid,
+  orderNumber: z.string().min(1),
+  customerName: z.string().min(1),
+  customerPhone: z.string().nullable(),
+  method: z.enum(['delivery', 'pickup']),
+  status: portalShipmentStatusSchema,
+  courier: portalCourierSchema.nullable(),
+  trackingNumber: z.string().nullable(),
+  note: z.string().nullable(),
+  deliveryAddress: z.string().nullable(),
+  locationName: z.string().min(1),
+  totalMinor: minor,
+  confirmedAt: timestamp.nullable(),
+  packedAt: timestamp.nullable(),
+  shippedAt: timestamp.nullable(),
+  deliveredAt: timestamp.nullable(),
+  lines: z.array(
+    z.object({
+      productName: z.string().min(1),
+      variantName: z.string().min(1),
+      sku: z.string().min(1),
+      quantityMilli: milli,
+    }),
+  ),
+})
+
 export const resellerOrderSchema = z.object({
   id: uuid,
   orderNumber: z.string().min(1),
@@ -162,6 +203,7 @@ export const resellerOrderSchema = z.object({
   ),
   invoices: z.array(z.object({ id: uuid, invoiceNumber: z.string().min(1), totalMinor: minor, issuedAt: timestamp })),
   paymentProofs: z.array(paymentProofSchema).optional(),
+  shipment: resellerShipmentSchema.nullable().optional(),
 })
 
 export const resellerOrdersSchema = z.object({ orders: z.array(resellerOrderSchema) })
@@ -236,6 +278,20 @@ export const paymentQrUploadResponseSchema = z.object({
   accountId: uuid,
   fileId: uuid,
 })
+
+export const portalShipmentUpdateRequestSchema = z
+  .strictObject({
+    status: z.enum(['packed', 'shipped', 'delivered']),
+    courier: portalCourierSchema.optional(),
+    trackingNumber: z.string().trim().min(3).max(80).optional(),
+    note: z.string().trim().min(2).max(500).optional(),
+  })
+  .refine((update) => update.status !== 'shipped' || update.courier !== undefined, {
+    message: 'Choose the courier.',
+    path: ['courier'],
+  })
+
+export const portalShipmentUpdateResponseSchema = z.object({ salesOrderId: uuid, status: portalShipmentStatusSchema })
 
 export const resellerApplicationDecisionRequestSchema = z.discriminatedUnion('decision', [
   z.strictObject({
@@ -349,6 +405,7 @@ export const resellerPortalAdminSchema = z.object({
   ),
   reviewQueue: z.array(resellerOrderSchema),
   paymentAccounts: z.array(resellerPaymentAccountSchema).optional(),
+  shipments: z.array(portalShipmentSchema).optional(),
   awaitingPayment: z
     .array(
       z.object({
@@ -390,3 +447,9 @@ export type ResellerPaymentAccount = z.infer<typeof resellerPaymentAccountSchema
 export type ResellerPaymentAccountSaveRequest = z.infer<typeof resellerPaymentAccountSaveRequestSchema>
 export type ResellerPaymentAccountSaveResponse = z.infer<typeof resellerPaymentAccountSaveResponseSchema>
 export type PaymentQrUploadResponse = z.infer<typeof paymentQrUploadResponseSchema>
+export type PortalShipment = z.infer<typeof portalShipmentSchema>
+export type PortalShipmentStatus = z.infer<typeof portalShipmentStatusSchema>
+export type PortalCourier = z.infer<typeof portalCourierSchema>
+export type ResellerShipment = z.infer<typeof resellerShipmentSchema>
+export type PortalShipmentUpdateRequest = z.infer<typeof portalShipmentUpdateRequestSchema>
+export type PortalShipmentUpdateResponse = z.infer<typeof portalShipmentUpdateResponseSchema>

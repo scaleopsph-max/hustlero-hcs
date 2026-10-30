@@ -9,6 +9,7 @@ import { formatQuantity } from '@/lib/cart'
 import { PaymentProofs } from './PaymentProofs'
 import { formatDateTime, formatTime, orderBadge, paymentLabel, reviewReasonLabel, timeLeft } from '@/lib/labels'
 import { PaymentInstructions } from './PaymentInstructions'
+import { ShipmentTracker } from './ShipmentTracker'
 
 export function OrdersView({
   orders,
@@ -148,6 +149,9 @@ export function OrdersView({
                           </>
                         ) : null}
                       </dl>
+                      {order.shipment && order.status !== 'cancelled' ? (
+                        <ShipmentTracker shipment={order.shipment} method={order.fulfillmentMethod} />
+                      ) : null}
                       <PaymentProofs
                         order={order}
                         onUpload={onUploadProof}
