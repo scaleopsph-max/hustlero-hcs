@@ -2,14 +2,16 @@
 
 import type { ResellerPortalCatalog } from '@hcs/contracts'
 import { Chip, Glass, cn, formatPeso } from '@hcs/ui'
-import { Search } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { ChevronRight, Package, Search } from 'lucide-react'
+import { useCallback, useMemo, useState } from 'react'
 
 import { quantityInCart, type CartLine } from '@/lib/cart'
+import { filterGroups, groupCatalog, type ProductGroup } from '@/lib/catalog'
 import { stockLabel } from '@/lib/labels'
 import { fileUrl } from '@/lib/portal-api'
 
 import { QuantityStepper } from './QuantityStepper'
+import { VariantSheet, priceRange } from './VariantSheet'
 
 export function CatalogView({
   catalog,
@@ -23,23 +25,20 @@ export function CatalogView({
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState<string | null>(null)
   const [availableOnly, setAvailableOnly] = useState(false)
+  const [openProductId, setOpenProductId] = useState<string | null>(null)
 
+  const groups = useMemo(() => groupCatalog(catalog.items), [catalog.items])
   const categories = useMemo(
     () =>
-      [
-        ...new Set(catalog.items.map((item) => item.categoryName).filter((name): name is string => Boolean(name))),
-      ].sort(),
-    [catalog.items],
+      [...new Set(groups.map((group) => group.categoryName).filter((name): name is string => Boolean(name)))].sort(),
+    [groups],
   )
-  const items = useMemo(() => {
-    const term = search.trim().toLowerCase()
-    return catalog.items.filter(
-      (item) =>
-        (!term || `${item.productName} ${item.variantName} ${item.sku}`.toLowerCase().includes(term)) &&
-        (!category || item.categoryName === category) &&
-        (!availableOnly || item.stockStatus !== 'out_of_stock'),
-    )
-  }, [catalog.items, search, category, availableOnly])
+  const visible = useMemo(
+    () => filterGroups(groups, { search, category, availableOnly }),
+    [groups, search, category, availableOnly],
+  )
+  const openGroup = groups.find((group) => group.productId === openProductId) ?? null
+  const closeSheet = useCallback(() => setOpenProductId(null), [])
 
   return (
     <section className="flex flex-col gap-4">
@@ -79,62 +78,123 @@ export function CatalogView({
         ))}
       </div>
 
-      {items.length === 0 ? (
+      {visible.length === 0 ? (
         <p className="py-10 text-center text-ink-300">Walang produktong tugma sa hinahanap mo.</p>
       ) : (
         <ul className="flex flex-col gap-3">
-          {items.map((item) => {
-            const stock = stockLabel[item.stockStatus]
-            const marginMinor = item.srpMinor - item.unitPriceMinor
-            const label = `${item.productName} ${item.variantName}`
-            return (
-              <li key={item.variantId}>
-                <Glass className="flex flex-col gap-3 rounded-glass p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    {item.thumbUrl ? (
-                      <img
-                        src={fileUrl(item.thumbUrl)}
-                        alt=""
-                        loading="lazy"
-                        className="size-16 flex-none rounded-[14px] object-cover"
-                      />
-                    ) : null}
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold leading-tight">{item.productName}</p>
-                      <p className="text-small text-ink-300">
-                        {item.variantName} · {item.sku}
-                      </p>
-                    </div>
-                    <Chip tone={stock.tone} className="flex-none">
-                      {stock.text}
-                    </Chip>
-                  </div>
-                  <div className="flex items-end justify-between gap-3">
-                    <div>
-                      <p className="text-h4 text-gold-300">{formatPeso(item.unitPriceMinor)}</p>
-                      <p className="text-caption text-ink-400">
-                        SRP {formatPeso(item.srpMinor)}
-                        {marginMinor > 0 ? ` · kita ${formatPeso(marginMinor)}/pc` : ''}
-                      </p>
-                      {item.thresholdMilli > 1000 ? (
-                        <p className="text-caption text-ink-400">
-                          Min. {item.thresholdMilli / 1000} pcs sa {item.pricingGroupName}
-                        </p>
-                      ) : null}
-                    </div>
-                    <QuantityStepper
-                      label={label}
-                      quantityMilli={quantityInCart(cart, item.variantId)}
-                      onChange={(quantityMilli) => onQuantity(item.variantId, quantityMilli)}
-                    />
-                  </div>
-                </Glass>
-              </li>
-            )
-          })}
+          {visible.map((group) => (
+            <li key={group.productId}>
+              {group.variants.length === 1 ? (
+                <SingleProductCard group={group} cart={cart} onQuantity={onQuantity} />
+              ) : (
+                <ProductCard group={group} cart={cart} onOpen={() => setOpenProductId(group.productId)} />
+              )}
+            </li>
+          ))}
         </ul>
       )}
+
+      {openGroup ? <VariantSheet group={openGroup} cart={cart} onQuantity={onQuantity} onClose={closeSheet} /> : null}
     </section>
+  )
+}
+
+function ProductPhoto({ group }: { group: ProductGroup }) {
+  return group.thumbUrl ? (
+    <img
+      src={fileUrl(group.thumbUrl)}
+      alt=""
+      loading="lazy"
+      className="size-16 flex-none rounded-[14px] object-cover"
+    />
+  ) : (
+    <span className="flex size-16 flex-none items-center justify-center rounded-[14px] bg-white/10 text-ink-300">
+      <Package size={22} />
+    </span>
+  )
+}
+
+/** A product with several variants: one card that opens the variant sheet. */
+function ProductCard({ group, cart, onOpen }: { group: ProductGroup; cart: CartLine[]; onOpen: () => void }) {
+  const stock = stockLabel[group.stockStatus]
+  const inCartMilli = group.variants.reduce((sum, variant) => sum + quantityInCart(cart, variant.variantId), 0)
+  return (
+    <Glass className="rounded-glass">
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-haspopup="dialog"
+        aria-label={`${group.productName}, ${group.variants.length} variants. Piliin ang variant.`}
+        className="flex w-full items-center gap-3 p-4 text-left"
+      >
+        <ProductPhoto group={group} />
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold leading-tight">{group.productName}</p>
+          <p className="text-small text-ink-300">{group.variants.length} variants</p>
+          <p className="mt-1 text-h4 text-gold-300">{priceRange(group)}</p>
+        </div>
+        <div className="flex flex-none flex-col items-end gap-2">
+          <Chip tone={stock.tone}>{stock.text}</Chip>
+          {inCartMilli > 0 ? (
+            <span className="rounded-full bg-gold-500 px-2.5 py-0.5 text-caption font-semibold text-ink-950">
+              {inCartMilli / 1000} sa cart
+            </span>
+          ) : (
+            <ChevronRight size={20} className="text-ink-400" aria-hidden />
+          )}
+        </div>
+      </button>
+    </Glass>
+  )
+}
+
+/** A product with one variant keeps its quantity controls on the card. */
+function SingleProductCard({
+  group,
+  cart,
+  onQuantity,
+}: {
+  group: ProductGroup
+  cart: CartLine[]
+  onQuantity: (variantId: string, quantityMilli: number) => void
+}) {
+  const item = group.variants[0]!
+  const stock = stockLabel[item.stockStatus]
+  const marginMinor = item.srpMinor - item.unitPriceMinor
+  return (
+    <Glass className="flex flex-col gap-3 rounded-glass p-4">
+      <div className="flex items-start justify-between gap-3">
+        <ProductPhoto group={group} />
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold leading-tight">{item.productName}</p>
+          <p className="text-small text-ink-300">
+            {item.variantName} · {item.sku}
+          </p>
+        </div>
+        <Chip tone={stock.tone} className="flex-none">
+          {stock.text}
+        </Chip>
+      </div>
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <p className="text-h4 text-gold-300">{formatPeso(item.unitPriceMinor)}</p>
+          <p className="text-caption text-ink-400">
+            SRP {formatPeso(item.srpMinor)}
+            {marginMinor > 0 ? ` · kita ${formatPeso(marginMinor)}/pc` : ''}
+          </p>
+          {item.thresholdMilli > 1000 ? (
+            <p className="text-caption text-ink-400">
+              Min. {item.thresholdMilli / 1000} pcs sa {item.pricingGroupName}
+            </p>
+          ) : null}
+        </div>
+        <QuantityStepper
+          label={`${item.productName} ${item.variantName}`}
+          quantityMilli={quantityInCart(cart, item.variantId)}
+          onChange={(quantityMilli) => onQuantity(item.variantId, quantityMilli)}
+        />
+      </div>
+    </Glass>
   )
 }
 

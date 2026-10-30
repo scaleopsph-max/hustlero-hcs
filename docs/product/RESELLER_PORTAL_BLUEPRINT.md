@@ -30,6 +30,7 @@ Goals: faster reseller ordering, inventory and profit tracked on the existing le
 - Approval creates (or links) the reseller customer through `app.create_customer`, records explicit credit settings through `app.save_wholesale_customer_credit_settings`, assigns the price list, and creates an invited portal account. Existing reseller customers can be invited directly.
 - Sign-in by email one-time code (works inside an installed PWA). The first sign-in with the invited, verified email links the Supabase user to the account.
 - Catalog: assigned price list entries with reseller price, SRP (variant retail price), pricing-group minimum and stock badge at the portal fulfillment branch.
+- Catalog cards are one per product (photo, variant count, price range, best stock badge, quantity in cart). A product with several variants opens a glass bottom sheet listing each variant with its own price, SRP, margin, minimum, stock badge and quantity; a single-variant product keeps its quantity controls on the card.
 - Cart and checkout: wholesale minimum per pricing group, delivery address or branch pickup, GCash or bank transfer, notes, estimated reseller profit at SRP.
 - Orders: status, review reason, rejection reason, lines, fulfilled quantities and invoices; reorder.
 - Back Office `/reseller-portal`: settings, application decisions, review queue, accounts with suspend/restore and invitations.
@@ -74,6 +75,7 @@ The credit limit caps confirmed orders that are not yet paid, including prepaid 
 - Create the `hustlero-hcs-reseller` Worker and set `RESELLER_ORIGIN` for the API and `NEXT_PUBLIC_RESELLER_PORTAL_URL` for the Back Office per environment.
 - Enable Supabase email OTP with a 6-digit code template; reseller sign-up must be allowed for OTP. Confirm rate limits for the public application endpoint at the edge.
 - Apply the migration only through the normal environment-specific gate.
+- Turning the portal on needs `advanced_wholesale` and `reseller_portal` both entitled and enabled. The Admin console can grant entitlements but no screen yet enables `reseller_portal` (owner feature selection does not list it); Development was enabled by an audited manual update on 2026-10-30. Add the owner/admin enable control before Staging.
 
 ## Open questions
 
