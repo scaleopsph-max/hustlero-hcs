@@ -281,6 +281,44 @@ select throws_ok($$
       'paymentInstructions', ''),
     'portal-settings-key-03', 'settings-hash-3', 'settings-request-3')
 $$, 'HCRP3', null, 'blank payment instructions are refused; send null to clear them');
+-- Payment accounts: GCash and bank details with QR images, shown to resellers by method.
+select is(app.save_reseller_payment_account('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
+  '{"method":"gcash","providerName":"GCash","accountName":"Juan Dela Cruz","accountNumber":"0917 123 4567"}',
+  'portal-pay-acct-key-01', 'acct-hash-1', 'acct-request-1')->>'status', 'saved', 'owner adds a GCash account');
+select lives_ok($$ select app.save_reseller_payment_account('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
+  '{"method":"bank_transfer","providerName":"BDO Savings","accountName":"Kape ni Juan","accountNumber":"0012 3456 7890"}',
+  'portal-pay-acct-key-02', 'acct-hash-2', 'acct-request-2') $$, 'owner adds a bank account');
+select is((select count(*)::integer from app.reseller_payment_accounts where tenant_id = '2e100000-0000-4000-8000-000000000001'), 2,
+  'two accounts are saved');
+select is(app.save_reseller_payment_account('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
+  '{"method":"gcash","providerName":"GCash","accountName":"Juan Dela Cruz","accountNumber":"0917 123 4567"}',
+  'portal-pay-acct-key-01', 'acct-hash-1', 'acct-request-1b')->>'accountId',
+  (select id::text from app.reseller_payment_accounts where tenant_id = '2e100000-0000-4000-8000-000000000001' and method = 'gcash'), 'a retried save returns the first result');
+select throws_ok($$ select app.save_reseller_payment_account('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
+  '{"method":"cash","providerName":"X","accountName":"Juan","accountNumber":"1"}',
+  'portal-pay-acct-key-03', 'acct-hash-3', 'acct-request-3') $$, 'HCRP3', null, 'account details are validated');
+select throws_ok($$ select app.save_reseller_payment_account('1e100000-0000-4000-8000-000000000003', '2e100000-0000-4000-8000-000000000001',
+  '{"method":"gcash","providerName":"GCash","accountName":"Juan Dela Cruz","accountNumber":"0917 123 4567"}',
+  'portal-pay-acct-key-04', 'acct-hash-4', 'acct-request-4') $$, 'HCRA1', null, 'members without portal permission cannot edit accounts');
+select is(app.record_payment_qr('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', (select id from app.reseller_payment_accounts where tenant_id = '2e100000-0000-4000-8000-000000000001' and method = 'gcash'),
+  jsonb_build_object('fileId', 'be100000-0000-4000-8000-0000000000a1', 'mimeType', 'image/png', 'sizeBytes', 20000,
+    'thumbSizeBytes', 5000, 'sha256', repeat('d', 64), 'originalFilename', 'gcash-qr.png'),
+  'portal-pay-qr-key-001', 'qr-hash-1', 'qr-request-1')->>'status', 'uploaded', 'owner uploads the GCash QR');
+select lives_ok($$ select app.record_payment_qr('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', (select id from app.reseller_payment_accounts where tenant_id = '2e100000-0000-4000-8000-000000000001' and method = 'gcash'),
+  jsonb_build_object('fileId', 'be100000-0000-4000-8000-0000000000a2', 'mimeType', 'image/png', 'sizeBytes', 20000,
+    'sha256', repeat('e', 64), 'originalFilename', 'gcash-qr-new.png'),
+  'portal-pay-qr-key-002', 'qr-hash-2', 'qr-request-2') $$, 'owner replaces the QR');
+select is((select status from app.files where id = 'be100000-0000-4000-8000-0000000000a1'), 'archived', 'the old QR is archived');
+select is(jsonb_array_length(app.load_reseller_portal_catalog('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001')->'payment'->'accounts'), 2, 'the reseller sees both accounts');
+select is(app.load_reseller_portal_catalog('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001')->'payment'->'accounts'->0->>'qrStorageKey',
+  't/2e100000-0000-4000-8000-000000000001/payment_qr/be100000-0000-4000-8000-0000000000a2/main', 'GCash comes first with its current QR');
+select lives_ok($$ select app.save_reseller_payment_account('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
+  jsonb_build_object('id', (select id from app.reseller_payment_accounts where tenant_id = '2e100000-0000-4000-8000-000000000001' and method = 'bank_transfer'),
+    'method', 'bank_transfer', 'providerName', 'BDO Savings', 'accountName', 'Kape ni Juan', 'accountNumber', '0012 3456 7890',
+    'isActive', false), 'portal-pay-acct-key-05', 'acct-hash-5', 'acct-request-5') $$, 'owner hides the bank account');
+select is(jsonb_array_length(app.load_reseller_portal_catalog('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001')->'payment'->'accounts'), 1, 'hidden accounts are not shown to resellers');
+select is(jsonb_array_length(app.load_reseller_portal_admin('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001')->'paymentAccounts'), 2, 'the Back Office still lists hidden accounts');
+
 select lives_ok($$ select app.set_reseller_account_status('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
   (select id from app.reseller_accounts where tenant_id = '2e100000-0000-4000-8000-000000000001'), 'suspended', 'suspend-request') $$,
   'owner suspends the reseller account');
@@ -290,6 +328,8 @@ select throws_ok($$ select app.list_reseller_portal_orders('1e100000-0000-4000-8
 -- Database roles: only the API role may execute the entry points.
 select ok(has_function_privilege('hcs_hyperdrive', 'app.submit_reseller_portal_order(uuid,uuid,jsonb,text,text,text)', 'execute'),
   'API role executes portal order submission');
+select ok(not has_function_privilege('hcs_hyperdrive', 'app.reseller_payment_accounts_json(uuid,boolean)', 'execute'),
+  'API role cannot read payment accounts without a caller check');
 select ok(has_function_privilege('hcs_hyperdrive', 'app.expire_reseller_payment_holds(uuid)', 'execute'),
   'API role runs the payment-window sweep');
 select ok(not has_function_privilege('hcs_hyperdrive', 'app.release_reseller_payment_hold(uuid,uuid,uuid,uuid)', 'execute'),

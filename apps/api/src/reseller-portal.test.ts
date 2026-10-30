@@ -343,6 +343,41 @@ describe('reseller portal API', () => {
     expect(apiErrorResponseSchema.parse(await response.json()).error.code).toBe('RESELLER_STOCK_SHORT')
   })
 
+  it('signs payment QR links and never returns storage keys', async () => {
+    const accountId = '3c000000-0000-4000-8000-000000000001'
+    const repo = repository({
+      loadCatalog: vi.fn(async () => ({
+        ...catalog,
+        payment: {
+          instructions: null,
+          holdHours: 4,
+          accounts: [
+            {
+              id: accountId,
+              method: 'gcash' as const,
+              providerName: 'GCash',
+              accountName: 'Juan Dela Cruz',
+              accountNumber: '0917 123 4567',
+              isActive: true,
+              qrStorageKey: `t/${tenantId}/payment_qr/${accountId}/main`,
+            },
+          ],
+        },
+      })),
+    })
+    const response = await portalApp(repo).request(
+      '/v1/portal/catalog',
+      { headers: { authorization: 'Bearer reseller-token', 'x-tenant-id': tenantId } },
+      { ...bindings, FILES_URL_SECRET: 'test-secret-for-signing-links-0001' },
+    )
+    expect(response.status).toBe(200)
+    const body = await response.text()
+    expect(body).not.toContain('qrStorageKey')
+    const account = resellerPortalCatalogSchema.parse(JSON.parse(body)).payment?.accounts?.[0]
+    expect(account?.qrUrl).toMatch(/^\/v1\/files\/content\?key=.+&exp=\d+&sig=/)
+    expect(account?.accountNumber).toBe('0917 123 4567')
+  })
+
   it('keeps Back Office administration behind a member session', async () => {
     const repo = repository()
     const app = portalApp(repo)

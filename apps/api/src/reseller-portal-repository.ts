@@ -11,6 +11,8 @@ import {
   resellerPortalPublicSchema,
   resellerPortalSessionSchema,
   resellerPortalSettingsResponseSchema,
+  resellerPaymentAccountSchema,
+  resellerPaymentAccountSaveResponseSchema,
   type ResellerAccountInviteRequest,
   type ResellerAccountInviteResponse,
   type ResellerAccountStatusRequest,
@@ -23,7 +25,8 @@ import {
   type ResellerOrderReviewResponse,
   type ResellerOrderSubmitRequest,
   type ResellerOrderSubmitResponse,
-  type ResellerPortalCatalog,
+  type ResellerPaymentAccountSaveRequest,
+  type ResellerPaymentAccountSaveResponse,
   type ResellerPortalPublic,
   type ResellerPortalSession,
   type ResellerPortalSettingsRequest,
@@ -43,9 +46,25 @@ export const storedResellerOrderSchema = resellerOrderSchema.extend({
 export type StoredResellerOrder = z.infer<typeof storedResellerOrderSchema>
 export type StoredResellerOrders = { orders: StoredResellerOrder[] }
 const storedResellerOrdersSchema = z.object({ orders: z.array(storedResellerOrderSchema) })
+/** Payment accounts as stored: the QR carries its storage key until the API signs it. */
+export const storedPaymentAccountSchema = resellerPaymentAccountSchema
+  .omit({ qrUrl: true })
+  .extend({ qrStorageKey: z.string().min(1).nullable() })
+export type StoredPaymentAccount = z.infer<typeof storedPaymentAccountSchema>
 const storedResellerPortalAdminSchema = resellerPortalAdminSchema.extend({
   reviewQueue: z.array(storedResellerOrderSchema),
+  paymentAccounts: z.array(storedPaymentAccountSchema).optional(),
 })
+const storedResellerPortalCatalogSchema = resellerPortalCatalogSchema.extend({
+  payment: z
+    .object({
+      instructions: z.string().nullable(),
+      holdHours: z.number().int().positive(),
+      accounts: z.array(storedPaymentAccountSchema).optional(),
+    })
+    .optional(),
+})
+export type StoredResellerPortalCatalog = z.infer<typeof storedResellerPortalCatalogSchema>
 export type StoredResellerPortalAdmin = z.infer<typeof storedResellerPortalAdminSchema>
 
 /** A command's idempotency and audit context, derived by the API. */
@@ -64,7 +83,7 @@ export interface ResellerPortalRepository {
     bindings: Bindings,
   ): Promise<ResellerApplicationResponse>
   loadSession(authUserId: string, bindings: Bindings): Promise<ResellerPortalSession>
-  loadCatalog(authUserId: string, tenantId: string, bindings: Bindings): Promise<ResellerPortalCatalog>
+  loadCatalog(authUserId: string, tenantId: string, bindings: Bindings): Promise<StoredResellerPortalCatalog>
   listOrders(authUserId: string, tenantId: string, bindings: Bindings): Promise<StoredResellerOrders>
   submitOrder(
     authUserId: string,
@@ -112,6 +131,13 @@ export interface ResellerPortalRepository {
     command: PortalCommand,
     bindings: Bindings,
   ): Promise<ResellerOrderReviewResponse>
+  savePaymentAccount(
+    userId: string,
+    tenantId: string,
+    request: ResellerPaymentAccountSaveRequest,
+    command: PortalCommand,
+    bindings: Bindings,
+  ): Promise<ResellerPaymentAccountSaveResponse>
 }
 
 function connectionString(bindings: Bindings): string {
@@ -151,7 +177,7 @@ export const resellerPortalPostgresRepository: ResellerPortalRepository = {
       bindings,
       'select app.load_reseller_portal_catalog($1::uuid, $2::uuid) response',
       [authUserId, tenantId],
-      (value) => resellerPortalCatalogSchema.parse(value),
+      (value) => storedResellerPortalCatalogSchema.parse(value),
     ),
   listOrders: (authUserId, tenantId, bindings) =>
     queryOne(
@@ -224,5 +250,12 @@ export const resellerPortalPostgresRepository: ResellerPortalRepository = {
         command.requestId,
       ],
       (value) => resellerOrderReviewResponseSchema.parse(value),
+    ),
+  savePaymentAccount: (userId, tenantId, request, command, bindings) =>
+    queryOne(
+      bindings,
+      'select app.save_reseller_payment_account($1::uuid, $2::uuid, $3::jsonb, $4::text, $5::text, $6::text) response',
+      [userId, tenantId, JSON.stringify(request), command.idempotencyKey, command.requestHash, command.requestId],
+      (value) => resellerPaymentAccountSaveResponseSchema.parse(value),
     ),
 }

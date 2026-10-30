@@ -7,6 +7,8 @@ import {
   resellerOrderReviewResponseSchema,
   resellerPortalAdminSchema,
   resellerPortalSettingsResponseSchema,
+  resellerPaymentAccountSaveResponseSchema,
+  paymentQrUploadResponseSchema,
   paymentProofReviewResponseSchema,
   pendingPaymentProofsSchema,
   sessionContextResponseSchema,
@@ -19,6 +21,7 @@ import { Check, Copy, RefreshCw, UserPlus, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { selectActiveTenant } from '@/lib/active-tenant'
+import { PaymentAccountsCard } from './PaymentAccountsCard'
 import { fileUrl } from './ProductPhotos'
 import {
   applicationLink,
@@ -113,8 +116,14 @@ export function ResellerPortalWorkspace() {
   }, [auth, load])
 
   /** Runs one command with a stable idempotency key per target, then reloads. */
-  async function run(target: string, path: string, body: unknown, parse: (value: unknown) => unknown, done: string) {
-    if (!scope) return
+  async function run(
+    target: string,
+    path: string,
+    body: unknown,
+    parse: (value: unknown) => unknown,
+    done: string,
+  ): Promise<boolean> {
+    if (!scope) return false
     setBusy(target)
     setError(null)
     setMessage(null)
@@ -123,8 +132,10 @@ export function ResellerPortalWorkspace() {
       keys.current.delete(`${target}:${JSON.stringify(body)}`)
       setMessage(done)
       await load(scope)
+      return true
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The change was not saved. Try again.')
+      return false
     } finally {
       setBusy(null)
     }
@@ -188,6 +199,43 @@ export function ResellerPortalWorkspace() {
             'Portal settings saved.',
           )
         }
+      />
+
+      <PaymentAccountsCard
+        accounts={admin.paymentAccounts ?? []}
+        busy={busy !== null}
+        onSave={(body, target) =>
+          run(
+            target,
+            '/v1/reseller-portal/payment-accounts',
+            body,
+            (v) => resellerPaymentAccountSaveResponseSchema.parse(v),
+            'Payment account saved. Resellers see it when they pay.',
+          )
+        }
+        onUploadQr={async (accountId, body) => {
+          if (!scope || !api) throw new Error('Sign in again to upload.')
+          const response = await fetch(
+            `${api.replace(/\/$/, '')}/v1/reseller-portal/payment-accounts/${accountId}/qr`,
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${scope.token}`,
+                'X-Tenant-Id': scope.tenantId,
+                'Idempotency-Key': `payment-qr-${crypto.randomUUID()}`,
+              },
+              body,
+            },
+          )
+          const data: unknown = await response.json().catch(() => null)
+          if (!response.ok)
+            throw new Error(
+              (data as { error?: { message?: string } } | null)?.error?.message ?? 'The QR code was not uploaded.',
+            )
+          paymentQrUploadResponseSchema.parse(data)
+          setMessage('QR code saved. Resellers see it when they pay.')
+          await load(scope)
+        }}
       />
 
       <Section
@@ -487,17 +535,17 @@ function SettingsCard({
           </select>
         </label>
         <label className="flex flex-col gap-1.5 text-sm font-semibold md:row-span-2">
-          Payment instructions for resellers
+          Extra payment notes (optional)
           <textarea
             className={`${control} min-h-28 py-2 font-normal`}
             maxLength={1000}
             value={instructions}
             onChange={(event) => setInstructions(event.target.value)}
-            placeholder={'GCash: 0917 123 4567 (Juan Dela Cruz)\nBDO: 0012 3456 7890 (Local Recipe)'}
+            placeholder="e.g. Send the screenshot right after paying. Downpayment is at least 50%."
           />
           <span className="font-normal text-ink-500">
-            Every portal order holds its stock for 4 hours. The reseller pays here and uploads the proof; the order then
-            appears below for you to confirm.
+            Shown under the GCash and bank details. Every portal order holds its stock for 4 hours until the reseller
+            uploads a payment proof.
           </span>
         </label>
         <label className="flex items-start gap-3 text-sm">

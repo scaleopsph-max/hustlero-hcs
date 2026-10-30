@@ -239,6 +239,7 @@ export function PortalApp() {
               onUploadProof={uploadProof}
               focusOrderId={focusOrderId}
               paymentInstructions={catalog.payment?.instructions ?? null}
+              paymentAccounts={catalog.payment?.accounts}
             />
           ) : session && tenantId ? (
             <AccountView

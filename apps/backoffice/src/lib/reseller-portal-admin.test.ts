@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  accountRequest,
   applicationLink,
   approvalRequest,
   commandKey,
@@ -60,5 +61,28 @@ describe('reseller portal admin helpers', () => {
     expect(first).toMatch(/^reseller-portal-[0-9a-f-]{36}$/)
     keys.delete('order:1')
     expect(commandKey(keys, 'order:1')).not.toBe(first)
+  })
+})
+
+describe('payment account form', () => {
+  const draft = {
+    method: 'gcash' as const,
+    providerName: 'GCash',
+    accountName: 'Juan Dela Cruz',
+    accountNumber: '0917 123 4567',
+  }
+
+  it('builds a save request, keeping the id and visibility of an existing account', () => {
+    expect(accountRequest(draft)).toEqual(draft)
+    expect(accountRequest(draft, { id: '3c000000-0000-4000-8000-000000000001', isActive: false })).toMatchObject({
+      id: '3c000000-0000-4000-8000-000000000001',
+      isActive: false,
+    })
+  })
+
+  it('explains what is missing', () => {
+    expect(accountRequest({ ...draft, providerName: '' })).toMatch(/provider/)
+    expect(accountRequest({ ...draft, accountName: 'J' })).toMatch(/account name/)
+    expect(accountRequest({ ...draft, accountNumber: '12' })).toMatch(/number/)
   })
 })

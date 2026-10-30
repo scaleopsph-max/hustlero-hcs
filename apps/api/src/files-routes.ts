@@ -23,6 +23,7 @@ import {
   createFileUrlSigner,
   detectMime,
   paymentProofExpiry,
+  productImageExpiry,
   sha256Hex,
   signProductImages,
   storageKey,
@@ -55,7 +56,11 @@ const nowSeconds = (dependencies: { now?: () => number }) => Math.floor((depende
 const errorMap: Record<string, { status: ContentfulStatusCode; code: string; message: string }> = {
   HCFL1: { status: 403, code: 'FILE_ACCESS_DENIED', message: 'You do not have permission to change these files.' },
   HCFL2: { status: 400, code: 'INVALID_FILE', message: 'Check the file and its details.' },
-  HCFL3: { status: 404, code: 'FILE_TARGET_NOT_FOUND', message: 'The product, order, or photo was not found.' },
+  HCFL3: {
+    status: 404,
+    code: 'FILE_TARGET_NOT_FOUND',
+    message: 'The product, order, payment account, or photo was not found.',
+  },
   HCFL4: {
     status: 409,
     code: 'FILE_LIMIT_REACHED',
@@ -372,6 +377,61 @@ export function registerFileRoutes(app: Hono<{ Bindings: Bindings }>, dependenci
     }
   })
 
+  // Payment QR images (Back Office reseller portal settings) -------------------
+
+  app.post('/v1/reseller-portal/payment-accounts/:accountId/qr', async (context) => {
+    const admin = await dependencies.resolveBackofficeTenant(context)
+    if (!admin) return fail(context, 403, 'FILE_ACCESS_DENIED', 'Sign in and select a business to upload a QR code.')
+    const accountId = context.req.param('accountId')
+    const key = context.req.header('idempotency-key')
+    if (!uuidPattern.test(accountId) || !key || !idempotencyPattern.test(key))
+      return fail(context, 400, 'INVALID_FILE', 'Provide a valid payment account and Idempotency-Key.')
+    const bucket = storage(context)
+    if (!bucket) return fail(context, 503, 'FILES_NOT_CONFIGURED', 'File storage is not configured.')
+    const form = await readForm(context)
+    if (form === 'too_large') return partProblem(context, 'too_large', 'upload', UPLOAD_REQUEST_MAX_BYTES)
+    if (form === 'invalid') return fail(context, 400, 'INVALID_FILE', 'Send the QR code as multipart form data.')
+    const images: StoredMime[] = ['image/jpeg', 'image/png', 'image/webp']
+    const main = await readPart(form.image, PRODUCT_IMAGE_MAX_BYTES, images)
+    if (typeof main === 'string') return partProblem(context, main, 'QR code', PRODUCT_IMAGE_MAX_BYTES)
+
+    try {
+      await dependencies.repository.assertPaymentQrUpload(admin.userId, admin.tenantId, accountId, context.env)
+      const fileId = crypto.randomUUID()
+      const objectKey = storageKey(admin.tenantId, 'payment_qr', fileId, 'main')
+      await putAll(bucket, [{ key: objectKey, upload: main }])
+      try {
+        const response = await dependencies.repository.recordPaymentQr(
+          admin.userId,
+          admin.tenantId,
+          accountId,
+          {
+            fileId,
+            mimeType: main.mime,
+            sizeBytes: main.bytes.length,
+            sha256: main.sha256,
+            originalFilename: main.filename,
+          },
+          {
+            idempotencyKey: key,
+            requestHash: await dependencies.requestHash({ accountId, main: main.sha256 }),
+            requestId: context.get('requestId'),
+          },
+          context.env,
+        )
+        if (response.fileId !== fileId) await bucket.delete(objectKey)
+        return context.json(response, 201)
+      } catch (error) {
+        await bucket.delete(objectKey).catch(() => undefined)
+        throw error
+      }
+    } catch (error) {
+      const response = mapError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
   app.post('/v1/catalog/products/:productId/images/order', async (context) => {
     const admin = await dependencies.resolveBackofficeTenant(context)
     if (!admin) return fail(context, 403, 'FILE_ACCESS_DENIED', 'Sign in and select a business to arrange photos.')
@@ -563,4 +623,10 @@ export function registerFileRoutes(app: Hono<{ Bindings: Bindings }>, dependenci
       throw error
     }
   })
+}
+
+/** Signs a payment QR key with the product-photo expiry window so links stay cacheable. */
+export async function signFileKey(key: string, bindings: Bindings, now: number): Promise<string | null> {
+  if (!bindings.FILES_URL_SECRET) return null
+  return createFileUrlSigner(bindings.FILES_URL_SECRET).sign(key, productImageExpiry(now))
 }

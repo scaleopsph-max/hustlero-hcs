@@ -64,7 +64,11 @@ export function CartView({
               {placed.paymentDueAt ? ` until ${formatTime(placed.paymentDueAt)}` : ` for ${holdHours} hours`}. Upload
               your payment proof before then or the order is cancelled. A downpayment is fine.
             </p>
-            <PaymentInstructions instructions={catalog.payment?.instructions} />
+            <PaymentInstructions
+              accounts={catalog.payment?.accounts}
+              instructions={catalog.payment?.instructions}
+              defaultMethod={payment}
+            />
           </>
         ) : (
           <p className="text-ink-200">

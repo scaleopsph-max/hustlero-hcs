@@ -7,7 +7,9 @@ import {
   resellerOrderReviewRequestSchema,
   resellerOrderSubmitRequestSchema,
   resellerPortalSettingsRequestSchema,
+  resellerPaymentAccountSaveRequestSchema,
   type ResellerOrder,
+  type ResellerPaymentAccount,
   type ResellerPortalCatalog,
 } from '@hcs/contracts'
 import type { Context, Hono } from 'hono'
@@ -16,7 +18,12 @@ import type { ZodType } from 'zod'
 
 import { readBearerToken, type AccessTokenVerifier } from './auth'
 import type { Bindings } from './env'
-import type { PortalCommand, ResellerPortalRepository, StoredResellerOrder } from './reseller-portal-repository'
+import type {
+  PortalCommand,
+  ResellerPortalRepository,
+  StoredPaymentAccount,
+  StoredResellerOrder,
+} from './reseller-portal-repository'
 
 type AppContext = Context<{ Bindings: Bindings }>
 
@@ -36,6 +43,8 @@ export interface ResellerPortalRouteDependencies {
   ) => Promise<ResellerPortalCatalog>
   /** Signs payment-proof links and removes storage keys before orders leave the API. */
   presentOrders?: (orders: StoredResellerOrder[], bindings: Bindings) => Promise<ResellerOrder[]>
+  /** Signs a stored file key (payment QR images); null when file storage is not configured. */
+  signFileKey?: (key: string, bindings: Bindings) => Promise<string | null>
 }
 
 const dropProofs = async (orders: StoredResellerOrder[]): Promise<ResellerOrder[]> =>
@@ -95,6 +104,11 @@ const errorMap: Record<string, { status: ContentfulStatusCode; code: string; mes
     code: 'RESELLER_ORDER_AWAITING_PAYMENT',
     message: "This order is still waiting for the reseller's payment proof.",
   },
+  HCRA7: {
+    status: 409,
+    code: 'PAYMENT_ACCOUNT_LIMIT',
+    message: 'Up to 6 payment accounts can be shown. Hide one first.',
+  },
   HCS08: {
     status: 409,
     code: 'IDEMPOTENCY_KEY_CONFLICT',
@@ -125,6 +139,21 @@ const errorMap: Record<string, { status: ContentfulStatusCode; code: string; mes
     code: 'WHOLESALE_INVOICE_CLASSIFICATION_REQUIRED',
     message: 'Classify historical invoices for this reseller first.',
   },
+}
+
+/** Replaces QR storage keys with signed links (or null) before accounts leave the API. */
+async function presentAccounts(
+  accounts: StoredPaymentAccount[] | undefined,
+  bindings: Bindings,
+  sign: ResellerPortalRouteDependencies['signFileKey'],
+): Promise<ResellerPaymentAccount[] | undefined> {
+  if (!accounts) return undefined
+  return Promise.all(
+    accounts.map(async ({ qrStorageKey, ...account }) => ({
+      ...account,
+      qrUrl: qrStorageKey && sign ? await sign(qrStorageKey, bindings).catch(() => null) : null,
+    })),
+  )
 }
 
 export function registerResellerPortalRoutes(
@@ -239,7 +268,17 @@ export function registerResellerPortalRoutes(
     return run(context, async () =>
       context.json(
         await (dependencies.decorateCatalog ?? (async (catalog) => catalog))(
-          await dependencies.repository.loadCatalog(reseller.userId, reseller.tenantId, context.env),
+          await (async () => {
+            const { payment, ...catalog } = await dependencies.repository.loadCatalog(
+              reseller.userId,
+              reseller.tenantId,
+              context.env,
+            )
+            if (!payment) return catalog
+            const { accounts, ...rest } = payment
+            const presented = await presentAccounts(accounts, context.env, dependencies.signFileKey)
+            return { ...catalog, payment: presented ? { ...rest, accounts: presented } : rest }
+          })(),
           reseller.userId,
           reseller.tenantId,
           context.env,
@@ -289,9 +328,15 @@ export function registerResellerPortalRoutes(
     const admin = await resolveAdmin(context)
     if (admin instanceof Response) return admin
     return run(context, async () => {
-      const loaded = await dependencies.repository.loadAdmin(admin.userId, admin.tenantId, context.env)
+      const { paymentAccounts, ...loaded } = await dependencies.repository.loadAdmin(
+        admin.userId,
+        admin.tenantId,
+        context.env,
+      )
+      const accounts = await presentAccounts(paymentAccounts, context.env, dependencies.signFileKey)
       return context.json({
         ...loaded,
+        ...(accounts ? { paymentAccounts: accounts } : {}),
         reviewQueue: await (dependencies.presentOrders ?? dropProofs)(loaded.reviewQueue, context.env),
       })
     })
@@ -312,6 +357,31 @@ export function registerResellerPortalRoutes(
     return run(context, async () =>
       context.json(
         await dependencies.repository.saveSettings(admin.userId, admin.tenantId, request, portalCommand, context.env),
+      ),
+    )
+  })
+
+  app.post('/v1/reseller-portal/payment-accounts', async (context) => {
+    const admin = await resolveAdmin(context)
+    if (admin instanceof Response) return admin
+    const request = await readJson(context, resellerPaymentAccountSaveRequestSchema)
+    const portalCommand = request ? await command(context, request) : null
+    if (!request || !portalCommand)
+      return fail(
+        context,
+        400,
+        'INVALID_PAYMENT_ACCOUNT',
+        'Enter the provider, account name, and account number, with a valid Idempotency-Key.',
+      )
+    return run(context, async () =>
+      context.json(
+        await dependencies.repository.savePaymentAccount(
+          admin.userId,
+          admin.tenantId,
+          request,
+          portalCommand,
+          context.env,
+        ),
       ),
     )
   })

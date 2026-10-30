@@ -29,6 +29,17 @@ export const resellerOrderStatusSchema = z.enum([
   'cancelled',
 ])
 
+/** A GCash or bank account resellers pay into; the QR link is signed by the API. */
+export const resellerPaymentAccountSchema = z.object({
+  id: uuid,
+  method: resellerPaymentPreferenceSchema,
+  providerName: z.string().min(1),
+  accountName: z.string().min(1),
+  accountNumber: z.string().min(1),
+  isActive: z.boolean(),
+  qrUrl: z.string().nullable(),
+})
+
 // Public application form -------------------------------------------------
 
 export const resellerPortalPublicSchema = z.object({
@@ -103,7 +114,13 @@ export const resellerPortalCatalogSchema = z.object({
   }),
   fulfillmentLocationName: z.string().min(1),
   /** Where to send payment. Optional so older API versions still parse. */
-  payment: z.object({ instructions: z.string().nullable(), holdHours: z.number().int().positive() }).optional(),
+  payment: z
+    .object({
+      instructions: z.string().nullable(),
+      holdHours: z.number().int().positive(),
+      accounts: z.array(resellerPaymentAccountSchema).optional(),
+    })
+    .optional(),
   items: z.array(resellerCatalogItemSchema),
 })
 
@@ -197,6 +214,27 @@ export const resellerPortalSettingsResponseSchema = z.object({
   applicationsOpen: z.boolean(),
   autoConfirm: z.boolean(),
   paymentInstructions: z.string().nullable().optional(),
+})
+
+export const resellerPaymentAccountSaveRequestSchema = z.strictObject({
+  id: uuid.optional(),
+  method: resellerPaymentPreferenceSchema,
+  providerName: z.string().trim().min(2).max(80),
+  accountName: z.string().trim().min(2).max(120),
+  accountNumber: z.string().trim().min(4).max(40),
+  isActive: z.boolean().optional(),
+})
+
+export const resellerPaymentAccountSaveResponseSchema = z.object({
+  status: z.literal('saved'),
+  accountId: uuid,
+  isActive: z.boolean(),
+})
+
+export const paymentQrUploadResponseSchema = z.object({
+  status: z.literal('uploaded'),
+  accountId: uuid,
+  fileId: uuid,
 })
 
 export const resellerApplicationDecisionRequestSchema = z.discriminatedUnion('decision', [
@@ -310,6 +348,7 @@ export const resellerPortalAdminSchema = z.object({
     }),
   ),
   reviewQueue: z.array(resellerOrderSchema),
+  paymentAccounts: z.array(resellerPaymentAccountSchema).optional(),
   awaitingPayment: z
     .array(
       z.object({
@@ -347,3 +386,7 @@ export type ResellerAccountStatusResponse = z.infer<typeof resellerAccountStatus
 export type ResellerOrderReviewRequest = z.infer<typeof resellerOrderReviewRequestSchema>
 export type ResellerOrderReviewResponse = z.infer<typeof resellerOrderReviewResponseSchema>
 export type ResellerPortalAdmin = z.infer<typeof resellerPortalAdminSchema>
+export type ResellerPaymentAccount = z.infer<typeof resellerPaymentAccountSchema>
+export type ResellerPaymentAccountSaveRequest = z.infer<typeof resellerPaymentAccountSaveRequestSchema>
+export type ResellerPaymentAccountSaveResponse = z.infer<typeof resellerPaymentAccountSaveResponseSchema>
+export type PaymentQrUploadResponse = z.infer<typeof paymentQrUploadResponseSchema>

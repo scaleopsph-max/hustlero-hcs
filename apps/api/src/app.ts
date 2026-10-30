@@ -4,6 +4,7 @@ import {
   decorateResellerCatalog,
   presentOrders,
   registerFileRoutes,
+  signFileKey,
 } from './files-routes'
 import { filesPostgresRepository, type FilesRepository } from './files-repository'
 import type { FileBucket } from './files'
@@ -7960,6 +7961,7 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
         Math.floor(Date.now() / 1000),
       ),
     presentOrders: (orders, bindings) => presentOrders(orders, bindings, Math.floor(Date.now() / 1000)),
+    signFileKey: (key, bindings) => signFileKey(key, bindings, Math.floor(Date.now() / 1000)),
   })
   registerFileRoutes(app, {
     verifyAccessToken: dependencies.verifyAccessToken,

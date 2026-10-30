@@ -1,6 +1,6 @@
 'use client'
 
-import type { ResellerOrder } from '@hcs/contracts'
+import type { ResellerOrder, ResellerPaymentAccount } from '@hcs/contracts'
 import { Button, Chip, Glass, formatPeso } from '@hcs/ui'
 import { ChevronDown, PackageSearch, RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -18,11 +18,13 @@ export function OrdersView({
   onUploadProof,
   focusOrderId,
   paymentInstructions,
+  paymentAccounts,
 }: {
   orders: ResellerOrder[]
   /** Order to open on arrival, e.g. right after checkout. */
   focusOrderId?: string | null
   paymentInstructions?: string | null
+  paymentAccounts?: ResellerPaymentAccount[] | undefined
   loading: boolean
   onRefresh: () => void
   onReorder: (order: ResellerOrder) => void
@@ -92,7 +94,11 @@ export function OrdersView({
                               ? `Pay by ${formatTime(order.paymentDueAt)} (${left}). Upload your proof before then or the order is cancelled.`
                               : 'The payment window has closed. Refresh to see the latest status.'}
                           </p>
-                          <PaymentInstructions instructions={paymentInstructions} />
+                          <PaymentInstructions
+                            accounts={paymentAccounts}
+                            instructions={paymentInstructions}
+                            defaultMethod={order.paymentPreference}
+                          />
                         </div>
                       ) : order.status === 'submitted' && order.reviewReason ? (
                         <p className="rounded-control bg-signal-dark-attention-bg px-3 py-2 text-small text-signal-dark-attention-fg">

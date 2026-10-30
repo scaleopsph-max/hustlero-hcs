@@ -1,8 +1,10 @@
 import {
   resellerApplicationDecisionRequestSchema,
   resellerOrderReviewRequestSchema,
+  resellerPaymentAccountSaveRequestSchema,
   type ResellerApplicationDecisionRequest,
   type ResellerOrderReviewRequest,
+  type ResellerPaymentAccountSaveRequest,
   type ResellerReviewReason,
 } from '@hcs/contracts'
 import { parsePeso } from '@hcs/ui'
@@ -72,4 +74,29 @@ export function commandKey(keys: Map<string, string>, target: string): string {
   const key = `reseller-portal-${crypto.randomUUID()}`
   keys.set(target, key)
   return key
+}
+
+export type PaymentAccountDraft = {
+  method: 'gcash' | 'bank_transfer'
+  providerName: string
+  accountName: string
+  accountNumber: string
+}
+
+/** Turns a form draft into a save request, or a message the owner can act on. */
+export function accountRequest(
+  draft: PaymentAccountDraft,
+  existing?: { id: string; isActive: boolean },
+): ResellerPaymentAccountSaveRequest | string {
+  const parsed = resellerPaymentAccountSaveRequestSchema.safeParse({
+    ...(existing ? { id: existing.id, isActive: existing.isActive } : {}),
+    method: draft.method,
+    providerName: draft.providerName,
+    accountName: draft.accountName,
+    accountNumber: draft.accountNumber,
+  })
+  if (parsed.success) return parsed.data
+  if (draft.providerName.trim().length < 2) return 'Enter the provider, for example GCash or BDO Savings.'
+  if (draft.accountName.trim().length < 2) return 'Enter the account name exactly as it appears in the app.'
+  return 'Enter the account or mobile number (4 to 40 characters).'
 }
