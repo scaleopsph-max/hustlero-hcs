@@ -5,6 +5,7 @@ import { Mail } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 
 import { portalAuth } from '@/lib/portal-api'
+import { sendCodeError } from '@/lib/sign-in-errors'
 
 /**
  * Email one-time code sign-in. A typed code works inside an installed PWA,
@@ -28,7 +29,7 @@ export function SignIn() {
       options: { shouldCreateUser: true },
     })
     setBusy(false)
-    if (sendError) setError('The code was not sent. Check the email and try again.')
+    if (sendError) setError(sendCodeError(sendError))
     else setStep('code')
   }
 
