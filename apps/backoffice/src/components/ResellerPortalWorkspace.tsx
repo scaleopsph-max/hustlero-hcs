@@ -16,7 +16,7 @@ import {
   type ResellerOrderReviewRequest,
   type ResellerPortalAdmin,
 } from '@hcs/contracts'
-import { Button, Chip, Glass, formatPeso } from '@hcs/ui'
+import { Button, Chip, Glass, cn, formatPeso } from '@hcs/ui'
 import { Check, Copy, RefreshCw, UserPlus, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
@@ -50,6 +50,15 @@ const stockTone = { in_stock: 'success', low_stock: 'warning', out_of_stock: 'cr
 const stockText = { in_stock: 'In stock', low_stock: 'Low', out_of_stock: 'Out' } as const
 
 type Scope = { token: string; tenantId: string }
+type PortalTab = 'orders' | 'payments' | 'resellers' | 'settings'
+const portalTabs: PortalTab[] = ['orders', 'payments', 'resellers', 'settings']
+
+/** The tab named in the URL hash, so a refresh or shared link opens the same section. */
+function readTab(): PortalTab {
+  if (typeof window === 'undefined') return 'orders'
+  const hash = window.location.hash.replace('#', '') as PortalTab
+  return portalTabs.includes(hash) ? hash : 'orders'
+}
 
 async function call(path: string, scope: Scope, body?: unknown, idempotencyKey?: string) {
   if (!api) throw new Error('Back Office API URL is not configured.')
@@ -77,6 +86,19 @@ export function ResellerPortalWorkspace() {
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const keys = useRef(new Map<string, string>())
+  const [tab, setTab] = useState<PortalTab>('orders')
+  // Read the hash after mounting so the server and first client render agree.
+  useEffect(() => {
+    setTab(readTab())
+  }, [])
+  function chooseTab(next: PortalTab) {
+    setTab(next)
+    try {
+      window.history.replaceState(null, '', `#${next}`)
+    } catch {
+      // The hash only remembers the tab; ignore environments without history.
+    }
+  }
 
   const [proofs, setProofs] = useState<PendingPaymentProof[] | null>(null)
   const load = useCallback(async (next: Scope) => {
@@ -151,6 +173,12 @@ export function ResellerPortalWorkspace() {
   const link = applicationLink(portalOrigin, admin.tenantSlug)
   const pendingApplications = admin.applications.filter((application) => application.status === 'pending')
   const awaiting = admin.awaitingPayment ?? []
+  const tabs: { id: PortalTab; label: string; count: number }[] = [
+    { id: 'orders', label: 'Orders', count: admin.reviewQueue.length },
+    { id: 'payments', label: 'Balance payments', count: proofs?.length ?? 0 },
+    { id: 'resellers', label: 'Resellers', count: pendingApplications.length },
+    { id: 'settings', label: 'Settings', count: admin.settings ? 0 : 1 },
+  ]
 
   return (
     <div className="flex flex-col gap-6 px-6 pb-10">
@@ -165,16 +193,41 @@ export function ResellerPortalWorkspace() {
       ) : null}
 
       <div className="flex flex-wrap items-center gap-3">
-        <Chip surface="light" tone={admin.reviewQueue.length ? 'attention' : 'neutral'}>
-          {`${admin.reviewQueue.length} paid order${admin.reviewQueue.length === 1 ? '' : 's'} to confirm`}
-        </Chip>
-        <Chip surface="light" tone={awaiting.length ? 'info' : 'neutral'}>
-          {`${awaiting.length} awaiting payment`}
-        </Chip>
-        <Chip surface="light" tone={pendingApplications.length ? 'info' : 'neutral'}>
-          {`${pendingApplications.length} pending application${pendingApplications.length === 1 ? '' : 's'}`}
-        </Chip>
-        <Chip surface="light">{`${admin.accounts.filter((account) => account.status === 'active').length} active resellers`}</Chip>
+        <div
+          className="flex max-w-full gap-1 overflow-x-auto rounded-control border border-ink-900/15 bg-white/70 p-1"
+          role="tablist"
+          aria-label="Reseller portal sections"
+        >
+          {tabs.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              role="tab"
+              id={`portal-tab-${entry.id}`}
+              aria-selected={tab === entry.id}
+              aria-controls={`portal-panel-${entry.id}`}
+              onClick={() => chooseTab(entry.id)}
+              className={cn(
+                'inline-flex h-9 flex-none items-center gap-2 rounded-control px-4 text-sm font-semibold',
+                tab === entry.id ? 'bg-ink-900 text-white' : 'text-ink-700 hover:bg-ink-900/5',
+              )}
+            >
+              {entry.label}
+              {entry.count ? (
+                <span
+                  className={cn(
+                    'min-w-5 rounded-full px-1.5 text-xs leading-5',
+                    tab === entry.id
+                      ? 'bg-gold-500 text-ink-950'
+                      : 'bg-signal-light-attention-bg text-signal-light-attention-fg',
+                  )}
+                >
+                  {entry.count}
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </div>
         <Button
           size="sm"
           className="ml-auto"
@@ -186,183 +239,237 @@ export function ResellerPortalWorkspace() {
         </Button>
       </div>
 
-      <SettingsCard
-        admin={admin}
-        busy={busy !== null}
-        link={link}
-        onSave={(body) =>
-          run(
-            'settings',
-            '/v1/reseller-portal/settings',
-            body,
-            (v) => resellerPortalSettingsResponseSchema.parse(v),
-            'Portal settings saved.',
-          )
-        }
-      />
-
-      <PaymentAccountsCard
-        accounts={admin.paymentAccounts ?? []}
-        busy={busy !== null}
-        onSave={(body, target) =>
-          run(
-            target,
-            '/v1/reseller-portal/payment-accounts',
-            body,
-            (v) => resellerPaymentAccountSaveResponseSchema.parse(v),
-            'Payment account saved. Resellers see it when they pay.',
-          )
-        }
-        onUploadQr={async (accountId, body) => {
-          if (!scope || !api) throw new Error('Sign in again to upload.')
-          const response = await fetch(
-            `${api.replace(/\/$/, '')}/v1/reseller-portal/payment-accounts/${accountId}/qr`,
-            {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${scope.token}`,
-                'X-Tenant-Id': scope.tenantId,
-                'Idempotency-Key': `payment-qr-${crypto.randomUUID()}`,
-              },
-              body,
-            },
-          )
-          const data: unknown = await response.json().catch(() => null)
-          if (!response.ok)
-            throw new Error(
-              (data as { error?: { message?: string } } | null)?.error?.message ?? 'The QR code was not uploaded.',
-            )
-          paymentQrUploadResponseSchema.parse(data)
-          setMessage('QR code saved. Resellers see it when they pay.')
-          await load(scope)
-        }}
-      />
-
-      <Section
-        title="Paid orders to confirm"
-        empty="No paid orders are waiting. Orders appear here once the reseller uploads a payment proof."
-      >
-        {admin.reviewQueue.map((order) => (
-          <ReviewCard
-            key={order.id}
-            order={order}
-            busy={busy === `review:${order.id}`}
-            onDecide={(body) =>
-              run(
-                `review:${order.id}`,
-                `/v1/reseller-portal/orders/${order.id}/review`,
-                body,
-                (v) => resellerOrderReviewResponseSchema.parse(v),
-                body.decision === 'approve'
-                  ? `${order.orderNumber} confirmed and its payment proofs verified. Record the payment in Wholesale payments using the proof reference.`
-                  : `${order.orderNumber} rejected and its stock released. The reseller sees your reason.`,
-              )
-            }
-          />
-        ))}
-      </Section>
-
-      <Section
-        title="Awaiting payment"
-        empty="No orders are waiting for payment. New portal orders hold stock for 4 hours until the reseller pays."
-      >
-        {awaiting.map((order) => (
-          <Glass
-            key={order.id}
-            variant="data"
-            className="flex flex-wrap items-center justify-between gap-3 rounded-panel px-5 py-3"
-          >
-            <div>
-              <p className="font-semibold">
-                {order.orderNumber} · {order.customerName}
-              </p>
-              <p className="text-sm text-ink-500">
-                Stock on hold until{' '}
-                {new Date(order.paymentDueAt).toLocaleString('en-PH', {
-                  timeZone: 'Asia/Manila',
-                  hour: 'numeric',
-                  minute: '2-digit',
-                  month: 'short',
-                  day: 'numeric',
-                })}
-                . Cancelled automatically if no proof arrives.
-              </p>
-            </div>
-            <p className="font-semibold">{formatPeso(order.totalMinor)}</p>
-          </Glass>
-        ))}
-      </Section>
-
-      {proofs ? (
-        <Section
-          title="Balance payments to verify"
-          empty="No balance payments are waiting. Proofs sent before confirmation are checked on the order above."
+      {tab === 'orders' ? (
+        <div
+          role="tabpanel"
+          id="portal-panel-orders"
+          aria-labelledby="portal-tab-orders"
+          className="flex flex-col gap-6"
         >
-          {proofs.map((proof) => (
-            <ProofCard
-              key={proof.id}
-              proof={proof}
-              busy={busy === `proof:${proof.id}`}
-              onDecide={(body) =>
-                run(
-                  `proof:${proof.id}`,
-                  `/v1/reseller-portal/payment-proofs/${proof.id}/review`,
-                  body,
-                  (v) => paymentProofReviewResponseSchema.parse(v),
-                  body.decision === 'accept'
-                    ? `Proof for ${proof.orderNumber} verified. Record the payment in Wholesale payments or at paid fulfillment using reference ${proof.reference}.`
-                    : `Proof for ${proof.orderNumber} rejected. The reseller sees your reason.`,
-                )
-              }
-            />
-          ))}
-        </Section>
+          <p className="text-sm text-ink-500">
+            New portal orders hold stock for 4 hours. They move to Paid orders once the reseller uploads a payment
+            proof.
+          </p>
+          <Section
+            title="Paid orders to confirm"
+            empty="No paid orders are waiting. Orders appear here once the reseller uploads a payment proof."
+          >
+            {admin.reviewQueue.map((order) => (
+              <ReviewCard
+                key={order.id}
+                order={order}
+                busy={busy === `review:${order.id}`}
+                onDecide={(body) =>
+                  run(
+                    `review:${order.id}`,
+                    `/v1/reseller-portal/orders/${order.id}/review`,
+                    body,
+                    (v) => resellerOrderReviewResponseSchema.parse(v),
+                    body.decision === 'approve'
+                      ? `${order.orderNumber} confirmed and its payment proofs verified. Record the payment in Wholesale payments using the proof reference.`
+                      : `${order.orderNumber} rejected and its stock released. The reseller sees your reason.`,
+                  )
+                }
+              />
+            ))}
+          </Section>
+
+          <Section
+            title="Awaiting payment"
+            empty="No orders are waiting for payment. New portal orders hold stock for 4 hours until the reseller pays."
+          >
+            {awaiting.map((order) => (
+              <Glass
+                key={order.id}
+                variant="data"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-panel px-5 py-3"
+              >
+                <div>
+                  <p className="font-semibold">
+                    {order.orderNumber} · {order.customerName}
+                  </p>
+                  <p className="text-sm text-ink-500">
+                    Stock on hold until{' '}
+                    {new Date(order.paymentDueAt).toLocaleString('en-PH', {
+                      timeZone: 'Asia/Manila',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      month: 'short',
+                      day: 'numeric',
+                    })}
+                    . Cancelled automatically if no proof arrives.
+                  </p>
+                </div>
+                <p className="font-semibold">{formatPeso(order.totalMinor)}</p>
+              </Glass>
+            ))}
+          </Section>
+        </div>
       ) : null}
 
-      <Section title="Applications" empty="No applications yet. Share the application link with prospective resellers.">
-        {admin.applications.map((application) => (
-          <ApplicationCard
-            key={application.id}
-            application={application}
+      {tab === 'payments' ? (
+        <div
+          role="tabpanel"
+          id="portal-panel-payments"
+          aria-labelledby="portal-tab-payments"
+          className="flex flex-col gap-6"
+        >
+          <p className="text-sm text-ink-500">
+            Proofs for the remaining balance of confirmed orders. Check each one in your GCash or bank app.
+          </p>
+          {proofs ? (
+            <Section
+              title="Balance payments to verify"
+              empty="No balance payments are waiting. Proofs sent before confirmation are checked in the Orders tab."
+            >
+              {proofs.map((proof) => (
+                <ProofCard
+                  key={proof.id}
+                  proof={proof}
+                  busy={busy === `proof:${proof.id}`}
+                  onDecide={(body) =>
+                    run(
+                      `proof:${proof.id}`,
+                      `/v1/reseller-portal/payment-proofs/${proof.id}/review`,
+                      body,
+                      (v) => paymentProofReviewResponseSchema.parse(v),
+                      body.decision === 'accept'
+                        ? `Proof for ${proof.orderNumber} verified. Record the payment in Wholesale payments or at paid fulfillment using reference ${proof.reference}.`
+                        : `Proof for ${proof.orderNumber} rejected. The reseller sees your reason.`,
+                    )
+                  }
+                />
+              ))}
+            </Section>
+          ) : (
+            <p className="text-sm text-ink-500">
+              Balance payments need file storage, which is not set up for this environment.
+            </p>
+          )}
+        </div>
+      ) : null}
+
+      {tab === 'resellers' ? (
+        <div
+          role="tabpanel"
+          id="portal-panel-resellers"
+          aria-labelledby="portal-tab-resellers"
+          className="flex flex-col gap-6"
+        >
+          <p className="text-sm text-ink-500">Approve applications and manage who can sign in to the portal.</p>
+          <Section
+            title="Applications"
+            empty="No applications yet. Share the application link with prospective resellers."
+          >
+            {admin.applications.map((application) => (
+              <ApplicationCard
+                key={application.id}
+                application={application}
+                admin={admin}
+                busy={busy === `application:${application.id}`}
+                onDecide={(body) =>
+                  run(
+                    `application:${application.id}`,
+                    `/v1/reseller-portal/applications/${application.id}/decision`,
+                    body,
+                    (v) => resellerApplicationDecisionResponseSchema.parse(v),
+                    body.decision === 'approve'
+                      ? `${application.fullName} approved. They can now sign in with ${application.email}.`
+                      : `${application.fullName} rejected.`,
+                  )
+                }
+              />
+            ))}
+          </Section>
+
+          <AccountsCard
             admin={admin}
-            busy={busy === `application:${application.id}`}
-            onDecide={(body) =>
+            busy={busy}
+            onInvite={(body) =>
               run(
-                `application:${application.id}`,
-                `/v1/reseller-portal/applications/${application.id}/decision`,
+                'invite',
+                '/v1/reseller-portal/accounts',
                 body,
-                (v) => resellerApplicationDecisionResponseSchema.parse(v),
-                body.decision === 'approve'
-                  ? `${application.fullName} approved. They can now sign in with ${application.email}.`
-                  : `${application.fullName} rejected.`,
+                (v) => resellerAccountInviteResponseSchema.parse(v),
+                'Invitation saved. The reseller signs in with that email.',
+              )
+            }
+            onStatus={(accountId, status) =>
+              run(
+                `account:${accountId}`,
+                `/v1/reseller-portal/accounts/${accountId}/status`,
+                { status },
+                (v) => resellerAccountStatusResponseSchema.parse(v),
+                status === 'suspended' ? 'Portal access suspended.' : 'Portal access restored.',
               )
             }
           />
-        ))}
-      </Section>
+        </div>
+      ) : null}
 
-      <AccountsCard
-        admin={admin}
-        busy={busy}
-        onInvite={(body) =>
-          run(
-            'invite',
-            '/v1/reseller-portal/accounts',
-            body,
-            (v) => resellerAccountInviteResponseSchema.parse(v),
-            'Invitation saved. The reseller signs in with that email.',
-          )
-        }
-        onStatus={(accountId, status) =>
-          run(
-            `account:${accountId}`,
-            `/v1/reseller-portal/accounts/${accountId}/status`,
-            { status },
-            (v) => resellerAccountStatusResponseSchema.parse(v),
-            status === 'suspended' ? 'Portal access suspended.' : 'Portal access restored.',
-          )
-        }
-      />
+      {tab === 'settings' ? (
+        <div
+          role="tabpanel"
+          id="portal-panel-settings"
+          aria-labelledby="portal-tab-settings"
+          className="flex flex-col gap-6"
+        >
+          <p className="text-sm text-ink-500">
+            Where portal orders are filled, and the GCash and bank accounts resellers pay into.
+          </p>
+          <SettingsCard
+            admin={admin}
+            busy={busy !== null}
+            link={link}
+            onSave={(body) =>
+              run(
+                'settings',
+                '/v1/reseller-portal/settings',
+                body,
+                (v) => resellerPortalSettingsResponseSchema.parse(v),
+                'Portal settings saved.',
+              )
+            }
+          />
+
+          <PaymentAccountsCard
+            accounts={admin.paymentAccounts ?? []}
+            busy={busy !== null}
+            onSave={(body, target) =>
+              run(
+                target,
+                '/v1/reseller-portal/payment-accounts',
+                body,
+                (v) => resellerPaymentAccountSaveResponseSchema.parse(v),
+                'Payment account saved. Resellers see it when they pay.',
+              )
+            }
+            onUploadQr={async (accountId, body) => {
+              if (!scope || !api) throw new Error('Sign in again to upload.')
+              const response = await fetch(
+                `${api.replace(/\/$/, '')}/v1/reseller-portal/payment-accounts/${accountId}/qr`,
+                {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bearer ${scope.token}`,
+                    'X-Tenant-Id': scope.tenantId,
+                    'Idempotency-Key': `payment-qr-${crypto.randomUUID()}`,
+                  },
+                  body,
+                },
+              )
+              const data: unknown = await response.json().catch(() => null)
+              if (!response.ok)
+                throw new Error(
+                  (data as { error?: { message?: string } } | null)?.error?.message ?? 'The QR code was not uploaded.',
+                )
+              paymentQrUploadResponseSchema.parse(data)
+              setMessage('QR code saved. Resellers see it when they pay.')
+              await load(scope)
+            }}
+          />
+        </div>
+      ) : null}
     </div>
   )
 }
