@@ -13,6 +13,11 @@ export interface Bindings {
   FILES?: FileBucket
   /** Secret for signing file links (Worker secret, never a plain var). */
   FILES_URL_SECRET?: string
+  /** Web Push sender keys (Worker secrets). Push is off until both are set. */
+  VAPID_PUBLIC_KEY?: string
+  VAPID_PRIVATE_KEY?: string
+  /** Contact for push services: an https URL or mailto. */
+  VAPID_SUBJECT?: string
   HYPERDRIVE?: {
     connectionString: string
   }

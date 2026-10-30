@@ -16,6 +16,8 @@ import {
   portalShipmentUpdateResponseSchema,
   resellerPortalReportSchema,
   resellerStockIssuesSchema,
+  pushSubscriptionResponseSchema,
+  type PushSubscriptionResponse,
   resellerNotificationsSchema,
   resellerNotificationReadResponseSchema,
   type ResellerStockIssue,
@@ -177,6 +179,20 @@ export interface ResellerPortalRepository {
     notificationId: string | null,
     bindings: Bindings,
   ): Promise<ResellerNotificationReadResponse>
+  /** Saves this browser's push subscription for a reseller ('reseller') or a Back Office member ('member'). */
+  savePushSubscription(
+    audience: 'reseller' | 'member',
+    userId: string,
+    tenantId: string,
+    subscription: { endpoint: string; p256dh: string; auth: string; userAgent: string | null },
+    bindings: Bindings,
+  ): Promise<PushSubscriptionResponse>
+  removePushSubscription(
+    userId: string,
+    tenantId: string,
+    endpoint: string,
+    bindings: Bindings,
+  ): Promise<PushSubscriptionResponse>
   /** Read-only report for the Back Office Reports page; dates are in the business's time zone. */
   loadReport(
     userId: string,
@@ -325,6 +341,22 @@ export const resellerPortalPostgresRepository: ResellerPortalRepository = {
       'select app.mark_reseller_notifications_read($1::uuid, $2::uuid, $3::uuid) response',
       [authUserId, tenantId, notificationId],
       (value) => resellerNotificationReadResponseSchema.parse(value),
+    ),
+  savePushSubscription: (audience, userId, tenantId, subscription, bindings) =>
+    queryOne(
+      bindings,
+      audience === 'reseller'
+        ? 'select app.save_reseller_push_subscription($1::uuid, $2::uuid, $3::jsonb) response'
+        : 'select app.save_member_push_subscription($1::uuid, $2::uuid, $3::jsonb) response',
+      [userId, tenantId, JSON.stringify(subscription)],
+      (value) => pushSubscriptionResponseSchema.parse(value),
+    ),
+  removePushSubscription: (userId, tenantId, endpoint, bindings) =>
+    queryOne(
+      bindings,
+      'select app.remove_push_subscription($1::uuid, $2::uuid, $3::text) response',
+      [userId, tenantId, endpoint],
+      (value) => pushSubscriptionResponseSchema.parse(value),
     ),
   loadReport: (userId, tenantId, from, to, bindings) =>
     queryOne(

@@ -368,6 +368,75 @@ describe('reseller portal API', () => {
     expect(checkCartStock).toHaveBeenCalledWith(resellerUserId, tenantId, orderRequest.lines, bindings)
   })
 
+  it('saves and removes push subscriptions once push keys are configured', async () => {
+    const savePushSubscription = vi.fn(async () => ({ enabled: true }))
+    const removePushSubscription = vi.fn(async () => ({ enabled: false }))
+    const app = portalApp(repository({ savePushSubscription, removePushSubscription }))
+    const subscription = {
+      endpoint: 'https://fcm.googleapis.com/fcm/send/abc',
+      keys: { p256dh: 'B'.repeat(87), auth: 'a'.repeat(22) },
+      expirationTime: null,
+    }
+    const resellerHeaders = {
+      authorization: 'Bearer reseller-token',
+      'content-type': 'application/json',
+      'x-tenant-id': tenantId,
+    }
+    const keyless = await app.request('/v1/push/public-key', {}, bindings)
+    expect(await keyless.json()).toEqual({ publicKey: null })
+    const notConfigured = await app.request(
+      '/v1/portal/push-subscriptions',
+      { method: 'POST', headers: resellerHeaders, body: JSON.stringify(subscription) },
+      bindings,
+    )
+    expect(notConfigured.status).toBe(409)
+    const pushBindings = { ...bindings, VAPID_PUBLIC_KEY: 'public-key', VAPID_PRIVATE_KEY: 'private-key' }
+    expect(await (await app.request('/v1/push/public-key', {}, pushBindings)).json()).toEqual({
+      publicKey: 'public-key',
+    })
+    const insecure = await app.request(
+      '/v1/portal/push-subscriptions',
+      {
+        method: 'POST',
+        headers: resellerHeaders,
+        body: JSON.stringify({ ...subscription, endpoint: 'http://x.test' }),
+      },
+      pushBindings,
+    )
+    expect(insecure.status).toBe(400)
+    const saved = await app.request(
+      '/v1/portal/push-subscriptions',
+      { method: 'POST', headers: resellerHeaders, body: JSON.stringify(subscription) },
+      pushBindings,
+    )
+    expect(saved.status).toBe(200)
+    expect(savePushSubscription).toHaveBeenCalledWith(
+      'reseller',
+      resellerUserId,
+      tenantId,
+      { endpoint: subscription.endpoint, p256dh: 'B'.repeat(87), auth: 'a'.repeat(22), userAgent: null },
+      pushBindings,
+    )
+    const member = await app.request(
+      '/v1/push-subscriptions',
+      {
+        method: 'POST',
+        headers: { ...resellerHeaders, authorization: 'Bearer owner-token' },
+        body: JSON.stringify(subscription),
+      },
+      pushBindings,
+    )
+    expect(member.status).toBe(200)
+    expect(savePushSubscription).toHaveBeenLastCalledWith('member', ownerId, tenantId, expect.anything(), pushBindings)
+    const removed = await app.request(
+      '/v1/portal/push-subscriptions/remove',
+      { method: 'POST', headers: resellerHeaders, body: JSON.stringify({ endpoint: subscription.endpoint }) },
+      bindings,
+    )
+    expect(removed.status).toBe(200)
+    expect(removePushSubscription).toHaveBeenCalledWith(resellerUserId, tenantId, subscription.endpoint, bindings)
+  })
+
   it('lists reseller notifications and marks them read', async () => {
     const loadNotifications = vi.fn(async () => ({ unreadCount: 0, items: [] }))
     const markNotificationsRead = vi.fn(async () => ({ unreadCount: 0 }))

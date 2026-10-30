@@ -20,6 +20,7 @@
     "format": "prettier --write \"apps/**/*.{ts,tsx,js,mjs,json,jsonc,css}\" \"packages/**/*.{ts,tsx,js,mjs,json,css}\" \"*.{ts,js,mjs,json,jsonc}\" \".github/**/*.yml\" \"scripts/staging-*.mjs\"",
     "format:check": "prettier --check \"apps/**/*.{ts,tsx,js,mjs,json,jsonc,css}\" \"packages/**/*.{ts,tsx,js,mjs,json,css}\" \"*.{ts,js,mjs,json,jsonc}\" \".github/**/*.yml\" \"scripts/staging-*.mjs\"",
     "lint": "eslint apps packages \"scripts/staging-*.mjs\"",
+    "push:keys": "node scripts/push-keys.mjs",
     "security:dependencies": "node scripts/dependency-audit.mjs",
     "security:secrets": "node scripts/secret-scan.mjs",
     "test": "vitest run && node --test scripts/staging-isolation-uat.test.mjs scripts/staging-fund-recovery-uat.test.mjs scripts/staging-paid-replay-uat.test.mjs scripts/staging-paid-rollback-uat.test.mjs scripts/staging-approval-consumption-uat.test.mjs scripts/staging-second-tenant-uat.test.mjs scripts/staging-second-tenant-fixtures.test.mjs scripts/staging-cross-tenant-owner.test.mjs scripts/staging-cross-tenant-tester.test.mjs",

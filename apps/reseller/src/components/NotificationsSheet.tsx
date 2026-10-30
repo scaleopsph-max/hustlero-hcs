@@ -12,6 +12,9 @@ import {
   Store,
   Truck,
   TriangleAlert,
+  BellOff,
+  Share,
+  Smartphone,
   X,
   type LucideIcon,
 } from 'lucide-react'
@@ -38,12 +41,14 @@ export function NotificationsSheet({
   onOpen,
   onMarkAllRead,
   onClose,
+  push,
 }: {
   items: ResellerNotification[]
   unreadCount: number
   onOpen: (notification: ResellerNotification) => void
   onMarkAllRead: () => void
   onClose: () => void
+  push?: PushControl
 }) {
   const closeButton = useRef<HTMLButtonElement>(null)
   useEffect(() => {
@@ -102,6 +107,7 @@ export function NotificationsSheet({
             </button>
           </div>
         </header>
+        {push ? <PushCard {...push} /> : null}
         {items.length === 0 ? (
           <div className="flex flex-col items-center gap-3 border-t border-white/10 px-6 py-12 text-center text-ink-300">
             <Bell size={32} />
@@ -139,6 +145,57 @@ export function NotificationsSheet({
               )
             })}
           </ul>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** Where this phone stands on push, and the actions the sheet offers. */
+export type PushStatus = 'on' | 'off' | 'blocked' | 'ios-needs-install' | 'unsupported' | 'not-configured'
+export type PushControl = { status: PushStatus; busy: boolean; onEnable: () => void; onDisable: () => void }
+
+function PushCard({ status, busy, onEnable, onDisable }: PushControl) {
+  if (status === 'unsupported' || status === 'not-configured') return null
+  return (
+    <div className="mx-5 mb-3 flex items-start gap-3 rounded-[18px] border border-white/10 bg-white/5 p-3 text-small">
+      <span className="mt-0.5 flex size-8 flex-none items-center justify-center rounded-full bg-gold-500/15 text-gold-300">
+        {status === 'on' ? <Bell size={16} /> : status === 'blocked' ? <BellOff size={16} /> : <Smartphone size={16} />}
+      </span>
+      <div className="min-w-0 flex-1">
+        {status === 'on' ? (
+          <>
+            <p className="font-semibold">Phone notifications are on</p>
+            <p className="text-ink-300">You will get order updates even when the portal is closed.</p>
+            <button type="button" disabled={busy} onClick={onDisable} className="mt-1 text-ink-300 underline">
+              {busy ? 'Turning off…' : 'Turn off'}
+            </button>
+          </>
+        ) : status === 'blocked' ? (
+          <>
+            <p className="font-semibold">Notifications are blocked</p>
+            <p className="text-ink-300">
+              Allow notifications for this site in your browser settings, then open Updates again.
+            </p>
+          </>
+        ) : status === 'ios-needs-install' ? (
+          <>
+            <p className="font-semibold">Get updates on your iPhone</p>
+            <p className="flex flex-wrap items-center gap-1 text-ink-300">
+              Tap <Share size={14} aria-label="Share" /> Share, then Add to Home Screen. Open the portal from your Home
+              Screen and turn on notifications here.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="font-semibold">Get updates on your phone</p>
+            <p className="text-ink-300">
+              Know right away when your order is confirmed, shipped, or your payment is verified.
+            </p>
+            <Button size="sm" variant="primary" className="mt-2" disabled={busy} onClick={onEnable}>
+              {busy ? 'Turning on…' : 'Turn on notifications'}
+            </Button>
+          </>
         )}
       </div>
     </div>

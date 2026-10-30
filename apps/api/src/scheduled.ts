@@ -1,6 +1,7 @@
 import { Client } from 'pg'
 
 import type { Bindings } from './env'
+import { deliverPushNotifications } from './push-delivery'
 
 type Sweep = (bindings: Bindings) => Promise<number>
 
@@ -17,8 +18,16 @@ export const expireResellerPaymentHolds: Sweep = async (bindings) => {
   }
 }
 
-/** Cron entry point. A failed sweep is logged and retried by the next run. */
-export function createScheduledHandler(sweep: Sweep = expireResellerPaymentHolds) {
+type PushDelivery = (
+  bindings: Bindings,
+) => Promise<{ notifications: number; sent: number; gone: number; failed: number }>
+
+/** Cron entry point: expire unpaid holds first (their notices go out in the same run), then send pushes.
+ * A failed step is logged and retried by the next run. */
+export function createScheduledHandler(
+  sweep: Sweep = expireResellerPaymentHolds,
+  push: PushDelivery = deliverPushNotifications,
+) {
   return async (_controller: unknown, bindings: Bindings): Promise<void> => {
     try {
       const expired = await sweep(bindings)
@@ -29,6 +38,14 @@ export function createScheduledHandler(sweep: Sweep = expireResellerPaymentHolds
           event: 'reseller_payment_hold_sweep_failed',
           message: error instanceof Error ? error.message : 'unknown',
         }),
+      )
+    }
+    try {
+      const pushed = await push(bindings)
+      if (pushed.notifications > 0) console.log(JSON.stringify({ event: 'push_notifications_sent', ...pushed }))
+    } catch (error) {
+      console.error(
+        JSON.stringify({ event: 'push_delivery_failed', message: error instanceof Error ? error.message : 'unknown' }),
       )
     }
   }

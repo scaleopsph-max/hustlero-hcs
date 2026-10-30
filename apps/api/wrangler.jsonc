@@ -20,6 +20,8 @@
         "POS_ORIGIN": "http://localhost:3002",
         "ADMIN_ORIGIN": "http://localhost:3003",
         "RESELLER_ORIGIN": "http://localhost:3004",
+        // Contact sent to browser push services (Web Push). Keys: npm run push:keys -- <environment>
+        "VAPID_SUBJECT": "https://hustlero-hcs-api-development.scaleopsph.workers.dev",
       },
       "hyperdrive": [
         {
@@ -33,8 +35,8 @@
           "bucket_name": "hustlero-hcs-files-development",
         },
       ],
-      // Cancels unpaid reseller portal orders after their 4-hour window and releases the held stock.
-      // Add to production only together with the pay-first migration.
+      // Every 5 minutes: cancels unpaid reseller portal orders after their 4-hour window (releasing the held
+      // stock) and sends push notifications. Add to production only together with those migrations.
       "triggers": {
         "crons": ["*/5 * * * *"],
       },
@@ -47,6 +49,8 @@
         "BACKOFFICE_ORIGIN": "https://hustlero-hcs-backoffice-staging.scaleopsph.workers.dev",
         "POS_ORIGIN": "https://hustlero-hcs-pos-staging.scaleopsph.workers.dev",
         "ADMIN_ORIGIN": "https://hustlero-hcs-admin-staging.scaleopsph.workers.dev",
+        // Contact sent to browser push services (Web Push). Keys: npm run push:keys -- <environment>
+        "VAPID_SUBJECT": "https://hustlero-hcs-api-staging.scaleopsph.workers.dev",
       },
       "hyperdrive": [
         {
@@ -60,8 +64,8 @@
           "bucket_name": "hustlero-hcs-files-staging",
         },
       ],
-      // Cancels unpaid reseller portal orders after their 4-hour window and releases the held stock.
-      // Add to production only together with the pay-first migration.
+      // Every 5 minutes: cancels unpaid reseller portal orders after their 4-hour window (releasing the held
+      // stock) and sends push notifications. Add to production only together with those migrations.
       "triggers": {
         "crons": ["*/5 * * * *"],
       },
@@ -74,6 +78,8 @@
         "BACKOFFICE_ORIGIN": "https://hustlero-hcs-backoffice.scaleopsph.workers.dev",
         "POS_ORIGIN": "https://hustlero-hcs-pos.scaleopsph.workers.dev",
         "ADMIN_ORIGIN": "https://hustlero-hcs-admin.scaleopsph.workers.dev",
+        // Contact sent to browser push services (Web Push). Keys: npm run push:keys -- <environment>
+        "VAPID_SUBJECT": "https://hustlero-hcs-api.scaleopsph.workers.dev",
       },
       "hyperdrive": [
         {

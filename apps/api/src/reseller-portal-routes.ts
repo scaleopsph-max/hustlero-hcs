@@ -11,6 +11,8 @@ import {
   portalShipmentUpdateRequestSchema,
   resellerPortalReportFilterSchema,
   resellerNotificationReadRequestSchema,
+  pushSubscriptionRequestSchema,
+  pushUnsubscribeRequestSchema,
   type ResellerOrder,
   type ResellerPaymentAccount,
   type ResellerPortalCatalog,
@@ -18,6 +20,8 @@ import {
 import type { Context, Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { ZodType } from 'zod'
+
+import { readVapidKeys } from './push-delivery'
 
 import { readBearerToken, type AccessTokenVerifier } from './auth'
 import type { Bindings } from './env'
@@ -62,6 +66,8 @@ const decisionIdempotencyPattern = /^[A-Za-z0-9_-]{16,120}$/
 const errorMap: Record<string, { status: ContentfulStatusCode; code: string; message: string }> = {
   HCSD0: { status: 403, code: 'REPORTING_ACCESS_DENIED', message: 'Your role cannot view these reports.' },
   HCSD1: { status: 400, code: 'INVALID_REPORT_FILTERS', message: 'Choose a valid date range of up to one year.' },
+  HCPU1: { status: 400, code: 'INVALID_PUSH_SUBSCRIPTION', message: 'This browser could not turn on notifications.' },
+  HCSN0: { status: 403, code: 'NOTIFICATION_ACCESS_DENIED', message: 'Sign in to this business to get notifications.' },
   HCRP9: {
     status: 409,
     code: 'PAYMENT_METHOD_REQUIRED',
@@ -394,6 +400,60 @@ export function registerResellerPortalRoutes(
       ),
     )
   })
+
+  // Push notifications ---------------------------------------------------------
+
+  app.get('/v1/push/public-key', (context) =>
+    context.json({ publicKey: readVapidKeys(context.env)?.publicKey ?? null }),
+  )
+
+  const pushRoutes = (prefix: string, audience: 'reseller' | 'member') => {
+    const who = (context: AppContext) =>
+      audience === 'reseller' ? resolveReseller(context, true) : resolveAdmin(context)
+    app.post(`${prefix}/push-subscriptions`, async (context) => {
+      const person = await who(context)
+      if (person instanceof Response) return person
+      const request = await readJson(context, pushSubscriptionRequestSchema)
+      if (!request)
+        return fail(context, 400, 'INVALID_PUSH_SUBSCRIPTION', 'This browser could not turn on notifications.')
+      if (!readVapidKeys(context.env))
+        return fail(context, 409, 'PUSH_NOT_CONFIGURED', 'Phone notifications are not set up for this business yet.')
+      return run(context, async () =>
+        context.json(
+          await dependencies.repository.savePushSubscription(
+            audience,
+            person.userId,
+            person.tenantId,
+            {
+              endpoint: request.endpoint,
+              p256dh: request.keys.p256dh,
+              auth: request.keys.auth,
+              userAgent: context.req.header('user-agent')?.slice(0, 300) ?? null,
+            },
+            context.env,
+          ),
+        ),
+      )
+    })
+    app.post(`${prefix}/push-subscriptions/remove`, async (context) => {
+      const person = await who(context)
+      if (person instanceof Response) return person
+      const request = await readJson(context, pushUnsubscribeRequestSchema)
+      if (!request) return fail(context, 400, 'INVALID_PUSH_SUBSCRIPTION', 'Choose the browser to turn off.')
+      return run(context, async () =>
+        context.json(
+          await dependencies.repository.removePushSubscription(
+            person.userId,
+            person.tenantId,
+            request.endpoint,
+            context.env,
+          ),
+        ),
+      )
+    })
+  }
+  pushRoutes('/v1/portal', 'reseller')
+  pushRoutes('/v1', 'member')
 
   // Back Office administration -----------------------------------------------
 

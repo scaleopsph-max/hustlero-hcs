@@ -2,6 +2,8 @@
 
 import {
   paymentProofUploadResponseSchema,
+  pushPublicKeyResponseSchema,
+  pushSubscriptionResponseSchema,
   resellerNotificationReadResponseSchema,
   resellerNotificationsSchema,
   resellerOrderSubmitResponseSchema,
@@ -15,7 +17,19 @@ import {
   type ResellerPortalCatalog,
   type ResellerPortalSession,
 } from '@hcs/contracts'
-import { Button, Glass, Logo, StateCard, Surface, cn, useToast } from '@hcs/ui'
+import {
+  Button,
+  Glass,
+  Logo,
+  StateCard,
+  Surface,
+  cn,
+  disablePush,
+  enablePush,
+  pushState,
+  pushSupport,
+  useToast,
+} from '@hcs/ui'
 import { Bell, ClipboardList, Store, ShoppingCart, UserRound, type LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 
@@ -25,7 +39,7 @@ import { PortalApiError, portalAuth, portalRequest, readSelectedTenant, saveSele
 import { AccountView } from './AccountView'
 import { CartView } from './CartView'
 import { CatalogView } from './CatalogView'
-import { NotificationsSheet } from './NotificationsSheet'
+import { NotificationsSheet, type PushStatus } from './NotificationsSheet'
 import { OrdersView } from './OrdersView'
 import { SignIn } from './SignIn'
 
@@ -52,6 +66,9 @@ export function PortalApp() {
   const [error, setError] = useState<string | null>(null)
   const [notifications, setNotifications] = useState<ResellerNotifications>({ unreadCount: 0, items: [] })
   const [inboxOpen, setInboxOpen] = useState(false)
+  const [pushStatus, setPushStatus] = useState<PushStatus>('unsupported')
+  const [pushKey, setPushKey] = useState<string | null>(null)
+  const [pushBusy, setPushBusy] = useState(false)
 
   useEffect(() => {
     if (!auth) {
@@ -133,6 +150,98 @@ export function PortalApp() {
       document.removeEventListener('visibilitychange', onVisible)
     }
   }, [token, tenantId, loadNotifications, loadOrders])
+
+  // Phone notifications: what this browser can do, and whether it already gets pushes.
+  useEffect(() => {
+    if (!token) return
+    const support = pushSupport()
+    if (support !== 'supported') {
+      setPushStatus(support)
+      return
+    }
+    portalRequest('/v1/push/public-key', (value) => pushPublicKeyResponseSchema.parse(value))
+      .then(async ({ publicKey }) => {
+        setPushKey(publicKey)
+        setPushStatus(publicKey ? await pushState() : 'not-configured')
+      })
+      .catch(() => setPushStatus('not-configured'))
+  }, [token])
+
+  // A push that arrives while the portal is open refreshes the badge and orders right away.
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+    const onMessage = (event: MessageEvent) => {
+      if ((event.data as { type?: string } | null)?.type === 'push-received') {
+        void loadNotifications()
+        void loadOrders()
+      }
+    }
+    navigator.serviceWorker.addEventListener('message', onMessage)
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage)
+  }, [loadNotifications, loadOrders])
+
+  // Opening a push lands on /?order=<id>: show that order.
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    const order = url.searchParams.get('order')
+    if (!order) return
+    setFocusOrderId(order)
+    setTab('orders')
+    url.searchParams.delete('order')
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
+  }, [])
+
+  async function turnOnPush() {
+    if (!token || !tenantId || !pushKey) return
+    setPushBusy(true)
+    try {
+      const next = await enablePush('/sw.js', pushKey, (subscription) =>
+        portalRequest('/v1/portal/push-subscriptions', (value) => pushSubscriptionResponseSchema.parse(value), {
+          token,
+          tenantId,
+          method: 'POST',
+          body: subscription,
+        }),
+      )
+      setPushStatus(next)
+      if (next === 'on') toast.success('Phone notifications are on.')
+      else if (next === 'blocked') toast.error('Notifications are blocked. Allow them in your browser settings.')
+    } catch (pushError) {
+      toast.error(
+        messageOf(pushError) === 'Something went wrong while loading. Please try again.'
+          ? 'Notifications could not be turned on. Please try again.'
+          : messageOf(pushError),
+      )
+    } finally {
+      setPushBusy(false)
+    }
+  }
+
+  async function turnOffPush() {
+    if (!token || !tenantId) return
+    setPushBusy(true)
+    try {
+      setPushStatus(
+        await disablePush((endpoint) =>
+          portalRequest(
+            '/v1/portal/push-subscriptions/remove',
+            (value) => pushSubscriptionResponseSchema.parse(value),
+            {
+              token,
+              tenantId,
+              method: 'POST',
+              body: { endpoint },
+            },
+          ),
+        ),
+      )
+      toast.success('Phone notifications are off.')
+    } catch {
+      toast.error('Notifications could not be turned off. Please try again.')
+    } finally {
+      setPushBusy(false)
+    }
+  }
 
   async function markRead(notificationId: string | null) {
     if (!token || !tenantId) return
@@ -301,6 +410,12 @@ export function PortalApp() {
             onOpen={openNotification}
             onMarkAllRead={() => void markRead(null)}
             onClose={() => setInboxOpen(false)}
+            push={{
+              status: pushStatus,
+              busy: pushBusy,
+              onEnable: () => void turnOnPush(),
+              onDisable: () => void turnOffPush(),
+            }}
           />
         ) : null}
         <main className="flex-1 px-4 pb-28 pt-2">

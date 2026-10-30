@@ -403,6 +403,39 @@ select is(app.reseller_cart_stock_issues('1e100000-0000-4000-8000-000000000010',
 select is(jsonb_array_length(app.reseller_cart_stock_issues('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', '[{"variantId":"8e100000-0000-4000-8000-000000000001","quantityMilli":1000}]')->'stockIssues'), 0,
   'items with enough stock are not listed');
 
+-- Web Push: subscriptions, one push per new notification, and dead endpoints switched off.
+select throws_ok($$ select app.save_reseller_push_subscription('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', '{"endpoint":"http://insecure","p256dh":"x","auth":"y"}') $$, 'HCPU1', null,
+  'push subscriptions must be valid https endpoints with keys');
+select is(app.save_reseller_push_subscription('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', '{"endpoint":"https://push.example.test/sub/1","p256dh":"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB","auth":"aaaaaaaaaaaaaaaaaaaaaa"}')->>'enabled', 'true', 'the reseller turns on push');
+select is(app.save_member_push_subscription('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', '{"endpoint":"https://push.example.test/sub/2","p256dh":"CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC","auth":"bbbbbbbbbbbbbbbbbbbbbb"}')->>'enabled', 'true', 'the owner turns on push');
+select throws_ok($$ select app.save_member_push_subscription('1e100000-0000-4000-8000-000000000012', '2e100000-0000-4000-8000-000000000001', '{"endpoint":"https://push.example.test/sub/2","p256dh":"CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC","auth":"bbbbbbbbbbbbbbbbbbbbbb"}') $$, 'HCSN0', null,
+  'only members can subscribe for Back Office pushes');
+select is(jsonb_array_length(app.collect_push_batch(100)->'items'), 0, 'turning push on does not replay older notifications');
+update app.push_subscriptions set created_at = now() - interval '1 hour' where tenant_id = '2e100000-0000-4000-8000-000000000001';
+update app.reseller_notifications set read_at = null where tenant_id = '2e100000-0000-4000-8000-000000000001' and kind = 'shipped';
+select is((select count(*)::integer from jsonb_array_elements(app.collect_push_batch(100)->'items') x where x->>'audience' = 'reseller'), 1,
+  'unread reseller notifications after subscribing are pushed');
+select is((select x->>'url' from jsonb_array_elements(app.collect_push_batch(100)->'items') x where x->>'audience' = 'reseller'),
+  '/?order=' || (select id::text from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'), 'the push opens the order');
+select is((select x->>'url' from jsonb_array_elements(app.collect_push_batch(100)->'items') x where x->>'audience' = 'member' limit 1),
+  '/reseller-portal', 'Back Office pushes open the reseller portal');
+select ok(not exists(select 1 from jsonb_array_elements(app.collect_push_batch(100)->'items') x where x->>'title' like '%stock%'),
+  'stock alerts and other bell items are not pushed');
+select is((app.complete_push_batch(jsonb_build_object(
+    'notifications', (select jsonb_agg(jsonb_build_object('audience', x->>'audience', 'notificationId', x->>'notificationId')) from jsonb_array_elements(app.collect_push_batch(100)->'items') x),
+    'subscriptions', jsonb_build_array(
+      jsonb_build_object('id', (select id from app.push_subscriptions where endpoint = 'https://push.example.test/sub/1'), 'outcome', 'sent'),
+      jsonb_build_object('id', (select id from app.push_subscriptions where endpoint = 'https://push.example.test/sub/2'), 'outcome', 'gone'))))->>'disabled')::integer, 1,
+  'a gone endpoint is switched off');
+select is(jsonb_array_length(app.collect_push_batch(100)->'items'), 0, 'each notification is pushed once');
+select ok((select last_success_at is not null from app.push_subscriptions where endpoint = 'https://push.example.test/sub/1'), 'working subscriptions are stamped');
+select is(app.remove_push_subscription('1e100000-0000-4000-8000-000000000012', '2e100000-0000-4000-8000-000000000001', 'https://push.example.test/sub/1')->>'enabled', 'false', 'removing someone else''s endpoint changes nothing');
+select ok((select disabled_at is null from app.push_subscriptions where endpoint = 'https://push.example.test/sub/1'), 'the reseller''s subscription stays on');
+select lives_ok($$ select app.remove_push_subscription('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', 'https://push.example.test/sub/1') $$, 'the reseller turns push off');
+select ok((select disabled_at is not null from app.push_subscriptions where endpoint = 'https://push.example.test/sub/1'), 'push is off for that browser');
+select throws_ok($$ update app.reseller_notifications set title = 'x', push_sent_at = now() where tenant_id = '2e100000-0000-4000-8000-000000000001' $$, 'P0001', null,
+  'marking a push never allows rewriting the notification');
+
 select lives_ok($$ select app.set_reseller_account_status('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
   (select id from app.reseller_accounts where tenant_id = '2e100000-0000-4000-8000-000000000001'), 'suspended', 'suspend-request') $$,
   'owner suspends the reseller account');
@@ -454,6 +487,8 @@ select ok(not has_function_privilege('hcs_hyperdrive', 'app.update_portal_shipme
   'API role cannot skip sale completion');
 select ok(has_function_privilege('hcs_hyperdrive', 'app.load_reseller_notifications(uuid,uuid,integer)', 'execute'), 'API role loads reseller notifications');
 select ok(not has_function_privilege('hcs_hyperdrive', 'app.sync_reseller_notifications(uuid,uuid)', 'execute'), 'API role cannot write notifications directly');
+select ok(has_function_privilege('hcs_hyperdrive', 'app.collect_push_batch(integer)', 'execute'), 'API role collects pushes');
+select ok(not has_function_privilege('hcs_hyperdrive', 'app.save_push_subscription(uuid,uuid,uuid,jsonb)', 'execute'), 'API role cannot save subscriptions for anyone');
 select ok(has_function_privilege('hcs_hyperdrive', 'app.load_reseller_portal_report(uuid,uuid,date,date)', 'execute'),
   'API role loads the reseller portal report');
 select * from finish();
