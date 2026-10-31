@@ -1,5 +1,19 @@
 @import '@hcs/config/globals.css';
 
+/* Portal accent: HCS gold by default; the business's branding replaces these at runtime. */
+:root {
+  --accent-50: 251 246 228;
+  --accent-100: 245 233 190;
+  --accent-200: 235 214 138;
+  --accent-300: 226 193 95;
+  --accent-400: 217 178 74;
+  --accent-500: 212 175 55;
+  --accent-600: 184 145 42;
+  --accent-700: 143 111 28;
+  --accent-800: 107 82 20;
+  --accent-900: 71 54 13;
+}
+
 @keyframes sheet-up {
   from {
     transform: translateY(24px);

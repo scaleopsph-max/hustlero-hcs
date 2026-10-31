@@ -16,6 +16,8 @@ import {
   portalShipmentUpdateResponseSchema,
   resellerPortalReportSchema,
   resellerStockIssuesSchema,
+  resellerBrandingSchema,
+  type ResellerBrandingSaveRequest,
   resellerCreditApplyResponseSchema,
   resellerPointsRedeemResponseSchema,
   resellerPointsSettingsResponseSchema,
@@ -54,7 +56,6 @@ import {
   type ResellerOrderSubmitResponse,
   type ResellerPaymentAccountSaveRequest,
   type ResellerPaymentAccountSaveResponse,
-  type ResellerPortalPublic,
   type ResellerPortalSession,
   type ResellerPortalSettingsRequest,
   type ResellerPortalSettingsResponse,
@@ -78,11 +79,22 @@ export const storedPaymentAccountSchema = resellerPaymentAccountSchema
   .omit({ qrUrl: true })
   .extend({ qrStorageKey: z.string().min(1).nullable() })
 export type StoredPaymentAccount = z.infer<typeof storedPaymentAccountSchema>
+/** Branding as stored: the logo carries its storage key until the API signs it. */
+export const storedBrandingSchema = resellerBrandingSchema
+  .omit({ logoUrl: true })
+  .extend({ logoStorageKey: z.string().min(1).nullable() })
+export type StoredBranding = z.infer<typeof storedBrandingSchema>
+const storedResellerPortalPublicSchema = resellerPortalPublicSchema.extend({
+  branding: storedBrandingSchema.optional(),
+})
+export type StoredResellerPortalPublic = z.infer<typeof storedResellerPortalPublicSchema>
 const storedResellerPortalAdminSchema = resellerPortalAdminSchema.extend({
+  branding: storedBrandingSchema.optional(),
   reviewQueue: z.array(storedResellerOrderSchema),
   paymentAccounts: z.array(storedPaymentAccountSchema).optional(),
 })
 const storedResellerPortalCatalogSchema = resellerPortalCatalogSchema.extend({
+  branding: storedBrandingSchema.optional(),
   payment: z
     .object({
       instructions: z.string().nullable(),
@@ -102,7 +114,7 @@ export interface PortalCommand {
 }
 
 export interface ResellerPortalRepository {
-  loadPublic(tenantSlug: string, bindings: Bindings): Promise<ResellerPortalPublic>
+  loadPublic(tenantSlug: string, bindings: Bindings): Promise<StoredResellerPortalPublic>
   submitApplication(
     tenantSlug: string,
     request: ResellerApplicationRequest,
@@ -239,6 +251,13 @@ export interface ResellerPortalRepository {
     requestId: string,
     bindings: Bindings,
   ): Promise<{ redeemValueMinor: number | null; minimumPoints: number }>
+  saveBranding(
+    userId: string,
+    tenantId: string,
+    request: ResellerBrandingSaveRequest,
+    requestId: string,
+    bindings: Bindings,
+  ): Promise<StoredBranding>
   /** Read-only report for the Back Office Reports page; dates are in the business's time zone. */
   loadReport(
     userId: string,
@@ -268,7 +287,7 @@ async function queryOne<T>(bindings: Bindings, text: string, values: unknown[], 
 export const resellerPortalPostgresRepository: ResellerPortalRepository = {
   loadPublic: (tenantSlug, bindings) =>
     queryOne(bindings, 'select app.load_reseller_portal_public($1::text) response', [tenantSlug], (value) =>
-      resellerPortalPublicSchema.parse(value),
+      storedResellerPortalPublicSchema.parse(value),
     ),
   submitApplication: (tenantSlug, request, requestId, bindings) =>
     queryOne(
@@ -452,6 +471,13 @@ export const resellerPortalPostgresRepository: ResellerPortalRepository = {
       'select app.save_reseller_points_settings($1::uuid, $2::uuid, $3::jsonb, $4::text) response',
       [userId, tenantId, JSON.stringify(request), requestId],
       (value) => resellerPointsSettingsResponseSchema.parse(value),
+    ),
+  saveBranding: (userId, tenantId, request, requestId, bindings) =>
+    queryOne(
+      bindings,
+      'select app.save_reseller_portal_branding($1::uuid, $2::uuid, $3::jsonb, $4::text) response',
+      [userId, tenantId, JSON.stringify(request), requestId],
+      (value) => storedBrandingSchema.parse(value),
     ),
   loadReport: (userId, tenantId, from, to, bindings) =>
     queryOne(

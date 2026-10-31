@@ -10,7 +10,8 @@ import { Button, Field, Glass, Logo, StateCard, Surface } from '@hcs/ui'
 import { CircleCheck } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 
-import { portalRequest } from '@/lib/portal-api'
+import { applyAccent } from '@/lib/branding'
+import { fileUrl, portalRequest } from '@/lib/portal-api'
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -32,7 +33,10 @@ export function ApplicationForm() {
     }
     setSlug(value)
     portalRequest(`/v1/public/reseller-portal/${value}`, (data) => resellerPortalPublicSchema.parse(data))
-      .then(setPortal)
+      .then((loaded) => {
+        setPortal(loaded)
+        applyAccent(loaded.branding?.accentColor)
+      })
       .catch(() => setUnavailable(true))
   }, [])
 
@@ -81,10 +85,20 @@ export function ApplicationForm() {
     >
       <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-6 px-5 py-10">
         <div className="flex items-center gap-3">
-          <Logo size={44} />
+          {portal?.branding?.logoUrl ? (
+            <img
+              src={fileUrl(portal.branding.logoUrl)}
+              alt=""
+              className="size-11 flex-none rounded-[14px] object-cover"
+            />
+          ) : (
+            <Logo size={44} />
+          )}
           <div>
             <p className="font-display text-h3">Become a reseller</p>
-            {portal ? <p className="text-small text-ink-300">{portal.businessName}</p> : null}
+            {portal ? (
+              <p className="text-small text-ink-300">{portal.branding?.portalName ?? portal.businessName}</p>
+            ) : null}
           </div>
         </div>
 

@@ -432,6 +432,56 @@ export function registerFileRoutes(app: Hono<{ Bindings: Bindings }>, dependenci
     }
   })
 
+  app.post('/v1/reseller-portal/branding/logo', async (context) => {
+    const admin = await dependencies.resolveBackofficeTenant(context)
+    if (!admin) return fail(context, 403, 'FILE_ACCESS_DENIED', 'Sign in and select a business to upload a logo.')
+    const key = context.req.header('idempotency-key')
+    if (!key || !idempotencyPattern.test(key))
+      return fail(context, 400, 'INVALID_FILE', 'Provide a valid Idempotency-Key.')
+    const bucket = storage(context)
+    if (!bucket) return fail(context, 503, 'FILES_NOT_CONFIGURED', 'File storage is not configured.')
+    const form = await readForm(context)
+    if (form === 'too_large') return partProblem(context, 'too_large', 'upload', UPLOAD_REQUEST_MAX_BYTES)
+    if (form === 'invalid') return fail(context, 400, 'INVALID_FILE', 'Send the logo as multipart form data.')
+    const images: StoredMime[] = ['image/jpeg', 'image/png', 'image/webp']
+    const main = await readPart(form.image, PRODUCT_IMAGE_MAX_BYTES, images)
+    if (typeof main === 'string') return partProblem(context, main, 'logo', PRODUCT_IMAGE_MAX_BYTES)
+    try {
+      await dependencies.repository.assertBrandLogoUpload(admin.userId, admin.tenantId, context.env)
+      const fileId = crypto.randomUUID()
+      const objectKey = storageKey(admin.tenantId, 'brand_logo', fileId, 'main')
+      await putAll(bucket, [{ key: objectKey, upload: main }])
+      try {
+        const response = await dependencies.repository.recordBrandLogo(
+          admin.userId,
+          admin.tenantId,
+          {
+            fileId,
+            mimeType: main.mime,
+            sizeBytes: main.bytes.length,
+            sha256: main.sha256,
+            originalFilename: main.filename,
+          },
+          {
+            idempotencyKey: key,
+            requestHash: await dependencies.requestHash({ logo: main.sha256 }),
+            requestId: context.get('requestId'),
+          },
+          context.env,
+        )
+        if (response.fileId !== fileId) await bucket.delete(objectKey)
+        return context.json(response, 201)
+      } catch (error) {
+        await bucket.delete(objectKey).catch(() => undefined)
+        throw error
+      }
+    } catch (error) {
+      const response = mapError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
+
   app.post('/v1/catalog/products/:productId/images/order', async (context) => {
     const admin = await dependencies.resolveBackofficeTenant(context)
     if (!admin) return fail(context, 403, 'FILE_ACCESS_DENIED', 'Sign in and select a business to arrange photos.')

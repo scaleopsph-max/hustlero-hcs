@@ -209,3 +209,11 @@ authorized by these development decisions.
 - **Decision:** From their statement, resellers apply credit from returns to an open invoice (`app.apply_reseller_credit`, oldest credit first) and pay part of an open invoice with loyalty points (`app.redeem_reseller_points`). The business turns points payment on in Reseller portal → Settings and sets the peso value of a point and a minimum per use (`app.save_reseller_points_settings`). A points payment is a `redemption` loyalty transaction plus a wholesale payment under a hidden, inactive "Loyalty points" payment method allocated to the invoice, so balances, statements, and reports stay whole. Credit applications and payments now record either the team member or the reseller who made them. Reseller notifications (and push) add: payment due tomorrow, payment overdue (once per invoice, within 30 days), and "send your payment" when a pay-first hold has under an hour left and no proof.
 - **Reason:** Owner selection on 2026-10-31 (use credit, payment reminders, points redemption).
 - **Review trigger:** Rewards other than invoice payment (free items, vouchers), points expiry, or reminders by email.
+
+## ADR-051: Reseller portal branding per business
+
+- **Date:** 2026-11-01
+- **Status:** Accepted
+- **Decision:** Each business sets how its reseller portal looks in Reseller portal → Settings → Portal look: a portal name (2–60 characters; blank uses the business name), one of six accent colors (gold, emerald, sky, rose, violet, orange), and a logo. The logo is a private `brand_logo` file uploaded through `POST /v1/reseller-portal/branding/logo` and served only through short-lived signed links. `app.reseller_branding_json` feeds the public application page, the reseller catalog, and the admin view; the reseller app applies the accent at runtime through CSS variables, so one build serves every business. Only owners and admins can change branding.
+- **Reason:** Owner selection on 2026-10-31 (branding per business) so the portal can be opened to other businesses.
+- **Review trigger:** Custom domains per business, free-form colors, or branded emails.

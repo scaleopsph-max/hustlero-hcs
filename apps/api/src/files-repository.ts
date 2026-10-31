@@ -70,6 +70,14 @@ export type StoredPendingProof = z.infer<typeof storedPendingProofSchema>
 export interface FilesRepository {
   assertProductImageUpload(userId: string, tenantId: string, productId: string, bindings: Bindings): Promise<void>
   assertPaymentQrUpload(userId: string, tenantId: string, accountId: string, bindings: Bindings): Promise<void>
+  assertBrandLogoUpload(userId: string, tenantId: string, bindings: Bindings): Promise<void>
+  recordBrandLogo(
+    userId: string,
+    tenantId: string,
+    file: StoredFileMetadata,
+    command: PortalCommand,
+    bindings: Bindings,
+  ): Promise<{ status: 'uploaded'; fileId: string }>
   recordPaymentQr(
     userId: string,
     tenantId: string,
@@ -149,6 +157,20 @@ async function queryOne<T>(bindings: Bindings, text: string, values: unknown[], 
 const ignore = () => undefined
 
 export const filesPostgresRepository: FilesRepository = {
+  assertBrandLogoUpload: (userId, tenantId, bindings) =>
+    queryOne(
+      bindings,
+      'select app.assert_brand_logo_upload($1::uuid, $2::uuid)::text response',
+      [userId, tenantId],
+      ignore,
+    ),
+  recordBrandLogo: (userId, tenantId, file, command, bindings) =>
+    queryOne(
+      bindings,
+      'select app.record_brand_logo($1::uuid, $2::uuid, $3::jsonb, $4::text, $5::text, $6::text) response',
+      [userId, tenantId, JSON.stringify(file), command.idempotencyKey, command.requestHash, command.requestId],
+      (value) => z.object({ status: z.literal('uploaded'), fileId: z.uuid() }).parse(value),
+    ),
   assertPaymentQrUpload: (userId, tenantId, accountId, bindings) =>
     queryOne(
       bindings,

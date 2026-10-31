@@ -140,5 +140,21 @@ update app.sales_orders set payment_due_at = now() + interval '30 minutes' where
 select is((select x->>'title' from jsonb_array_elements(app.load_reseller_notifications('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001', 50)->'items') x where x->>'kind' = 'payment_window_closing'),
   'Send your payment for RP-000003', 'the reseller is reminded within the last hour of the payment window');
 
+-- Branding.
+select is(app.load_reseller_portal_catalog('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001')->'branding'->>'portalName', 'Kape ni Juan Trading', 'the portal uses the business name until branding is set');
+select is(app.save_reseller_portal_branding('aa000000-0000-4000-8000-000000000001', 'bb000000-0000-4000-8000-000000000001', '{"portalName":"Kape Resellers","accentColor":"emerald"}', 'brand-1')->>'accentColor', 'emerald',
+  'the owner picks an accent color');
+select throws_ok($$ select app.save_reseller_portal_branding('aa000000-0000-4000-8000-000000000001', 'bb000000-0000-4000-8000-000000000001', '{"portalName":"Kape","accentColor":"neon"}', 'brand-2') $$, 'HCRP3', null,
+  'only the offered colors are allowed');
+select lives_ok($$ select app.record_brand_logo('aa000000-0000-4000-8000-000000000001', 'bb000000-0000-4000-8000-000000000001', jsonb_build_object('fileId', 'be200000-0000-4000-8000-000000000001', 'mimeType', 'image/png',
+  'sizeBytes', 20000, 'sha256', repeat('a', 64), 'originalFilename', 'logo.png'), 'brand-logo-key-00001', 'h', 'r') $$, 'the owner uploads a logo');
+select is(app.load_reseller_portal_public('kape-ni-juan')->'branding'->>'logoStorageKey',
+  't/bb000000-0000-4000-8000-000000000001/brand_logo/be200000-0000-4000-8000-000000000001/main', 'the application page shows the logo');
+select is(app.load_reseller_portal_catalog('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001')->'branding'->>'portalName', 'Kape Resellers', 'resellers see the portal name');
+select is(app.save_reseller_portal_branding('aa000000-0000-4000-8000-000000000001', 'bb000000-0000-4000-8000-000000000001', '{"portalName":null,"accentColor":"gold","removeLogo":true}', 'brand-3')->>'logoStorageKey', null,
+  'removing the logo goes back to the default');
+select throws_ok($$ select app.save_reseller_portal_branding('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001', '{"portalName":null,"accentColor":"gold"}', 'brand-4') $$, 'HCRA1', null,
+  'resellers cannot change branding');
+
 select * from finish();
 rollback;

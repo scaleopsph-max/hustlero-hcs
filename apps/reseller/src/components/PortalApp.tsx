@@ -39,7 +39,15 @@ import { Bell, ClipboardList, Store, ShoppingCart, UserRound, type LucideIcon } 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import { readCart, setCartQuantity, summarizeCart, writeCart, type CartLine } from '@/lib/cart'
-import { PortalApiError, portalAuth, portalRequest, readSelectedTenant, saveSelectedTenant } from '@/lib/portal-api'
+import { applyAccent } from '@/lib/branding'
+import {
+  PortalApiError,
+  fileUrl,
+  portalAuth,
+  portalRequest,
+  readSelectedTenant,
+  saveSelectedTenant,
+} from '@/lib/portal-api'
 
 import { AccountView } from './AccountView'
 import { CartView } from './CartView'
@@ -305,6 +313,11 @@ export function PortalApp() {
     [tenantId],
   )
 
+  // The business's accent color recolors the portal.
+  useEffect(() => {
+    applyAccent(catalog?.branding?.accentColor)
+  }, [catalog?.branding?.accentColor])
+
   const cartCount = useMemo(() => (catalog ? summarizeCart(cart, catalog.items).itemCount : 0), [cart, catalog])
 
   async function submitOrder(request: ResellerOrderSubmitRequest, idempotencyKey: string) {
@@ -395,9 +408,19 @@ export function PortalApp() {
     body = (
       <div className="mx-auto flex min-h-dvh w-full max-w-xl flex-col">
         <header className="sticky top-0 z-10 flex items-center gap-3 bg-ink-950/80 px-4 pb-3 pt-[max(env(safe-area-inset-top),12px)] backdrop-blur-glass">
-          <Logo size={32} />
+          {catalog.branding?.logoUrl ? (
+            <img
+              src={fileUrl(catalog.branding.logoUrl)}
+              alt=""
+              className="size-8 flex-none rounded-[10px] object-cover"
+            />
+          ) : (
+            <Logo size={32} />
+          )}
           <div className="min-w-0 flex-1">
-            <p className="truncate font-display font-bold leading-tight">{catalog.account.businessName}</p>
+            <p className="truncate font-display font-bold leading-tight">
+              {catalog.branding?.portalName ?? catalog.account.businessName}
+            </p>
             <p className="truncate text-caption text-ink-400">{catalog.account.priceListName}</p>
           </div>
           <button

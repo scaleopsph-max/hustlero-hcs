@@ -20,7 +20,7 @@ const orderId = '60000000-0000-4000-8000-000000000001'
 const applicationId = '70000000-0000-4000-8000-000000000001'
 const bindings = { ENVIRONMENT: 'test', RESELLER_ORIGIN: 'https://reseller.example.test' }
 
-const catalog: ResellerPortalCatalog = {
+const catalog: Omit<ResellerPortalCatalog, 'branding'> = {
   account: {
     accountId: '80000000-0000-4000-8000-000000000001',
     customerId: '90000000-0000-4000-8000-000000000001',
@@ -577,6 +577,43 @@ describe('reseller portal API', () => {
     expect(all.status).toBe(200)
     expect(markNotificationsRead).toHaveBeenCalledWith(resellerUserId, tenantId, null, bindings)
     expect((await app.request('/v1/portal/notifications', {}, bindings)).status).toBe(401)
+  })
+
+  it('signs the business logo for the portal and the application page', async () => {
+    const branding = {
+      portalName: 'Kape Resellers',
+      accentColor: 'emerald' as const,
+      logoStorageKey: `t/${tenantId}/brand_logo/logo/main`,
+    }
+    const repo = repository({
+      loadCatalog: vi.fn(
+        async () =>
+          ({ ...catalog, branding }) as unknown as Awaited<ReturnType<ResellerPortalRepository['loadCatalog']>>,
+      ),
+      loadPublic: vi.fn(async (slug: string) => ({
+        tenantSlug: slug,
+        businessName: 'Sample Store',
+        configured: true,
+        applicationsOpen: true,
+        branding,
+      })),
+    })
+    const app = portalApp(repo)
+    const signing = { ...bindings, FILES_URL_SECRET: 'test-secret-for-signing-links-0001' }
+    const portal = await app.request(
+      '/v1/portal/catalog',
+      { headers: { authorization: 'Bearer reseller-token', 'x-tenant-id': tenantId } },
+      signing,
+    )
+    const body = (await portal.json()) as { branding: Record<string, unknown> }
+    expect(body.branding).toMatchObject({ portalName: 'Kape Resellers', accentColor: 'emerald' })
+    expect(body.branding).not.toHaveProperty('logoStorageKey')
+    expect(String(body.branding.logoUrl)).toMatch(/^\/v1\/files\//)
+    const publicPage = (await (await app.request('/v1/public/reseller-portal/sample', {}, signing)).json()) as {
+      branding: Record<string, unknown>
+    }
+    expect(publicPage.branding).not.toHaveProperty('logoStorageKey')
+    expect(String(publicPage.branding.logoUrl)).toMatch(/^\/v1\/files\//)
   })
 
   it('signs payment QR links and never returns storage keys', async () => {

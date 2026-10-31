@@ -42,7 +42,24 @@ export const resellerPaymentAccountSchema = z.object({
 
 // Public application form -------------------------------------------------
 
+/** Accent colors a business can choose for its reseller portal. */
+export const resellerAccentColorSchema = z.enum(['gold', 'emerald', 'sky', 'rose', 'violet', 'orange'])
+/** How a business's reseller portal looks: its name, accent color, and logo (a signed link). */
+export const resellerBrandingSchema = z.object({
+  portalName: z.string().min(1),
+  /** The business's own name; the portal name falls back to it. */
+  businessName: z.string().min(1).optional(),
+  accentColor: resellerAccentColorSchema,
+  logoUrl: z.string().min(1).nullable(),
+})
+export const resellerBrandingSaveRequestSchema = z.strictObject({
+  portalName: z.string().trim().min(2).max(60).nullable(),
+  accentColor: resellerAccentColorSchema,
+  removeLogo: z.boolean().optional(),
+})
+
 export const resellerPortalPublicSchema = z.object({
+  branding: resellerBrandingSchema.optional(),
   tenantSlug: z.string().min(1),
   businessName: z.string().min(1),
   configured: z.boolean(),
@@ -100,6 +117,7 @@ export const resellerCatalogItemSchema = z.object({
 })
 
 export const resellerPortalCatalogSchema = z.object({
+  branding: resellerBrandingSchema.optional(),
   account: z.object({
     accountId: uuid,
     customerId: uuid,
@@ -384,6 +402,7 @@ export const resellerOrderReviewResponseSchema = z.object({
 export const resellerPortalAdminSchema = z.object({
   /** False for members who handle orders only (managers): settings, accounts, and applications are read-only. */
   canManage: z.boolean().optional(),
+  branding: resellerBrandingSchema.optional(),
   tenantSlug: z.string().min(1),
   settings: z
     .object({
@@ -673,3 +692,7 @@ export type ResellerCreditApplyResponse = z.infer<typeof resellerCreditApplyResp
 export type ResellerPointsRedeemRequest = z.infer<typeof resellerPointsRedeemRequestSchema>
 export type ResellerPointsRedeemResponse = z.infer<typeof resellerPointsRedeemResponseSchema>
 export type ResellerPointsSettingsRequest = z.infer<typeof resellerPointsSettingsRequestSchema>
+
+export type ResellerAccentColor = z.infer<typeof resellerAccentColorSchema>
+export type ResellerBranding = z.infer<typeof resellerBrandingSchema>
+export type ResellerBrandingSaveRequest = z.infer<typeof resellerBrandingSaveRequestSchema>

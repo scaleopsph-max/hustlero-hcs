@@ -14,6 +14,7 @@ import {
   pendingPaymentProofsSchema,
   resellerPortalAvailabilitySchema,
   resellerPointsSettingsResponseSchema,
+  resellerBrandingSchema,
   sessionContextResponseSchema,
   type PendingPaymentProof,
   type ResellerOrderReviewRequest,
@@ -27,6 +28,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { selectActiveTenant } from '@/lib/active-tenant'
 import { LogisticsBoard } from './LogisticsBoard'
 import { PaymentAccountsCard } from './PaymentAccountsCard'
+import { BrandingCard } from './BrandingCard'
 import { PointsSettingsCard } from './PointsSettingsCard'
 import { PortalActivation, PortalOffSwitch } from './PortalActivation'
 import { fileUrl } from './ProductPhotos'
@@ -552,6 +554,45 @@ export function ResellerPortalWorkspace() {
               toast.success('QR code saved. Resellers see it when they pay.')
             }}
           />
+
+          {admin.settings ? (
+            <BrandingCard
+              key={`${admin.branding?.portalName}-${admin.branding?.accentColor}-${admin.branding?.logoUrl ? 1 : 0}`}
+              branding={admin.branding}
+              businessName={admin.branding?.businessName ?? admin.branding?.portalName ?? 'Your business'}
+              busy={busy === 'branding'}
+              onSave={(body) =>
+                run(
+                  'branding',
+                  '/v1/reseller-portal/branding',
+                  body,
+                  (v) => resellerBrandingSchema.parse(v),
+                  body.removeLogo
+                    ? 'Logo removed.'
+                    : 'Portal look saved. Resellers see it the next time they open the portal.',
+                )
+              }
+              onUploadLogo={async (body) => {
+                if (!scope || !api) throw new Error('Sign in again to upload.')
+                const response = await fetch(`${api.replace(/\/$/, '')}/v1/reseller-portal/branding/logo`, {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bearer ${scope.token}`,
+                    'X-Tenant-Id': scope.tenantId,
+                    'Idempotency-Key': `brand-logo-${crypto.randomUUID()}`,
+                  },
+                  body,
+                })
+                const data: unknown = await response.json().catch(() => null)
+                if (!response.ok)
+                  throw new Error(
+                    (data as { error?: { message?: string } } | null)?.error?.message ?? 'The logo was not uploaded.',
+                  )
+                await load(scope)
+                toast.success('Logo saved.')
+              }}
+            />
+          ) : null}
 
           {admin.settings ? (
             <PointsSettingsCard

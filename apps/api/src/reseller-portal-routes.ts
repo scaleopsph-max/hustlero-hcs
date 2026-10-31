@@ -14,6 +14,8 @@ import {
   resellerCreditApplyRequestSchema,
   resellerPointsRedeemRequestSchema,
   resellerPointsSettingsRequestSchema,
+  resellerBrandingSaveRequestSchema,
+  type ResellerBranding,
   resellerPortalEnableRequestSchema,
   pushSubscriptionRequestSchema,
   pushUnsubscribeRequestSchema,
@@ -32,6 +34,7 @@ import type { Bindings } from './env'
 import type {
   PortalCommand,
   ResellerPortalRepository,
+  StoredBranding,
   StoredPaymentAccount,
   StoredResellerOrder,
 } from './reseller-portal-repository'
@@ -208,6 +211,16 @@ async function presentAccounts(
   )
 }
 
+async function presentBranding(
+  branding: StoredBranding | undefined,
+  bindings: Bindings,
+  sign: ResellerPortalRouteDependencies['signFileKey'],
+): Promise<ResellerBranding | undefined> {
+  if (!branding) return undefined
+  const { logoStorageKey, ...rest } = branding
+  return { ...rest, logoUrl: logoStorageKey && sign ? await sign(logoStorageKey, bindings).catch(() => null) : null }
+}
+
 export function registerResellerPortalRoutes(
   app: Hono<{ Bindings: Bindings }>,
   dependencies: ResellerPortalRouteDependencies,
@@ -286,7 +299,11 @@ export function registerResellerPortalRoutes(
     const slug = context.req.param('slug')
     if (!slugPattern.test(slug) || slug.length > 63)
       return fail(context, 404, 'RESELLER_PORTAL_UNAVAILABLE', 'The reseller portal is not available.')
-    return run(context, async () => context.json(await dependencies.repository.loadPublic(slug, context.env)))
+    return run(context, async () => {
+      const { branding, ...portal } = await dependencies.repository.loadPublic(slug, context.env)
+      const presented = await presentBranding(branding, context.env, dependencies.signFileKey)
+      return context.json({ ...portal, ...(presented ? { branding: presented } : {}) })
+    })
   })
 
   app.post('/v1/public/reseller-portal/:slug/applications', async (context) => {
@@ -321,11 +338,13 @@ export function registerResellerPortalRoutes(
       context.json(
         await (dependencies.decorateCatalog ?? (async (catalog) => catalog))(
           await (async () => {
-            const { payment, ...catalog } = await dependencies.repository.loadCatalog(
+            const { payment, branding, ...stored } = await dependencies.repository.loadCatalog(
               reseller.userId,
               reseller.tenantId,
               context.env,
             )
+            const presentedBranding = await presentBranding(branding, context.env, dependencies.signFileKey)
+            const catalog = { ...stored, ...(presentedBranding ? { branding: presentedBranding } : {}) }
             if (!payment) return catalog
             const { accounts, ...rest } = payment
             const presented = await presentAccounts(accounts, context.env, dependencies.signFileKey)
@@ -573,18 +592,48 @@ export function registerResellerPortalRoutes(
     )
   })
 
+  app.post('/v1/reseller-portal/branding', async (context) => {
+    const admin = await resolveAdmin(context)
+    if (admin instanceof Response) return admin
+    const request = await readJson(context, resellerBrandingSaveRequestSchema)
+    if (!request)
+      return fail(
+        context,
+        400,
+        'INVALID_RESELLER_PORTAL_REQUEST',
+        'Enter a portal name of 2 to 60 characters and pick a color.',
+      )
+    return run(context, async () =>
+      context.json(
+        await presentBranding(
+          await dependencies.repository.saveBranding(
+            admin.userId,
+            admin.tenantId,
+            request,
+            context.get('requestId'),
+            context.env,
+          ),
+          context.env,
+          dependencies.signFileKey,
+        ),
+      ),
+    )
+  })
+
   app.get('/v1/reseller-portal/admin', async (context) => {
     const admin = await resolveAdmin(context)
     if (admin instanceof Response) return admin
     return run(context, async () => {
-      const { paymentAccounts, ...loaded } = await dependencies.repository.loadAdmin(
+      const { paymentAccounts, branding, ...loaded } = await dependencies.repository.loadAdmin(
         admin.userId,
         admin.tenantId,
         context.env,
       )
       const accounts = await presentAccounts(paymentAccounts, context.env, dependencies.signFileKey)
+      const presentedBranding = await presentBranding(branding, context.env, dependencies.signFileKey)
       return context.json({
         ...loaded,
+        ...(presentedBranding ? { branding: presentedBranding } : {}),
         ...(accounts ? { paymentAccounts: accounts } : {}),
         reviewQueue: await (dependencies.presentOrders ?? dropProofs)(loaded.reviewQueue, context.env),
       })

@@ -124,6 +124,15 @@ describe('file helpers', () => {
     expect(detectMime(html)).toBeNull()
   })
 
+  it('signs links for every stored kind, including portal logos', async () => {
+    for (const kind of ['product_image', 'payment_proof', 'payment_qr', 'brand_logo'] as const) {
+      const key = storageKey(tenantId, kind, '40000000-0000-4000-8000-000000000001', 'main')
+      const url = new URL(await createFileUrlSigner(secret).sign(key, now + 600), 'https://api.example.test')
+      const read = (name: string) => url.searchParams.get(name) ?? undefined
+      expect(await verifyFileUrl(secret, read('key'), read('exp'), read('sig'), now)).toBe(key)
+    }
+  })
+
   it('signs links that expire and cannot be retargeted', async () => {
     const key = storageKey(tenantId, 'product_image', '40000000-0000-4000-8000-000000000001', 'thumb')
     const path = await createFileUrlSigner(secret).sign(key, now + 600)
