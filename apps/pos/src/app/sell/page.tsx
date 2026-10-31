@@ -27,6 +27,8 @@ import {
 } from '@/lib/pos-api'
 import { resolvePosPricing } from '@/lib/pos-pricing'
 
+const apiUrl = process.env.NEXT_PUBLIC_API_URL
+
 export default function SellScreen() {
   const router = useRouter()
   const [context, setContext] = useState<PosSalesContext | null>(null)
@@ -231,10 +233,20 @@ export default function SellScreen() {
                         : 'border-white/[0.14] bg-white/[0.07] text-white hover:bg-white/[0.12]',
                     )}
                   >
-                    <span>
-                      <span className="block font-semibold">{item.productName}</span>
-                      <span className="text-sm text-ink-300">
-                        {item.variantName} · {item.sku}
+                    <span className="flex items-start gap-3">
+                      {item.imageThumbUrl && apiUrl ? (
+                        <img
+                          src={`${apiUrl.replace(/\/$/, '')}${item.imageThumbUrl}`}
+                          alt=""
+                          loading="lazy"
+                          className="size-12 flex-none rounded-[10px] object-cover"
+                        />
+                      ) : null}
+                      <span className="min-w-0">
+                        <span className="block font-semibold">{item.productName}</span>
+                        <span className="text-sm text-ink-300">
+                          {item.variantName} · {item.sku}
+                        </span>
                       </span>
                     </span>
                     <span className="flex items-end justify-between gap-2">

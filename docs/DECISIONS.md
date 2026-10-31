@@ -1,5 +1,16 @@
 # Decision Register
 
+## October 29, 2026: File Storage, Product Photos, And Payment Proofs
+
+Owner directed development of product photos and reseller proof of payment.
+Both use one tenant-isolated file foundation: bytes in Cloudflare R2, records in
+PostgreSQL with database-derived storage keys, archive instead of delete, and
+short-lived HMAC-signed links instead of public objects. Photos are set up once
+on the Back Office product page and appear in POS and the reseller portal.
+Accepting a payment proof only marks it verified; recording money stays with
+the existing audited wholesale payment commands. See
+product/FILES_PRODUCT_PHOTOS_PAYMENT_PROOFS.md.
+
 ## October 29, 2026: Reseller Portal R1
 
 Owner approved `APPROVED RESELLER PORTAL BLUEPRINT - PROCEED R1` for local
@@ -118,3 +129,123 @@ authorized by these development decisions.
 - **Decision:** Keep the dependency security gate fail-closed for every high and critical advisory except two path-scoped build-tool findings. `GHSA-vfj7-8cjw-p6xm` is accepted only for dependency chains rooted exclusively in `braces`, which HCS invokes through trusted Tailwind and vinext build-time glob patterns. `GHSA-wq5f-xc86-pv6w` is accepted only for the `sharp` copy nested under Cloudflare `miniflare`; Next and image-generation paths are pinned to patched `sharp` 0.35.5. Fixable `source-map-js` findings are pinned to 1.2.2.
 - **Reason:** No patched `braces` release exists as of 2026-10-07, and forcing Tailwind 4 does not remove the vinext path. Cloudflare's current `miniflare` release pins vulnerable `sharp` 0.35.4 exactly, while the emulator is not shipped in the deployed worker. Blocking delivery on these isolated build-time paths would not reduce tenant runtime risk.
 - **Review trigger:** Remove each exception immediately when a patched `braces` or Cloudflare `miniflare` dependency chain becomes available. Any introduction of user-controlled glob or image input into these build tools invalidates this decision.
+
+## ADR-041: Reseller portal blocks out-of-stock items
+
+- **Date:** 2026-10-30
+- **Status:** Accepted
+- **Decision:** Resellers cannot order a variant whose available stock at the portal fulfillment branch is zero or less. The catalog and cart disable increasing its quantity, the cart blocks submission while one is present, and `app.submit_reseller_portal_order` rejects such lines with `HCRP7` (API `RESELLER_ITEM_OUT_OF_STOCK`, 409) before saving anything. A variant with some stock but less than requested still goes to review as `stock_insufficient`, because stock is shown to resellers only as a badge.
+- **Reason:** Owner direction during Development QA ("pag out of stock hindi makaka order"). Back orders through the portal were creating review work for items the business cannot ship.
+- **Review trigger:** Revisit if the business wants pre-orders or back orders from resellers.
+
+## ADR-042: Reseller portal orders are pay first
+
+- **Date:** 2026-10-30
+- **Status:** Accepted
+- **Decision:** Every reseller portal order holds its stock for four hours (`payment_hold` entries in the reservation ledger) and waits for the reseller's payment proof. A downpayment is enough to move it from `awaiting_payment` to `payment_review`, where it enters the Back Office queue with its proofs. One action verifies the pending proofs and confirms the order through the existing wholesale confirmation (stock and credit checks), releasing the hold first in the same transaction; rejection releases the hold and rejects the pending proofs with the same reason. Orders without a proof after four hours are cancelled by `app.expire_reseller_payment_holds`, run by the API Worker cron every five minutes and by portal commands for their tenant. Items without enough available stock are refused at checkout (`HCRP8`). The portal `auto_confirm` setting is retired (kept only for older clients). Accepting a proof still never records money.
+- **Reason:** Owner direction during Development QA: resellers must send payment before an order reaches the team for approval, the hold should be 4 hours, it applies to all resellers, and a downpayment is acceptable. One verify-and-confirm action keeps review fast.
+- **Review trigger:** Revisit the four-hour window, downpayment rule, or automatic payment recording when a payment gateway is introduced.
+
+## ADR-043: Verified portal payments reduce credit exposure; portal logistics tracking
+
+- **Date:** 2026-10-30
+- **Status:** Accepted
+- **Decision:** Credit exposure (`app.wholesale_credit_exposure`, `app.wholesale_customer_credit_exposure`) subtracts accepted reseller payment proofs on confirmed, not-yet-released portal orders, capped at each order's remaining value (`app.wholesale_verified_prepayments`). A pay-first order paid in full therefore confirms even with a ₱0 limit; an unpaid balance still needs credit. Proofs still never record money. Every confirmed portal order gets one `app.sales_order_shipments` row that only moves forward: delivery `to_pack → packed → shipped (courier J&T/Lalamove/Other + tracking) → delivered`; pickup `to_pack → packed (ready) → delivered (picked up)`. Back Office has a Logistics tab; resellers see the steps and tracking number. Shipping status does not release stock or invoice; that remains the audited wholesale fulfillment command.
+- **Reason:** Owner QA on 2026-10-30: a fully paid order failed confirmation on the credit limit, and confirmed orders need a packing and delivery list.
+- **Review trigger:** Link shipment `shipped` to wholesale fulfillment (stock release, invoice, paid fulfillment) once the owner approves recording money from verified proofs.
+
+## ADR-044: Reseller portal and wholesale reports live together on Reports
+
+- **Date:** 2026-10-31
+- **Status:** Accepted
+- **Decision:** The Back Office Reports page holds every report. A **Reseller portal** tab (`GET /v1/reports/reseller-portal?from&to`, `app.load_reseller_portal_report`) shows summary cards, orders by status (awaiting payment, for confirmation, confirmed, expired, rejected or cancelled), sales per reseller with verified payments and outstanding balance, top products, payments received by GCash and bank with references, logistics by status (delivery and pickup), and shipments per courier with tracking numbers, each with a CSV export. Orders and products count by the order date, payments by the date the proof was sent (accepted proofs only), and logistics by the date the order entered Logistics, all in the business time zone. Read access is reports.read or reseller portal management; the report records nothing. A **Wholesale** tab groups settlement, statements and aging, and bank and wallet receipts; the wholesale work pages (payments, returns, credit, funds) stay under Advanced wholesale, and the old report URLs still work.
+- **Reason:** Owner direction on 2026-10-30: "pag report ay report magkakasama", and the reseller portal needs order and logistics reporting.
+- **Review trigger:** Outstanding-balance aging, conversion, and processing-speed reports (next round); profit per portal order once costs are approved for this view.
+
+## ADR-045: Portal sales complete on shipping; verified proofs are recorded as payments
+
+- **Date:** 2026-10-31
+- **Status:** Accepted (supersedes the "proofs never record money" and "shipping does not release stock" parts of ADR-042 and ADR-043)
+- **Decision:** Marking a portal delivery **Shipped**, or a pickup **Picked up**, runs `app.fulfill_portal_order` in the same transaction: the audited wholesale fulfillment core takes the remaining quantities out of on-hand stock and the reservation (`SALE` movements), issues one invoice, and charges it with the order's credit-snapshot term (prepaid and COD are due the same day). Every accepted payment proof on the order is then recorded as a wholesale payment (GCash under the active e-wallet method, bank under bank transfer; full reference kept, last four digits in the receipts report) allocated to the open invoice; anything beyond the open balance is left unrecorded. A proof accepted after the invoice exists (a balance payment) is recorded the moment it is accepted. Proofs link to their payment (`payment_proofs.wholesale_payment_id`), so nothing is recorded twice. Orders already shipped or picked up before the migration are completed by it; any that cannot be completed are skipped and logged. Completing a sale needs owner or `wholesale_orders.manage`; a missing payment method stops the step with a clear message.
+- **Reason:** Owner approval on 2026-10-30: "pwede na irecord once verified ang proof at ibawas na dapat sa stocks". Shipped portal orders were still holding reserved stock and had no invoice.
+- **Review trigger:** Partial shipments, returns of portal orders, or a payment gateway that confirms payments without a proof.
+
+## ADR-046: Cart names short items; in-app notifications for the reseller portal
+
+- **Date:** 2026-10-31
+- **Status:** Accepted
+- **Decision:** When an order is refused for stock (`HCRP7`, `HCRP8`), the API asks `app.reseller_cart_stock_issues` which cart items are short and returns them in `error.details.stockIssues` with a message naming them. The cart highlights each item, says how many are left (or that it is out of stock), and offers one tap to set the quantity to what is available or remove it. This shows the available quantity only for items the reseller tried to order beyond stock (narrowing ADR-041's badge-only rule). Notifications are in-app only: the Back Office bell gets portal orders that need review, balance payments to verify, and new applications (portal managers at the portal branch), and resellers get an Updates inbox with a badge for confirmed, ready for pickup, shipped (courier and tracking), delivered or picked up, payment verified or not accepted, expired, and not accepted orders. Both follow the notification-center pattern: rows are derived from the source records when the inbox loads, deduplicated, and only read state changes; the reseller app refreshes every minute while open and when it comes back to the screen. Events older than 30 days are not added.
+- **Reason:** Owner QA on 2026-10-30: the cart error did not say which item to lower, and notifications were next on the list.
+- **Review trigger:** Email or push notifications (needs an email service account or web push keys), or if the business wants exact stock hidden again.
+
+## ADR-047: Web Push for reseller updates and Back Office portal alerts
+
+- **Date:** 2026-10-31
+- **Status:** Accepted
+- **Decision:** Browsers opt in from the reseller Updates sheet or the Back Office Notifications page and store a Web Push subscription (`app.push_subscriptions`, one endpoint per person). The API cron (every 5 minutes, development and staging) builds the in-app notifications, takes those created after the subscription and not yet pushed (`app.collect_push_batch`), sends each to the recipient's browsers, and reports back (`app.complete_push_batch`): every notification is attempted once, and endpoints the push service reports gone (404/410), or that fail 10 times in a row, are switched off. Back Office pushes are limited to reseller portal notifications (orders to review, balance payments, applications). Sending uses WebCrypto only: VAPID (RFC 8292) and aes128gcm (RFC 8291), checked against the RFC 8291 example and an independent decryption. Keys live only in Worker secrets (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`), created with `npm run push:keys -- <environment>`, which never prints the private key; `VAPID_SUBJECT` is the API URL. Push stays off until the keys exist. iPhones need the portal added to the Home Screen (iOS 16.4+); the sheet explains this. Tapping a reseller push opens that order (`/?order=<id>`).
+- **Reason:** Owner direction on 2026-10-30: push to both resellers and the Back Office.
+- **Review trigger:** Instant delivery (push in the same request as the event), email, or pushing other Back Office alerts.
+
+## ADR-048: Owners switch the reseller portal; managers handle portal orders; portal sales earn points
+
+- **Date:** 2026-10-31
+- **Status:** Accepted
+- **Decision:** The owner turns the reseller portal on or off from the Back Office Reseller portal page (`app.set_reseller_portal_enabled`, audited). Turning it on needs the portal in the plan and Advanced wholesale already on; turning it off stops reseller sign-in, applications, and ordering but keeps orders, invoices, and payments. A new permission `reseller_portal.orders` (owner, admin, manager) covers confirming or rejecting portal orders, verifying payments, Logistics, and the order and payment alerts; `reseller_portal.manage` (owner, admin) still covers portal settings, the GCash and bank accounts resellers pay into, applications, and reseller accounts, so a manager cannot change where resellers send money. Managers see the Orders, Logistics, and Balance payments tabs. Completing a portal sale (shipped or picked up) awards loyalty points once per invoice sale on the sale total after discounts, using the business's loyalty policy.
+- **Reason:** Owner decisions on 2026-10-30: managers may confirm portal orders; points are based on the total after discount. The portal also needed an owner switch before Staging.
+- **Review trigger:** Returns of portal orders (points reversal), or if managers should also manage reseller accounts.
+
+## ADR-049: Reseller statement, loyalty history, portal returns, and portal insights
+
+- **Date:** 2026-10-31
+- **Status:** Accepted
+- **Decision:** Resellers see a statement of account on the Account tab (`app.load_reseller_statement`): total to pay (unpaid invoices plus confirmed orders not shipped yet, less verified payments), overdue amount, open invoices with due dates and days late, payments being checked, credit from returns, and 90 days of activity (invoices, payments, returns); "Pay" opens the order's payment form. The Account tab also shows the loyalty rule, balance, and points history (`app.load_reseller_loyalty`). Returns on portal orders use the existing audited wholesale return (credit note, optional restock, debt reduction or customer credit, loyalty reversal through refunds); Logistics links each shipped or delivered portal order to the return form with its invoice selected, and the reseller sees the return on the order, in the statement, and as a notification. The proof form owes the order total less returns. Reports add three portal insights (`app.load_reseller_portal_insights`): open balances by days past due per reseller (as of today), paid vs expired per reseller, and the median time for each step from order to delivery.
+- **Reason:** Owner selection on 2026-10-31 (statement of account, loyalty in the portal, returns, reports round 2).
+- **Review trigger:** Reseller-initiated return requests, statement PDF or email, or loyalty rewards and redemption.
+
+## ADR-050: Resellers apply credit and pay with points; payment reminders
+
+- **Date:** 2026-11-01
+- **Status:** Accepted
+- **Decision:** From their statement, resellers apply credit from returns to an open invoice (`app.apply_reseller_credit`, oldest credit first) and pay part of an open invoice with loyalty points (`app.redeem_reseller_points`). The business turns points payment on in Reseller portal → Settings and sets the peso value of a point and a minimum per use (`app.save_reseller_points_settings`). A points payment is a `redemption` loyalty transaction plus a wholesale payment under a hidden, inactive "Loyalty points" payment method allocated to the invoice, so balances, statements, and reports stay whole. Credit applications and payments now record either the team member or the reseller who made them. Reseller notifications (and push) add: payment due tomorrow, payment overdue (once per invoice, within 30 days), and "send your payment" when a pay-first hold has under an hour left and no proof.
+- **Reason:** Owner selection on 2026-10-31 (use credit, payment reminders, points redemption).
+- **Review trigger:** Rewards other than invoice payment (free items, vouchers), points expiry, or reminders by email.
+
+## ADR-051: Reseller portal branding per business
+
+- **Date:** 2026-11-01
+- **Status:** Accepted
+- **Decision:** Each business sets how its reseller portal looks in Reseller portal → Settings → Portal look: a portal name (2–60 characters; blank uses the business name), one of six accent colors (gold, emerald, sky, rose, violet, orange), and a logo. The logo is a private `brand_logo` file uploaded through `POST /v1/reseller-portal/branding/logo` and served only through short-lived signed links. `app.reseller_branding_json` feeds the public application page, the reseller catalog, and the admin view; the reseller app applies the accent at runtime through CSS variables, so one build serves every business. Only owners and admins can change branding.
+- **Reason:** Owner selection on 2026-10-31 (branding per business) so the portal can be opened to other businesses.
+- **Review trigger:** Custom domains per business, free-form colors, or branded emails.
+
+## ADR-052: Reseller favorites, back-in-stock alerts, and New products
+
+- **Date:** 2026-11-01
+- **Status:** Accepted
+- **Decision:** Resellers mark products as favorites (a heart on each catalog card, `app.save_reseller_favorite`) and filter the catalog to Favorites. For an out-of-stock variant they tap "Notify me when back in stock" (`app.save_reseller_stock_alert`); when notifications are next built (opening Updates, or the five-minute push cron), each open alert whose item is available again becomes one `back_in_stock` notification and push, and the alert closes. Alerts for items that leave the reseller's catalog close silently. Products created in the last 14 days are flagged `isNew`; the portal shows "New" badges and a New filter only when some products are not new, so a brand-new catalog is not all badges. Quick reorder stays the existing "Order again" on past orders.
+- **Reason:** Owner selection on 2026-10-31 (faster ordering).
+- **Review trigger:** A separate "published to portal" date, promos, or back-in-stock alerts by email.
+
+## ADR-053: Reseller operations — shipping fee, printable invoice, partial shipment, return requests
+
+- **Date:** 2026-11-01
+- **Status:** Accepted
+- **Decision:**
+  - **Shipping fee.** Reseller portal → Settings sets a flat delivery fee and an optional free-shipping amount; pickup is free. The fee is fixed on the order when the reseller submits it (shown in the cart first), kept when the order is confirmed, and billed once on the order's first invoice (`invoices.shipping_fee`; `total = subtotal − discount + tax + shipping_fee`). The wholesale sale keeps the items total only, so product sales reports exclude shipping, and returns never refund it.
+  - **Printable invoice.** Resellers open any of their invoices from an order (`app.load_reseller_invoice`) and print or save it as PDF from the browser; only the invoice paper prints.
+  - **Partial shipment.** In Logistics, a delivery order that is not shipped yet can send part of its items as a parcel (`app.ship_portal_parcel`). Each parcel leaves stock immediately, gets its own invoice and receivable, and verified payments are recorded against it; the last shipment sends the rest the usual way. A verified payment proof is now recorded across several invoices (`payment_proofs.recorded_amount` is the running total). The reseller is notified per parcel.
+  - **Return requests.** Resellers ask to return items from an invoice with a reason and up to four photos (`return_photo` files, private). Quantities are limited to what was invoiced less recorded returns and pending requests; one pending request per invoice. The team approves (which opens Wholesale returns with the items and reason filled in, to record once the items arrive) or declines with a reason. Both sides are notified.
+- **Reason:** Owner selection on 2026-10-31 (Operations), with "per parcel" stock and invoicing and "flat + free above" shipping chosen on 2026-10-31.
+- **Review trigger:** Distance- or courier-based shipping rates, splitting pickup orders, or recording a return straight from an approved request.
+
+## ADR-054: Reseller tiers — Silver, Gold, Platinum; credit only for Platinum
+
+- **Date:** 2026-11-01
+- **Status:** Accepted
+- **Decision:**
+  - **Tiers.** Every reseller is Silver, Gold, or Platinum. They reach a tier with **either** enough active direct referrals **or** enough lifetime invoiced sales (items less returns, no shipping). Defaults: Gold 5 or ₱200,000; Platinum 15 or ₱500,000. A referral is active with an invoice in the last 90 days. Tiers update by themselves on every invoice and return (for the reseller and whoever referred them), once a day by the API cron, and when settings change; they can go down when active referrals lapse. Resellers are told when their tier changes.
+  - **Referrals.** Each reseller has a referral code and link (`/apply?b=…&ref=CODE`, with Copy, Share, and QR in the portal). An application made with the link is linked to that reseller once approved; only direct referrals count. The owner can change who referred whom (no loops). Commission is not part of this decision.
+  - **Credit.** Only Platinum orders on credit: default ₱20,000 at net 15, with a per-reseller limit override and a credit hold switch. A Platinum order within the available credit is confirmed at submit, goes straight to Logistics, and is billed with the term. Over the limit, with an overdue invoice, or on hold, the order is pay-first. Silver and Gold have no credit and pay in full before confirmation (no downpayments). Credit is written as customer credit settings revisions, so existing credit checks, statements, and reminders apply unchanged; existing resellers lost credit unless they qualified for Platinum.
+  - **Points.** Each tier earns at its own rate: Silver ₱100, Gold ₱80, Platinum ₱50 per point (owner-set). Orders on credit earn points only once their invoice is paid.
+- **Reason:** Owner decisions on 2026-10-31.
+- **Review trigger:** Commission on referrals' sales, multi-level referrals, or tier-specific price lists.

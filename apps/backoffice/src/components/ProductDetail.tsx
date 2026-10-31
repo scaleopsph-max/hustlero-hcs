@@ -18,6 +18,7 @@ import {
 } from '@hcs/contracts'
 import { Button, Glass, formatPeso, parsePeso } from '@hcs/ui'
 import { selectActiveTenant } from '@/lib/active-tenant'
+import { ProductPhotos } from './ProductPhotos'
 import { Topbar } from './Topbar'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -472,46 +473,58 @@ export function ProductDetail({ productId }: { productId: string }) {
               </div>
             </form>
           </Glass>
-          <Glass variant="light" as="aside" className="rounded-panel p-5">
-            <p className="text-xs font-semibold uppercase text-ink-500">Editable details</p>
-            <h2 className="mt-1 font-display text-xl font-bold">Product master</h2>
-            <form className="mt-5 flex flex-col gap-4" onSubmit={(event) => void saveProduct(event)}>
-              <label className="text-sm font-medium">
-                Product name
-                <input
-                  className={`${inputClass} mt-1.5`}
-                  required
-                  maxLength={120}
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                />
-              </label>
-              <label className="text-sm font-medium">
-                Category
-                <input
-                  className={`${inputClass} mt-1.5`}
-                  maxLength={80}
-                  value={categoryName}
-                  onChange={(event) => setCategoryName(event.target.value)}
-                  placeholder="Optional"
-                />
-              </label>
-              <label className="text-sm font-medium">
-                Description
-                <textarea
-                  className={`${inputClass} mt-1.5 py-2`}
-                  rows={4}
-                  maxLength={1000}
-                  value={description}
-                  onChange={(event) => setDescription(event.target.value)}
-                  placeholder="Optional"
-                />
-              </label>
-              <Button type="submit" variant="confirm" size="sm" disabled={busy || !token || !tenantId}>
-                <Check size={18} className="mr-2" /> Save changes
-              </Button>
-            </form>
-          </Glass>
+          <div className="flex flex-col gap-4">
+            <Glass variant="light" as="aside" className="rounded-panel p-5">
+              <p className="text-xs font-semibold uppercase text-ink-500">Editable details</p>
+              <h2 className="mt-1 font-display text-xl font-bold">Product master</h2>
+              <form className="mt-5 flex flex-col gap-4" onSubmit={(event) => void saveProduct(event)}>
+                <label className="text-sm font-medium">
+                  Product name
+                  <input
+                    className={`${inputClass} mt-1.5`}
+                    required
+                    maxLength={120}
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                  />
+                </label>
+                <label className="text-sm font-medium">
+                  Category
+                  <input
+                    className={`${inputClass} mt-1.5`}
+                    maxLength={80}
+                    value={categoryName}
+                    onChange={(event) => setCategoryName(event.target.value)}
+                    placeholder="Optional"
+                  />
+                </label>
+                <label className="text-sm font-medium">
+                  Description
+                  <textarea
+                    className={`${inputClass} mt-1.5 py-2`}
+                    rows={4}
+                    maxLength={1000}
+                    value={description}
+                    onChange={(event) => setDescription(event.target.value)}
+                    placeholder="Optional"
+                  />
+                </label>
+                <Button type="submit" variant="confirm" size="sm" disabled={busy || !token || !tenantId}>
+                  <Check size={18} className="mr-2" /> Save changes
+                </Button>
+              </form>
+            </Glass>
+            {token && tenantId ? (
+              <ProductPhotos
+                productId={product.id}
+                productName={product.name}
+                images={product.images ?? []}
+                token={token}
+                tenantId={tenantId}
+                onChanged={() => loadProduct(token, tenantId)}
+              />
+            ) : null}
+          </div>
         </div>
       ) : null}
     </>

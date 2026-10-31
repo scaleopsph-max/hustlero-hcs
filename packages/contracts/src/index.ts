@@ -390,3 +390,6 @@ export {
 export * from './payment-references'
 export * from './wholesale-returns'
 export * from './reseller-portal'
+export * from './reseller-portal-report'
+export * from './push'
+export * from './files'

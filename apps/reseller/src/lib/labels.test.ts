@@ -1,0 +1,49 @@
+import { describe, expect, it } from 'vitest'
+
+import { compactPeso, orderBadge, timeAgo, timeLeft } from './labels'
+
+describe('pay-first labels', () => {
+  it('shows where an order is in the payment step', () => {
+    expect(orderBadge({ status: 'submitted', reviewReason: 'awaiting_payment' }).text).toBe('Awaiting payment')
+    expect(orderBadge({ status: 'submitted', reviewReason: 'payment_review' }).text).toBe('Payment sent')
+    expect(orderBadge({ status: 'confirmed', reviewReason: null }).text).toBe('Confirmed')
+    const shipment = { courier: null, trackingNumber: null, packedAt: null, shippedAt: null, deliveredAt: null }
+    expect(
+      orderBadge({ status: 'confirmed', reviewReason: null, shipment: { ...shipment, status: 'to_pack' } }).text,
+    ).toBe('Packing')
+    expect(
+      orderBadge({
+        status: 'confirmed',
+        reviewReason: null,
+        fulfillmentMethod: 'pickup',
+        shipment: { ...shipment, status: 'packed' },
+      }).text,
+    ).toBe('Ready for pickup')
+  })
+
+  it('counts down the payment window', () => {
+    const now = Date.parse('2026-10-30T08:00:00Z')
+    expect(timeLeft('2026-10-30T11:52:00Z', now)).toBe('3h 52m left')
+    expect(timeLeft('2026-10-30T08:12:00Z', now)).toBe('12m left')
+    expect(timeLeft('2026-10-30T07:59:00Z', now)).toBeNull()
+  })
+})
+
+describe('timeAgo', () => {
+  const now = Date.parse('2026-10-30T12:00:00Z')
+  it('reads like a feed', () => {
+    expect(timeAgo('2026-10-30T11:59:40Z', now)).toBe('Just now')
+    expect(timeAgo('2026-10-30T11:55:00Z', now)).toBe('5m ago')
+    expect(timeAgo('2026-10-30T09:00:00Z', now)).toBe('3h ago')
+    expect(timeAgo('2026-10-28T09:00:00Z', now)).toBe('Oct 28, 5:00 PM')
+  })
+})
+
+describe('compact pesos', () => {
+  it('shortens thousands and millions', () => {
+    expect(compactPeso(95_000)).toBe('₱950')
+    expect(compactPeso(1_950_000)).toBe('₱19.5k')
+    expect(compactPeso(20_000_000)).toBe('₱200k')
+    expect(compactPeso(120_000_000)).toBe('₱1.2M')
+  })
+})

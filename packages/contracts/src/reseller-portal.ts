@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { paymentProofSchema } from './files'
+
 const uuid = z.uuid()
 const minor = z.number().int().nonnegative()
 const milli = z.number().int().nonnegative()
@@ -14,6 +16,10 @@ export const resellerReviewReasonSchema = z.enum([
   'credit_review',
   'stock_insufficient',
   'credit_limit',
+  /** Pay first: stock is held for four hours until the reseller sends a payment proof. */
+  'awaiting_payment',
+  /** A payment proof arrived; the team verifies it and confirms the order. */
+  'payment_review',
 ])
 export const resellerOrderStatusSchema = z.enum([
   'submitted',
@@ -23,9 +29,37 @@ export const resellerOrderStatusSchema = z.enum([
   'cancelled',
 ])
 
+/** A GCash or bank account resellers pay into; the QR link is signed by the API. */
+export const resellerPaymentAccountSchema = z.object({
+  id: uuid,
+  method: resellerPaymentPreferenceSchema,
+  providerName: z.string().min(1),
+  accountName: z.string().min(1),
+  accountNumber: z.string().min(1),
+  isActive: z.boolean(),
+  qrUrl: z.string().nullable(),
+})
+
 // Public application form -------------------------------------------------
 
+/** Accent colors a business can choose for its reseller portal. */
+export const resellerAccentColorSchema = z.enum(['gold', 'emerald', 'sky', 'rose', 'violet', 'orange'])
+/** How a business's reseller portal looks: its name, accent color, and logo (a signed link). */
+export const resellerBrandingSchema = z.object({
+  portalName: z.string().min(1),
+  /** The business's own name; the portal name falls back to it. */
+  businessName: z.string().min(1).optional(),
+  accentColor: resellerAccentColorSchema,
+  logoUrl: z.string().min(1).nullable(),
+})
+export const resellerBrandingSaveRequestSchema = z.strictObject({
+  portalName: z.string().trim().min(2).max(60).nullable(),
+  accentColor: resellerAccentColorSchema,
+  removeLogo: z.boolean().optional(),
+})
+
 export const resellerPortalPublicSchema = z.object({
+  branding: resellerBrandingSchema.optional(),
   tenantSlug: z.string().min(1),
   businessName: z.string().min(1),
   configured: z.boolean(),
@@ -43,6 +77,12 @@ export const resellerApplicationRequestSchema = z.strictObject({
     .pipe(z.string().regex(/^\+?[0-9]{7,15}$/)),
   city: z.string().trim().min(2).max(120).optional(),
   message: z.string().trim().max(1000).optional(),
+  /** From a reseller's referral link; an unknown code is ignored. */
+  referralCode: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9]{6,12}$/)
+    .optional(),
 })
 
 export const resellerApplicationResponseSchema = z.object({ status: z.literal('received') })
@@ -77,9 +117,28 @@ export const resellerCatalogItemSchema = z.object({
   pricingGroupName: z.string().min(1),
   thresholdMilli: milli,
   stockStatus: resellerStockStatusSchema,
+  /** Signed API-relative paths of the primary product photo. */
+  imageUrl: z.string().nullable().optional(),
+  thumbUrl: z.string().nullable().optional(),
+  /** Added to the catalog in the last 14 days. */
+  isNew: z.boolean().optional(),
+  /** The reseller saved this product as a favorite. */
+  isFavorite: z.boolean().optional(),
+  /** The reseller asked to be told when this out-of-stock variant is back. */
+  notifyRequested: z.boolean().optional(),
 })
 
+export const resellerFavoriteRequestSchema = z.strictObject({ productId: uuid, favorite: z.boolean() })
+export const resellerFavoriteResponseSchema = z.object({ productId: uuid, favorite: z.boolean() })
+export const resellerStockAlertRequestSchema = z.strictObject({ variantId: uuid, notify: z.boolean() })
+export const resellerStockAlertResponseSchema = z.object({ variantId: uuid, notify: z.boolean() })
+export type ResellerFavoriteRequest = z.infer<typeof resellerFavoriteRequestSchema>
+export type ResellerFavoriteResponse = z.infer<typeof resellerFavoriteResponseSchema>
+export type ResellerStockAlertRequest = z.infer<typeof resellerStockAlertRequestSchema>
+export type ResellerStockAlertResponse = z.infer<typeof resellerStockAlertResponseSchema>
+
 export const resellerPortalCatalogSchema = z.object({
+  branding: resellerBrandingSchema.optional(),
   account: z.object({
     accountId: uuid,
     customerId: uuid,
@@ -91,9 +150,107 @@ export const resellerPortalCatalogSchema = z.object({
     creditLimitMinor: minor.nullable(),
     availableCreditMinor: minor.nullable(),
     pointsBalance: z.number().int().nonnegative(),
+    tier: z.lazy(() => resellerTierNameSchema).optional(),
+    /** Set when this reseller can order on credit right now: what is left of the limit. */
+    creditOrderingMinor: minor.nullable().optional(),
   }),
   fulfillmentLocationName: z.string().min(1),
+  /** Where to send payment. Optional so older API versions still parse. */
+  payment: z
+    .object({
+      instructions: z.string().nullable(),
+      holdHours: z.number().int().positive(),
+      accounts: z.array(resellerPaymentAccountSchema).optional(),
+    })
+    .optional(),
+  /** Delivery fee; free when the items total reaches freeAboveMinor. Pickup is free. */
+  shipping: z.object({ feeMinor: minor, freeAboveMinor: minor.nullable() }).optional(),
   items: z.array(resellerCatalogItemSchema),
+})
+
+export const portalShipmentStatusSchema = z.enum(['to_pack', 'packed', 'shipped', 'delivered'])
+export const portalCourierSchema = z.enum(['jnt', 'lalamove', 'other'])
+
+/** Part of a delivery order sent ahead of the rest, with its own invoice. */
+export const portalParcelSchema = z.object({
+  parcelId: uuid,
+  parcelNumber: z.number().int().positive(),
+  courier: portalCourierSchema,
+  trackingNumber: z.string().nullable(),
+  note: z.string().nullable(),
+  shippedAt: timestamp,
+  deliveredAt: timestamp.nullable(),
+  invoiceNumber: z.string().min(1),
+  lines: z.array(z.object({ productName: z.string().min(1), variantName: z.string(), quantityMilli: milli })),
+})
+export const portalParcelRequestSchema = z.strictObject({
+  courier: portalCourierSchema,
+  trackingNumber: z.string().trim().min(3).max(80).optional(),
+  note: z.string().trim().min(2).max(500).optional(),
+  lines: z
+    .array(z.strictObject({ salesOrderLineId: uuid, quantityMilli: z.number().int().min(1).max(999_999_999_999) }))
+    .min(1)
+    .max(100),
+})
+export const portalParcelResponseSchema = z.object({
+  salesOrderId: uuid,
+  parcelId: uuid,
+  parcelNumber: z.number().int().positive(),
+  invoiceNumber: z.string().min(1),
+  totalMinor: minor,
+})
+export const portalParcelDeliveredResponseSchema = z.object({ parcelId: uuid, deliveredAt: timestamp })
+export type PortalParcel = z.infer<typeof portalParcelSchema>
+export type PortalParcelRequest = z.infer<typeof portalParcelRequestSchema>
+export type PortalParcelResponse = z.infer<typeof portalParcelResponseSchema>
+export type PortalParcelDeliveredResponse = z.infer<typeof portalParcelDeliveredResponseSchema>
+
+/** Where a confirmed order is in packing and delivery, as the reseller sees it. */
+export const resellerShipmentSchema = z.object({
+  status: portalShipmentStatusSchema,
+  courier: portalCourierSchema.nullable(),
+  trackingNumber: z.string().nullable(),
+  packedAt: timestamp.nullable(),
+  shippedAt: timestamp.nullable(),
+  deliveredAt: timestamp.nullable(),
+})
+
+/** A shipment in the Back Office Logistics list. */
+export const portalShipmentSchema = z.object({
+  salesOrderId: uuid,
+  orderNumber: z.string().min(1),
+  customerName: z.string().min(1),
+  customerPhone: z.string().nullable(),
+  method: z.enum(['delivery', 'pickup']),
+  status: portalShipmentStatusSchema,
+  courier: portalCourierSchema.nullable(),
+  trackingNumber: z.string().nullable(),
+  note: z.string().nullable(),
+  deliveryAddress: z.string().nullable(),
+  locationName: z.string().min(1),
+  totalMinor: minor,
+  confirmedAt: timestamp.nullable(),
+  packedAt: timestamp.nullable(),
+  shippedAt: timestamp.nullable(),
+  deliveredAt: timestamp.nullable(),
+  /** Set once shipping (or pickup) completed the sale. */
+  invoiceId: uuid.nullable().optional(),
+  invoiceNumber: z.string().nullable().optional(),
+  /** What the reseller still owes on the invoice; null before the sale is completed. */
+  balanceMinor: z.number().int().nullable().optional(),
+  shippingFeeMinor: minor.optional(),
+  parcels: z.array(portalParcelSchema).optional(),
+  lines: z.array(
+    z.object({
+      salesOrderLineId: uuid.optional(),
+      productName: z.string().min(1),
+      variantName: z.string().min(1),
+      sku: z.string().min(1),
+      quantityMilli: milli,
+      /** Not shipped yet (parcels already sent are taken off). */
+      remainingMilli: milli.optional(),
+    }),
+  ),
 })
 
 export const resellerOrderSchema = z.object({
@@ -115,6 +272,8 @@ export const resellerOrderSchema = z.object({
   createdAt: timestamp,
   confirmedAt: timestamp.nullable(),
   cancelledAt: timestamp.nullable(),
+  /** When an order awaiting payment is cancelled if no proof arrives. */
+  paymentDueAt: timestamp.nullable().optional(),
   lines: z.array(
     z.object({
       id: uuid,
@@ -130,7 +289,53 @@ export const resellerOrderSchema = z.object({
       stockStatus: resellerStockStatusSchema.nullable(),
     }),
   ),
-  invoices: z.array(z.object({ id: uuid, invoiceNumber: z.string().min(1), totalMinor: minor, issuedAt: timestamp })),
+  invoices: z.array(
+    z.object({
+      id: uuid,
+      invoiceNumber: z.string().min(1),
+      totalMinor: minor,
+      issuedAt: timestamp,
+      lines: z
+        .array(
+          z.object({
+            invoiceLineId: uuid,
+            productName: z.string().min(1),
+            variantName: z.string(),
+            quantityMilli: milli,
+            /** Invoiced, less returns recorded and requests waiting for review. */
+            returnableMilli: milli,
+          }),
+        )
+        .optional(),
+    }),
+  ),
+  shippingFeeMinor: minor.optional(),
+  parcels: z.array(portalParcelSchema).optional(),
+  returnRequests: z.array(z.lazy(() => resellerReturnRequestSummarySchema)).optional(),
+  paymentProofs: z.array(paymentProofSchema).optional(),
+  shipment: resellerShipmentSchema.nullable().optional(),
+  /** Returns (credit notes) recorded on this order's invoices. */
+  returns: z
+    .array(
+      z.object({
+        id: uuid,
+        invoiceNumber: z.string().min(1),
+        amountMinor: minor,
+        /** Part of the return kept as credit because the invoice was already paid. */
+        creditMinor: minor,
+        reason: z.string().min(1),
+        recordedAt: timestamp,
+        lines: z.array(
+          z.object({
+            productName: z.string().min(1),
+            variantName: z.string(),
+            quantityMilli: milli,
+            returnToStock: z.boolean(),
+          }),
+        ),
+      }),
+    )
+    .optional(),
 })
 
 export const resellerOrdersSchema = z.object({ orders: z.array(resellerOrderSchema) })
@@ -159,8 +364,12 @@ export const resellerOrderSubmitResponseSchema = z.object({
   orderNumber: z.string().min(1),
   status: z.enum(['confirmed', 'submitted']),
   reviewReason: resellerReviewReasonSchema.nullable(),
+  paymentDueAt: timestamp.nullable().optional(),
   lineCount: z.number().int().positive(),
   totalMinor: minor,
+  shippingFeeMinor: minor.optional(),
+  /** Platinum on credit: confirmed at once, billed with the reseller's term. */
+  onCredit: z.boolean().optional(),
 })
 
 // Back Office administration ---------------------------------------------
@@ -169,7 +378,10 @@ export const resellerPortalSettingsRequestSchema = z.strictObject({
   fulfillmentLocationId: uuid,
   defaultPriceListId: uuid.optional(),
   applicationsOpen: z.boolean(),
-  autoConfirm: z.boolean(),
+  /** Ignored: portal orders are always pay first. Kept for older clients. */
+  autoConfirm: z.boolean().optional(),
+  /** GCash or bank details shown to resellers; null clears them. */
+  paymentInstructions: z.string().trim().min(2).max(1000).nullable().optional(),
 })
 
 export const resellerPortalSettingsResponseSchema = z.object({
@@ -178,6 +390,51 @@ export const resellerPortalSettingsResponseSchema = z.object({
   defaultPriceListId: uuid.nullable(),
   applicationsOpen: z.boolean(),
   autoConfirm: z.boolean(),
+  paymentInstructions: z.string().nullable().optional(),
+})
+
+export const resellerPaymentAccountSaveRequestSchema = z.strictObject({
+  id: uuid.optional(),
+  method: resellerPaymentPreferenceSchema,
+  providerName: z.string().trim().min(2).max(80),
+  accountName: z.string().trim().min(2).max(120),
+  accountNumber: z.string().trim().min(4).max(40),
+  isActive: z.boolean().optional(),
+})
+
+export const resellerPaymentAccountSaveResponseSchema = z.object({
+  status: z.literal('saved'),
+  accountId: uuid,
+  isActive: z.boolean(),
+})
+
+export const paymentQrUploadResponseSchema = z.object({
+  status: z.literal('uploaded'),
+  accountId: uuid,
+  fileId: uuid,
+})
+
+export const portalShipmentUpdateRequestSchema = z
+  .strictObject({
+    status: z.enum(['packed', 'shipped', 'delivered']),
+    courier: portalCourierSchema.optional(),
+    trackingNumber: z.string().trim().min(3).max(80).optional(),
+    note: z.string().trim().min(2).max(500).optional(),
+  })
+  .refine((update) => update.status !== 'shipped' || update.courier !== undefined, {
+    message: 'Choose the courier.',
+    path: ['courier'],
+  })
+
+export const portalShipmentUpdateResponseSchema = z.object({
+  salesOrderId: uuid,
+  status: portalShipmentStatusSchema,
+  /** Present when this step completed the sale: stock released, invoice issued, verified payments recorded. */
+  invoiceNumber: z.string().nullable().optional(),
+  recordedPaymentMinor: z.number().int().nonnegative().optional(),
+  /** Loyalty points the completed sale earned. */
+  pointsEarned: z.number().int().nonnegative().optional(),
+  balanceMinor: z.number().int().optional(),
 })
 
 export const resellerApplicationDecisionRequestSchema = z.discriminatedUnion('decision', [
@@ -233,6 +490,9 @@ export const resellerOrderReviewResponseSchema = z.object({
 })
 
 export const resellerPortalAdminSchema = z.object({
+  /** False for members who handle orders only (managers): settings, accounts, and applications are read-only. */
+  canManage: z.boolean().optional(),
+  branding: resellerBrandingSchema.optional(),
   tenantSlug: z.string().min(1),
   settings: z
     .object({
@@ -240,6 +500,13 @@ export const resellerPortalAdminSchema = z.object({
       defaultPriceListId: uuid.nullable(),
       applicationsOpen: z.boolean(),
       autoConfirm: z.boolean(),
+      paymentInstructions: z.string().nullable().optional(),
+      /** What one loyalty point is worth when a reseller pays with points; null = paying with points is off. */
+      pointsRedeemValueMinor: z.number().int().positive().nullable().optional(),
+      pointsMinRedeem: z.number().int().positive().optional(),
+      shippingFeeMinor: minor.optional(),
+      freeShippingAboveMinor: minor.nullable().optional(),
+      tiers: z.lazy(() => resellerTierSettingsSchema).optional(),
       updatedAt: timestamp,
     })
     .nullable(),
@@ -271,6 +538,7 @@ export const resellerPortalAdminSchema = z.object({
       message: z.string().nullable(),
       status: z.enum(['pending', 'approved', 'rejected']),
       decisionReason: z.string().nullable(),
+      referredByName: z.string().nullable().optional(),
       reviewedAt: timestamp.nullable(),
       createdAt: timestamp,
     }),
@@ -287,9 +555,31 @@ export const resellerPortalAdminSchema = z.object({
       priceListName: z.string().min(1),
       activatedAt: timestamp.nullable(),
       createdAt: timestamp,
+      tier: z.enum(['silver', 'gold', 'platinum']).optional(),
+      referralCode: z.string().optional(),
+      referredByAccountId: uuid.nullable().optional(),
+      referredByName: z.string().nullable().optional(),
+      activeReferrals: z.number().int().nonnegative().optional(),
+      lifetimeSalesMinor: minor.optional(),
+      creditHold: z.boolean().optional(),
+      creditLimitOverrideMinor: minor.nullable().optional(),
     }),
   ),
   reviewQueue: z.array(resellerOrderSchema),
+  paymentAccounts: z.array(resellerPaymentAccountSchema).optional(),
+  shipments: z.array(portalShipmentSchema).optional(),
+  awaitingPayment: z
+    .array(
+      z.object({
+        id: uuid,
+        orderNumber: z.string().min(1),
+        customerName: z.string().min(1),
+        totalMinor: minor,
+        createdAt: timestamp,
+        paymentDueAt: timestamp,
+      }),
+    )
+    .optional(),
 })
 
 export type ResellerStockStatus = z.infer<typeof resellerStockStatusSchema>
@@ -315,3 +605,363 @@ export type ResellerAccountStatusResponse = z.infer<typeof resellerAccountStatus
 export type ResellerOrderReviewRequest = z.infer<typeof resellerOrderReviewRequestSchema>
 export type ResellerOrderReviewResponse = z.infer<typeof resellerOrderReviewResponseSchema>
 export type ResellerPortalAdmin = z.infer<typeof resellerPortalAdminSchema>
+export type ResellerPaymentAccount = z.infer<typeof resellerPaymentAccountSchema>
+export type ResellerPaymentAccountSaveRequest = z.infer<typeof resellerPaymentAccountSaveRequestSchema>
+export type ResellerPaymentAccountSaveResponse = z.infer<typeof resellerPaymentAccountSaveResponseSchema>
+export type PaymentQrUploadResponse = z.infer<typeof paymentQrUploadResponseSchema>
+export type PortalShipment = z.infer<typeof portalShipmentSchema>
+export type PortalShipmentStatus = z.infer<typeof portalShipmentStatusSchema>
+export type PortalCourier = z.infer<typeof portalCourierSchema>
+export type ResellerShipment = z.infer<typeof resellerShipmentSchema>
+export type PortalShipmentUpdateRequest = z.infer<typeof portalShipmentUpdateRequestSchema>
+export type PortalShipmentUpdateResponse = z.infer<typeof portalShipmentUpdateResponseSchema>
+
+/** A cart item the business cannot fill right now; returned with RESELLER_ITEM_OUT_OF_STOCK / RESELLER_STOCK_SHORT. */
+export const resellerStockIssueSchema = z.object({
+  variantId: uuid,
+  productName: z.string().min(1),
+  variantName: z.string(),
+  requestedMilli: milli,
+  availableMilli: milli,
+})
+export const resellerStockIssuesSchema = z.object({ stockIssues: z.array(resellerStockIssueSchema) })
+
+export const resellerNotificationKindSchema = z.enum([
+  'order_confirmed',
+  'ready_for_pickup',
+  'shipped',
+  'delivered',
+  'picked_up',
+  'payment_verified',
+  'payment_rejected',
+  'order_expired',
+  'order_rejected',
+  'return_recorded',
+  'payment_due_soon',
+  'payment_overdue',
+  'payment_window_closing',
+  'back_in_stock',
+  'parcel_shipped',
+  'return_request_approved',
+  'return_request_declined',
+  'tier_changed',
+])
+export const resellerNotificationSchema = z.object({
+  id: uuid,
+  kind: resellerNotificationKindSchema,
+  title: z.string().min(1),
+  message: z.string().min(1),
+  salesOrderId: uuid.nullable(),
+  createdAt: timestamp,
+  readAt: timestamp.nullable(),
+})
+export const resellerNotificationsSchema = z.object({
+  unreadCount: z.number().int().nonnegative(),
+  items: z.array(resellerNotificationSchema),
+})
+export const resellerNotificationReadRequestSchema = z.strictObject({ notificationId: uuid.optional() })
+export const resellerNotificationReadResponseSchema = z.object({ unreadCount: z.number().int().nonnegative() })
+
+export type ResellerStockIssue = z.infer<typeof resellerStockIssueSchema>
+export type ResellerNotificationKind = z.infer<typeof resellerNotificationKindSchema>
+export type ResellerNotification = z.infer<typeof resellerNotificationSchema>
+export type ResellerNotifications = z.infer<typeof resellerNotificationsSchema>
+export type ResellerNotificationReadRequest = z.infer<typeof resellerNotificationReadRequestSchema>
+export type ResellerNotificationReadResponse = z.infer<typeof resellerNotificationReadResponseSchema>
+
+/** Whether the portal is in the plan and turned on, and what this member may do about it. */
+export const resellerPortalAvailabilitySchema = z.object({
+  entitled: z.boolean(),
+  enabled: z.boolean(),
+  advancedWholesaleEnabled: z.boolean(),
+  canToggle: z.boolean(),
+  canManage: z.boolean(),
+  canHandleOrders: z.boolean(),
+})
+export const resellerPortalEnableRequestSchema = z.strictObject({ enabled: z.boolean() })
+export type ResellerPortalAvailability = z.infer<typeof resellerPortalAvailabilitySchema>
+export type ResellerPortalEnableRequest = z.infer<typeof resellerPortalEnableRequestSchema>
+
+/** The reseller's statement of account with this business. */
+export const resellerStatementSchema = z.object({
+  asOf: z.string().min(1),
+  summary: z.object({
+    outstandingMinor: minor,
+    overdueMinor: minor,
+    /** Confirmed orders not shipped yet, less verified payments. */
+    notInvoicedMinor: minor,
+    pendingProofsMinor: minor,
+    creditAvailableMinor: minor,
+  }),
+  points: z
+    .object({
+      balance: z.number().int().nonnegative(),
+      redeemValueMinor: z.number().int().positive().nullable(),
+      minimumPoints: z.number().int().positive(),
+    })
+    .nullable()
+    .optional(),
+  invoices: z.array(
+    z.object({
+      invoiceId: uuid,
+      invoiceNumber: z.string().min(1),
+      salesOrderId: uuid.nullable(),
+      orderNumber: z.string().nullable(),
+      issuedAt: timestamp,
+      dueDate: z.string().nullable(),
+      totalMinor: minor,
+      paidMinor: minor,
+      creditedMinor: minor,
+      balanceMinor: minor,
+      status: z.enum(['open', 'overdue', 'paid']),
+      daysOverdue: z.number().int().nonnegative(),
+    }),
+  ),
+  notInvoiced: z.array(
+    z.object({
+      salesOrderId: uuid,
+      orderNumber: z.string().min(1),
+      confirmedAt: timestamp.nullable(),
+      amountMinor: minor,
+    }),
+  ),
+  activity: z.array(
+    z.object({
+      id: z.string().min(1),
+      at: timestamp,
+      kind: z.enum(['invoice', 'payment', 'return']),
+      label: z.string().min(1),
+      debitMinor: minor,
+      creditMinor: minor,
+    }),
+  ),
+})
+
+/** Loyalty points for the reseller: the rule, balance, and recent history. */
+export const resellerLoyaltySchema = z.object({
+  enabled: z.boolean(),
+  spendPerPointMinor: z.number().int().positive().nullable(),
+  /** Peso value of one point when paying an invoice; null = paying with points is off. */
+  redeemValueMinor: z.number().int().positive().nullable().optional(),
+  minimumPoints: z.number().int().positive().nullable().optional(),
+  balancePoints: z.number().int().nonnegative(),
+  lifetimeEarnedPoints: z.number().int().nonnegative(),
+  history: z.array(
+    z.object({
+      id: uuid,
+      type: z.enum(['sale_earn', 'refund_reversal', 'redemption']),
+      points: z.number().int(),
+      balanceAfter: z.number().int().nonnegative(),
+      occurredAt: timestamp,
+      invoiceNumber: z.string().nullable(),
+      orderNumber: z.string().nullable(),
+      receiptNumber: z.string().nullable(),
+    }),
+  ),
+})
+
+export type ResellerStatement = z.infer<typeof resellerStatementSchema>
+export type ResellerLoyalty = z.infer<typeof resellerLoyaltySchema>
+
+export const resellerCreditApplyRequestSchema = z.strictObject({
+  invoiceId: uuid,
+  amountMinor: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+})
+export const resellerCreditApplyResponseSchema = z.object({
+  invoiceId: uuid,
+  amountMinor: minor,
+  balanceMinor: minor,
+  applications: z.number().int().nonnegative(),
+})
+export const resellerPointsRedeemRequestSchema = z.strictObject({
+  invoiceId: uuid,
+  points: z.number().int().positive().max(1_000_000_000),
+})
+export const resellerPointsRedeemResponseSchema = z.object({
+  invoiceId: uuid,
+  paymentId: uuid,
+  points: z.number().int().positive(),
+  amountMinor: minor,
+  balanceMinor: minor,
+  pointsLeft: z.number().int().nonnegative(),
+})
+export const resellerPointsSettingsRequestSchema = z.strictObject({
+  redeemValueMinor: z.number().int().positive().max(10_000_000).nullable(),
+  minimumPoints: z.number().int().min(1).max(1_000_000),
+})
+export const resellerPointsSettingsResponseSchema = z.object({
+  redeemValueMinor: z.number().int().positive().nullable(),
+  minimumPoints: z.number().int().positive(),
+})
+
+export type ResellerCreditApplyRequest = z.infer<typeof resellerCreditApplyRequestSchema>
+export type ResellerCreditApplyResponse = z.infer<typeof resellerCreditApplyResponseSchema>
+export type ResellerPointsRedeemRequest = z.infer<typeof resellerPointsRedeemRequestSchema>
+export type ResellerPointsRedeemResponse = z.infer<typeof resellerPointsRedeemResponseSchema>
+export type ResellerPointsSettingsRequest = z.infer<typeof resellerPointsSettingsRequestSchema>
+
+export type ResellerAccentColor = z.infer<typeof resellerAccentColorSchema>
+export type ResellerBranding = z.infer<typeof resellerBrandingSchema>
+export type ResellerBrandingSaveRequest = z.infer<typeof resellerBrandingSaveRequestSchema>
+
+// Shipping fee ---------------------------------------------------------------
+export const resellerShippingSettingsSchema = z.strictObject({
+  feeMinor: z.number().int().min(0).max(10_000_000),
+  freeAboveMinor: z.number().int().min(1).max(900_719_925_474_099).nullable(),
+})
+export type ResellerShippingSettings = z.infer<typeof resellerShippingSettingsSchema>
+
+// Printable invoice ------------------------------------------------------------
+export const resellerInvoiceSchema = z.object({
+  branding: resellerBrandingSchema.optional(),
+  businessName: z.string().min(1),
+  invoiceId: uuid,
+  invoiceNumber: z.string().min(1),
+  issuedAt: timestamp,
+  orderNumber: z.string().nullable(),
+  customerName: z.string().min(1),
+  customerNumber: z.string().min(1),
+  locationName: z.string().min(1),
+  paymentTerm: z.enum(['prepaid', 'cod', 'net_7', 'net_15', 'net_30']).nullable(),
+  dueDate: z.string().nullable(),
+  lines: z.array(
+    z.object({
+      productName: z.string().min(1),
+      variantName: z.string(),
+      sku: z.string(),
+      quantityMilli: milli,
+      unitPriceMinor: minor,
+      lineTotalMinor: minor,
+    }),
+  ),
+  subtotalMinor: minor,
+  discountMinor: minor,
+  taxMinor: minor,
+  shippingFeeMinor: minor,
+  totalMinor: minor,
+  settlements: z.array(z.object({ at: timestamp, label: z.string().min(1), amountMinor: minor })),
+  balanceMinor: minor,
+  status: z.enum(['open', 'paid', 'overdue']),
+})
+export type ResellerInvoice = z.infer<typeof resellerInvoiceSchema>
+
+// Return requests -------------------------------------------------------------
+export const returnRequestStatusSchema = z.enum(['pending', 'approved', 'declined'])
+const returnRequestBase = {
+  requestId: uuid,
+  status: returnRequestStatusSchema,
+  reason: z.string().min(1),
+  decisionReason: z.string().nullable(),
+  createdAt: timestamp,
+  decidedAt: timestamp.nullable(),
+  invoiceId: uuid,
+  invoiceNumber: z.string().min(1),
+  salesOrderId: uuid.nullable(),
+  orderNumber: z.string().nullable(),
+  lines: z.array(
+    z.object({ invoiceLineId: uuid, productName: z.string().min(1), variantName: z.string(), quantityMilli: milli }),
+  ),
+}
+/** As the reseller sees a request on their order. */
+export const resellerReturnRequestSummarySchema = z.object({
+  ...returnRequestBase,
+  photoCount: z.number().int().nonnegative(),
+})
+/** As the team sees a request, with signed photo links. */
+export const returnRequestSchema = z.object({
+  ...returnRequestBase,
+  customerName: z.string().min(1),
+  photos: z.array(z.object({ url: z.string().min(1), thumbUrl: z.string().nullable() })),
+})
+export const returnRequestsSchema = z.object({ requests: z.array(returnRequestSchema) })
+export const returnRequestSubmitSchema = z.strictObject({
+  invoiceId: uuid,
+  reason: z.string().trim().min(5).max(500),
+  lines: z
+    .array(z.strictObject({ invoiceLineId: uuid, quantityMilli: z.number().int().min(1).max(999_999_999_999) }))
+    .min(1)
+    .max(100),
+})
+export const returnRequestSubmitResponseSchema = z.object({
+  requestId: uuid,
+  status: returnRequestStatusSchema,
+  invoiceNumber: z.string().min(1),
+})
+export const returnPhotoResponseSchema = z.object({
+  requestId: uuid,
+  fileId: uuid,
+  photoCount: z.number().int().positive(),
+})
+export const returnRequestDecisionSchema = z.discriminatedUnion('decision', [
+  z.strictObject({ decision: z.literal('approve'), reason: z.string().trim().min(2).max(500).optional() }),
+  z.strictObject({ decision: z.literal('decline'), reason: z.string().trim().min(2).max(500) }),
+])
+export type ResellerReturnRequestSummary = z.infer<typeof resellerReturnRequestSummarySchema>
+export type ReturnRequest = z.infer<typeof returnRequestSchema>
+export type ReturnRequests = z.infer<typeof returnRequestsSchema>
+export type ReturnRequestSubmit = z.infer<typeof returnRequestSubmitSchema>
+export type ReturnRequestSubmitResponse = z.infer<typeof returnRequestSubmitResponseSchema>
+export type ReturnPhotoResponse = z.infer<typeof returnPhotoResponseSchema>
+export type ReturnRequestDecision = z.infer<typeof returnRequestDecisionSchema>
+
+// Reseller tiers ----------------------------------------------------------------
+export const resellerTierNameSchema = z.enum(['silver', 'gold', 'platinum'])
+export const resellerTierSchema = z.object({
+  tier: resellerTierNameSchema,
+  tierChangedAt: timestamp.nullable(),
+  activeReferrals: z.number().int().nonnegative(),
+  totalReferrals: z.number().int().nonnegative(),
+  lifetimeSalesMinor: minor,
+  activeDays: z.number().int().positive(),
+  tiers: z.array(
+    z.object({
+      tier: resellerTierNameSchema,
+      minReferrals: z.number().int().nonnegative(),
+      minSalesMinor: minor,
+      spendPerPointMinor: z.number().int().positive(),
+      credit: z.boolean(),
+    }),
+  ),
+  referralCode: z.string().min(1),
+  tenantSlug: z.string().min(1),
+  referrals: z.array(z.object({ name: z.string().min(1), joinedAt: timestamp, active: z.boolean() })),
+  credit: z.object({
+    limitMinor: minor.nullable(),
+    paymentTerm: z.enum(['prepaid', 'cod', 'net_7', 'net_15', 'net_30']).nullable(),
+    availableMinor: minor.nullable(),
+    blockedReason: z.enum(['not_platinum', 'on_hold', 'overdue', 'unavailable']).nullable(),
+  }),
+})
+const wholePesosMinor = z.number().int().min(100).max(1_000_000_000_000)
+export const resellerTierSettingsSchema = z.strictObject({
+  goldMinReferrals: z.number().int().min(1).max(100_000),
+  goldMinSalesMinor: wholePesosMinor,
+  platinumMinReferrals: z.number().int().min(2).max(100_000),
+  platinumMinSalesMinor: wholePesosMinor,
+  silverSpendPerPointMinor: z.number().int().min(100).max(10_000_000),
+  goldSpendPerPointMinor: z.number().int().min(100).max(10_000_000),
+  platinumSpendPerPointMinor: z.number().int().min(100).max(10_000_000),
+  platinumCreditLimitMinor: z.number().int().min(0).max(10_000_000_000),
+  platinumPaymentTerm: z.enum(['cod', 'net_7', 'net_15', 'net_30']),
+  activeDays: z.number().int().min(7).max(365),
+})
+export const resellerAccountTierSchema = z.object({
+  tier: resellerTierNameSchema,
+  referralCode: z.string().min(1),
+  referredByAccountId: uuid.nullable(),
+  referredByName: z.string().nullable(),
+  activeReferrals: z.number().int().nonnegative(),
+  lifetimeSalesMinor: minor,
+  creditHold: z.boolean(),
+  creditLimitOverrideMinor: minor.nullable(),
+})
+export const resellerAccountControlsSchema = z.strictObject({
+  creditHold: z.boolean().optional(),
+  creditLimitOverrideMinor: z.number().int().min(0).max(1_000_000_000_000).nullable().optional(),
+  referredByAccountId: uuid.nullable().optional(),
+})
+export type ResellerTierName = z.infer<typeof resellerTierNameSchema>
+export type ResellerTier = z.infer<typeof resellerTierSchema>
+export type ResellerTierSettings = z.infer<typeof resellerTierSettingsSchema>
+export type ResellerAccountTier = z.infer<typeof resellerAccountTierSchema>
+export type ResellerAccountControls = z.infer<typeof resellerAccountControlsSchema>

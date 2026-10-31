@@ -50,6 +50,8 @@ export const posSalesContextSchema = z.object({
         .default([]),
       availableMilli: z.number().int().nonnegative().nullable(),
       trackInventory: z.boolean(),
+      /** Signed API-relative path of the product's primary photo thumbnail. */
+      imageThumbUrl: z.string().nullable().optional(),
     }),
   ),
   paymentMethods: z.array(

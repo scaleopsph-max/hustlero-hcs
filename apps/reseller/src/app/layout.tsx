@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Bricolage_Grotesque, Figtree } from 'next/font/google'
 import type { ReactNode } from 'react'
+import { ToastProvider } from '@hcs/ui'
 import './globals.css'
 
 import { ServiceWorkerRegister } from '@/components/ServiceWorkerRegister'
@@ -25,9 +26,9 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="fil" className={`${display.variable} ${sans.variable}`}>
+    <html lang="en" className={`${display.variable} ${sans.variable}`}>
       <body className="app-pos min-h-dvh">
-        {children}
+        <ToastProvider>{children}</ToastProvider>
         <ServiceWorkerRegister />
       </body>
     </html>
