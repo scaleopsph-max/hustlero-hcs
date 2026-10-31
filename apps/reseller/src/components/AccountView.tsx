@@ -1,10 +1,13 @@
 'use client'
 
-import type { ResellerPortalCatalog, ResellerPortalSession } from '@hcs/contracts'
+import type { ResellerLoyalty, ResellerPortalCatalog, ResellerPortalSession, ResellerStatement } from '@hcs/contracts'
 import { Button, Glass, formatPeso } from '@hcs/ui'
-import { LogOut, Star } from 'lucide-react'
+import { LogOut } from 'lucide-react'
 
 import { paymentTermLabel } from '@/lib/labels'
+
+import { LoyaltyCard } from './LoyaltyCard'
+import { StatementCard } from './StatementCard'
 
 export function AccountView({
   catalog,
@@ -12,12 +15,18 @@ export function AccountView({
   tenantId,
   onSwitchTenant,
   onSignOut,
+  loadStatement,
+  loadLoyalty,
+  onOpenOrder,
 }: {
   catalog: ResellerPortalCatalog
   session: ResellerPortalSession
   tenantId: string
   onSwitchTenant: (tenantId: string) => void
   onSignOut: () => void
+  loadStatement: () => Promise<ResellerStatement>
+  loadLoyalty: () => Promise<ResellerLoyalty>
+  onOpenOrder: (salesOrderId: string) => void
 }) {
   const { account } = catalog
   return (
@@ -43,13 +52,9 @@ export function AccountView({
         />
       </Glass>
 
-      <Glass variant="gold" className="flex items-center gap-3 rounded-glass p-4">
-        <Star size={24} className="flex-none text-gold-300" />
-        <div>
-          <p className="font-semibold">{account.pointsBalance.toLocaleString('en-PH')} points</p>
-          <p className="text-small text-ink-200">Points are coming soon: 1 point for every ₱100 you order.</p>
-        </div>
-      </Glass>
+      <StatementCard load={loadStatement} onOpenOrder={onOpenOrder} />
+
+      <LoyaltyCard load={loadLoyalty} fallbackPoints={account.pointsBalance} />
 
       {session.accounts.length > 1 ? (
         <Glass className="flex flex-col gap-2 rounded-glass p-4">

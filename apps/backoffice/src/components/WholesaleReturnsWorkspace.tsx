@@ -96,7 +96,15 @@ export function WholesaleReturnsWorkspace() {
           if (restored) setMode(restored.operation)
         }
         const next = wholesaleReturnsContextSchema.parse(await call(session.session.access_token, tenant.tenantId))
-        if (active) setData(next)
+        if (active) {
+          setData(next)
+          // Opened from a reseller portal order: start a return for that invoice.
+          const requested = new URLSearchParams(window.location.search).get('invoice')
+          if (requested && !restored && next.invoices.some((row) => row.invoiceId === requested)) {
+            setMode('return')
+            setInvoice(requested)
+          }
+        }
       } catch (cause) {
         if (active) {
           setData(null)

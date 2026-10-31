@@ -482,6 +482,31 @@ describe('reseller portal API', () => {
     expect(notOwner.status).toBe(403)
   })
 
+  it('serves the reseller statement and loyalty only to signed-in resellers', async () => {
+    const statement = {
+      asOf: '2026-10-31',
+      summary: {
+        outstandingMinor: 0,
+        overdueMinor: 0,
+        notInvoicedMinor: 0,
+        pendingProofsMinor: 0,
+        creditAvailableMinor: 0,
+      },
+      invoices: [],
+      notInvoiced: [],
+      activity: [],
+    }
+    const loyalty = { enabled: false, spendPerPointMinor: null, balancePoints: 0, lifetimeEarnedPoints: 0, history: [] }
+    const loadStatement = vi.fn(async () => statement)
+    const loadLoyalty = vi.fn(async () => loyalty)
+    const app = portalApp(repository({ loadStatement, loadLoyalty }))
+    const headers = { authorization: 'Bearer reseller-token', 'x-tenant-id': tenantId }
+    expect(await (await app.request('/v1/portal/statement', { headers }, bindings)).json()).toEqual(statement)
+    expect(await (await app.request('/v1/portal/loyalty', { headers }, bindings)).json()).toEqual(loyalty)
+    expect(loadStatement).toHaveBeenCalledWith(resellerUserId, tenantId, bindings)
+    expect((await app.request('/v1/portal/statement', {}, bindings)).status).toBe(401)
+  })
+
   it('lists reseller notifications and marks them read', async () => {
     const loadNotifications = vi.fn(async () => ({ unreadCount: 0, items: [] }))
     const markNotificationsRead = vi.fn(async () => ({ unreadCount: 0 }))

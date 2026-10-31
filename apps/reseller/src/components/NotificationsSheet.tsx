@@ -12,6 +12,7 @@ import {
   Store,
   Truck,
   TriangleAlert,
+  Undo2,
   BellOff,
   Share,
   Smartphone,
@@ -32,6 +33,7 @@ const icons: Record<ResellerNotificationKind, { Icon: LucideIcon; tone: string }
   payment_rejected: { Icon: TriangleAlert, tone: 'text-signal-dark-critical-fg' },
   order_expired: { Icon: Clock, tone: 'text-signal-dark-warning-fg' },
   order_rejected: { Icon: Ban, tone: 'text-signal-dark-critical-fg' },
+  return_recorded: { Icon: Undo2, tone: 'text-gold-300' },
 }
 
 /** Glass sheet with the reseller's order updates; tapping one opens that order. */

@@ -156,6 +156,7 @@ export const portalShipmentSchema = z.object({
   shippedAt: timestamp.nullable(),
   deliveredAt: timestamp.nullable(),
   /** Set once shipping (or pickup) completed the sale. */
+  invoiceId: uuid.nullable().optional(),
   invoiceNumber: z.string().nullable().optional(),
   /** What the reseller still owes on the invoice; null before the sale is completed. */
   balanceMinor: z.number().int().nullable().optional(),
@@ -208,6 +209,28 @@ export const resellerOrderSchema = z.object({
   invoices: z.array(z.object({ id: uuid, invoiceNumber: z.string().min(1), totalMinor: minor, issuedAt: timestamp })),
   paymentProofs: z.array(paymentProofSchema).optional(),
   shipment: resellerShipmentSchema.nullable().optional(),
+  /** Returns (credit notes) recorded on this order's invoices. */
+  returns: z
+    .array(
+      z.object({
+        id: uuid,
+        invoiceNumber: z.string().min(1),
+        amountMinor: minor,
+        /** Part of the return kept as credit because the invoice was already paid. */
+        creditMinor: minor,
+        reason: z.string().min(1),
+        recordedAt: timestamp,
+        lines: z.array(
+          z.object({
+            productName: z.string().min(1),
+            variantName: z.string(),
+            quantityMilli: milli,
+            returnToStock: z.boolean(),
+          }),
+        ),
+      }),
+    )
+    .optional(),
 })
 
 export const resellerOrdersSchema = z.object({ orders: z.array(resellerOrderSchema) })
@@ -489,6 +512,7 @@ export const resellerNotificationKindSchema = z.enum([
   'payment_rejected',
   'order_expired',
   'order_rejected',
+  'return_recorded',
 ])
 export const resellerNotificationSchema = z.object({
   id: uuid,
@@ -525,3 +549,73 @@ export const resellerPortalAvailabilitySchema = z.object({
 export const resellerPortalEnableRequestSchema = z.strictObject({ enabled: z.boolean() })
 export type ResellerPortalAvailability = z.infer<typeof resellerPortalAvailabilitySchema>
 export type ResellerPortalEnableRequest = z.infer<typeof resellerPortalEnableRequestSchema>
+
+/** The reseller's statement of account with this business. */
+export const resellerStatementSchema = z.object({
+  asOf: z.string().min(1),
+  summary: z.object({
+    outstandingMinor: minor,
+    overdueMinor: minor,
+    /** Confirmed orders not shipped yet, less verified payments. */
+    notInvoicedMinor: minor,
+    pendingProofsMinor: minor,
+    creditAvailableMinor: minor,
+  }),
+  invoices: z.array(
+    z.object({
+      invoiceId: uuid,
+      invoiceNumber: z.string().min(1),
+      salesOrderId: uuid.nullable(),
+      orderNumber: z.string().nullable(),
+      issuedAt: timestamp,
+      dueDate: z.string().nullable(),
+      totalMinor: minor,
+      paidMinor: minor,
+      creditedMinor: minor,
+      balanceMinor: minor,
+      status: z.enum(['open', 'overdue', 'paid']),
+      daysOverdue: z.number().int().nonnegative(),
+    }),
+  ),
+  notInvoiced: z.array(
+    z.object({
+      salesOrderId: uuid,
+      orderNumber: z.string().min(1),
+      confirmedAt: timestamp.nullable(),
+      amountMinor: minor,
+    }),
+  ),
+  activity: z.array(
+    z.object({
+      id: z.string().min(1),
+      at: timestamp,
+      kind: z.enum(['invoice', 'payment', 'return']),
+      label: z.string().min(1),
+      debitMinor: minor,
+      creditMinor: minor,
+    }),
+  ),
+})
+
+/** Loyalty points for the reseller: the rule, balance, and recent history. */
+export const resellerLoyaltySchema = z.object({
+  enabled: z.boolean(),
+  spendPerPointMinor: z.number().int().positive().nullable(),
+  balancePoints: z.number().int().nonnegative(),
+  lifetimeEarnedPoints: z.number().int().nonnegative(),
+  history: z.array(
+    z.object({
+      id: uuid,
+      type: z.enum(['sale_earn', 'refund_reversal']),
+      points: z.number().int(),
+      balanceAfter: z.number().int().nonnegative(),
+      occurredAt: timestamp,
+      invoiceNumber: z.string().nullable(),
+      orderNumber: z.string().nullable(),
+      receiptNumber: z.string().nullable(),
+    }),
+  ),
+})
+
+export type ResellerStatement = z.infer<typeof resellerStatementSchema>
+export type ResellerLoyalty = z.infer<typeof resellerLoyaltySchema>

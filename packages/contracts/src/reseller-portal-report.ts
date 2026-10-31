@@ -26,6 +26,21 @@ export const resellerPortalReportFilterSchema = z
   .object({ from: isoDate, to: isoDate })
   .refine((filter) => filter.from <= filter.to, { message: 'The start date must be on or before the end date.' })
 
+const agingBands = {
+  notDueMinor: minor,
+  days1To7Minor: minor,
+  days8To15Minor: minor,
+  days16To30Minor: minor,
+  over30Minor: minor,
+}
+export const resellerReportSpeedStepSchema = z.enum([
+  'order_to_payment',
+  'payment_to_confirmed',
+  'confirmed_to_sent',
+  'sent_to_delivered',
+  'order_to_delivered',
+])
+
 export const resellerPortalReportSchema = z.object({
   from: isoDate,
   to: isoDate,
@@ -101,8 +116,52 @@ export const resellerPortalReportSchema = z.object({
       }),
     ),
   }),
+  /** Open balances by days past due, as of today (not limited by the date range). */
+  aging: z
+    .object({
+      asOf: isoDate,
+      totals: z.object(agingBands),
+      resellers: z.array(
+        z.object({
+          customerId: uuid,
+          customerName: z.string().min(1),
+          customerNumber: z.string().nullable(),
+          ...agingBands,
+          totalMinor: minor,
+          oldestDaysOverdue: count,
+        }),
+      ),
+    })
+    .optional(),
+  /** Orders placed in the range per reseller: paid (confirmed), expired, rejected, still open. */
+  conversion: z
+    .array(
+      z.object({
+        customerId: uuid,
+        customerName: z.string().min(1),
+        placed: count,
+        paid: count,
+        expired: count,
+        rejected: count,
+        open: count,
+        paidPercent: count.nullable(),
+      }),
+    )
+    .optional(),
+  /** How long each step took for orders placed in the range. */
+  speed: z
+    .array(
+      z.object({
+        step: resellerReportSpeedStepSchema,
+        orders: count,
+        medianHours: z.number().nonnegative().nullable(),
+        averageHours: z.number().nonnegative().nullable(),
+      }),
+    )
+    .optional(),
 })
 
 export type ResellerReportOrderBucket = z.infer<typeof resellerReportOrderBucketSchema>
 export type ResellerPortalReportFilter = z.infer<typeof resellerPortalReportFilterSchema>
 export type ResellerPortalReport = z.infer<typeof resellerPortalReportSchema>
+export type ResellerReportSpeedStep = z.infer<typeof resellerReportSpeedStepSchema>

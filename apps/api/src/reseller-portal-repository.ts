@@ -16,6 +16,10 @@ import {
   portalShipmentUpdateResponseSchema,
   resellerPortalReportSchema,
   resellerStockIssuesSchema,
+  resellerStatementSchema,
+  resellerLoyaltySchema,
+  type ResellerStatement,
+  type ResellerLoyalty,
   resellerPortalAvailabilitySchema,
   type ResellerPortalAvailability,
   pushSubscriptionResponseSchema,
@@ -204,6 +208,8 @@ export interface ResellerPortalRepository {
     requestId: string,
     bindings: Bindings,
   ): Promise<ResellerPortalAvailability>
+  loadStatement(authUserId: string, tenantId: string, bindings: Bindings): Promise<ResellerStatement>
+  loadLoyalty(authUserId: string, tenantId: string, bindings: Bindings): Promise<ResellerLoyalty>
   /** Read-only report for the Back Office Reports page; dates are in the business's time zone. */
   loadReport(
     userId: string,
@@ -383,10 +389,24 @@ export const resellerPortalPostgresRepository: ResellerPortalRepository = {
       [userId, tenantId, enabled, requestId],
       (value) => resellerPortalAvailabilitySchema.parse(value),
     ),
+  loadStatement: (authUserId, tenantId, bindings) =>
+    queryOne(
+      bindings,
+      'select app.load_reseller_statement($1::uuid, $2::uuid) response',
+      [authUserId, tenantId],
+      (value) => resellerStatementSchema.parse(value),
+    ),
+  loadLoyalty: (authUserId, tenantId, bindings) =>
+    queryOne(
+      bindings,
+      'select app.load_reseller_loyalty($1::uuid, $2::uuid) response',
+      [authUserId, tenantId],
+      (value) => resellerLoyaltySchema.parse(value),
+    ),
   loadReport: (userId, tenantId, from, to, bindings) =>
     queryOne(
       bindings,
-      'select app.load_reseller_portal_report($1::uuid, $2::uuid, $3::date, $4::date) response',
+      'select app.load_reseller_portal_report($1::uuid, $2::uuid, $3::date, $4::date) || app.load_reseller_portal_insights($1::uuid, $2::uuid, $3::date, $4::date) response',
       [userId, tenantId, from, to],
       (value) => resellerPortalReportSchema.parse(value),
     ),

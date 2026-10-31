@@ -4,7 +4,9 @@ import {
   paymentProofUploadResponseSchema,
   pushPublicKeyResponseSchema,
   pushSubscriptionResponseSchema,
+  resellerLoyaltySchema,
   resellerNotificationReadResponseSchema,
+  resellerStatementSchema,
   resellerNotificationsSchema,
   resellerOrderSubmitResponseSchema,
   resellerOrdersSchema,
@@ -243,6 +245,15 @@ export function PortalApp() {
     }
   }
 
+  const loadStatement = useCallback(() => {
+    if (!token || !tenantId) return Promise.reject(new Error('Please sign in again.'))
+    return portalRequest('/v1/portal/statement', (value) => resellerStatementSchema.parse(value), { token, tenantId })
+  }, [token, tenantId])
+  const loadLoyalty = useCallback(() => {
+    if (!token || !tenantId) return Promise.reject(new Error('Please sign in again.'))
+    return portalRequest('/v1/portal/loyalty', (value) => resellerLoyaltySchema.parse(value), { token, tenantId })
+  }, [token, tenantId])
+
   async function markRead(notificationId: string | null) {
     if (!token || !tenantId) return
     setNotifications((current) => ({
@@ -470,6 +481,13 @@ export function PortalApp() {
               tenantId={tenantId}
               onSwitchTenant={setTenantId}
               onSignOut={signOut}
+              loadStatement={loadStatement}
+              loadLoyalty={loadLoyalty}
+              onOpenOrder={(salesOrderId) => {
+                setFocusOrderId(salesOrderId)
+                setTab('orders')
+                void loadOrders()
+              }}
             />
           ) : null}
         </main>

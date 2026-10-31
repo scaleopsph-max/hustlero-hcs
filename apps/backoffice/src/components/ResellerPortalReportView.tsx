@@ -1,6 +1,11 @@
 'use client'
 
-import type { PortalShipmentStatus, ResellerPortalReport, ResellerReportOrderBucket } from '@hcs/contracts'
+import type {
+  PortalShipmentStatus,
+  ResellerPortalReport,
+  ResellerReportOrderBucket,
+  ResellerReportSpeedStep,
+} from '@hcs/contracts'
 import { Glass, formatPeso } from '@hcs/ui'
 
 import { courierLabel } from './LogisticsBoard'
@@ -23,6 +28,20 @@ const methodLabel = { gcash: 'GCash', bank_transfer: 'Bank transfer' } as const
 const courierName = (courier: keyof typeof courierLabel | 'none' | null) =>
   courier === null || courier === 'none' ? 'No courier' : courierLabel[courier]
 const peso = (minor: number) => minor / 100
+const speedLabel: Record<ResellerReportSpeedStep, string> = {
+  order_to_payment: 'Order → payment sent',
+  payment_to_confirmed: 'Payment sent → confirmed',
+  confirmed_to_sent: 'Confirmed → shipped or picked up',
+  sent_to_delivered: 'Shipped → delivered',
+  order_to_delivered: 'Order → delivered (total)',
+}
+/** "45 min", "6.5 hrs", "2.3 days" */
+function duration(hours: number | null): string {
+  if (hours === null) return '—'
+  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))} min`
+  if (hours < 48) return `${hours.toFixed(1)} hrs`
+  return `${(hours / 24).toFixed(1)} days`
+}
 
 /** Reseller portal report: orders, sales per reseller, top products, verified payments, and logistics. */
 export function ResellerPortalReportView({ report }: { report: ResellerPortalReport }) {
@@ -127,6 +146,145 @@ export function ResellerPortalReportView({ report }: { report: ResellerPortalRep
           ])}
         />
       </Glass>
+
+      {report.aging ? (
+        <Glass variant="light" className="overflow-hidden">
+          <ReportHeader
+            title="Who owes, and for how long"
+            subtitle={`Open invoice balances by days past due, as of ${report.aging.asOf} (not limited by the dates above).`}
+            onExport={() =>
+              downloadCsv(`hcs-portal-aging-${report.aging!.asOf}.csv`, [
+                [
+                  'Reseller',
+                  'Customer no.',
+                  'Not due',
+                  '1–7 days',
+                  '8–15 days',
+                  '16–30 days',
+                  'Over 30 days',
+                  'Total',
+                  'Oldest (days)',
+                ],
+                ...report.aging!.resellers.map((row) => [
+                  row.customerName,
+                  row.customerNumber ?? '',
+                  peso(row.notDueMinor),
+                  peso(row.days1To7Minor),
+                  peso(row.days8To15Minor),
+                  peso(row.days16To30Minor),
+                  peso(row.over30Minor),
+                  peso(row.totalMinor),
+                  row.oldestDaysOverdue,
+                ]),
+              ])
+            }
+          />
+          <div className="grid gap-3 border-b border-ink-900/10 p-5 sm:grid-cols-5">
+            <MetricPanel label="Not due yet" value={formatPeso(report.aging.totals.notDueMinor)} />
+            <MetricPanel label="1–7 days late" value={formatPeso(report.aging.totals.days1To7Minor)} />
+            <MetricPanel label="8–15 days late" value={formatPeso(report.aging.totals.days8To15Minor)} />
+            <MetricPanel label="16–30 days late" value={formatPeso(report.aging.totals.days16To30Minor)} />
+            <MetricPanel label="Over 30 days late" value={formatPeso(report.aging.totals.over30Minor)} />
+          </div>
+          <ReportTable
+            headings={['Reseller', 'Not due', '1–7', '8–15', '16–30', '30+', 'Total']}
+            rows={report.aging.resellers.map((row) => [
+              <div key="reseller">
+                <strong>{row.customerName}</strong>
+                <div className="text-xs text-ink-500">
+                  {row.oldestDaysOverdue > 0 ? `Oldest ${row.oldestDaysOverdue} days late` : 'Nothing late'}
+                </div>
+              </div>,
+              formatPeso(row.notDueMinor),
+              formatPeso(row.days1To7Minor),
+              formatPeso(row.days8To15Minor),
+              formatPeso(row.days16To30Minor),
+              row.over30Minor > 0 ? (
+                <span key="late" className="font-semibold text-red-700">
+                  {formatPeso(row.over30Minor)}
+                </span>
+              ) : (
+                formatPeso(0)
+              ),
+              <strong key="total">{formatPeso(row.totalMinor)}</strong>,
+            ])}
+          />
+        </Glass>
+      ) : null}
+
+      {report.conversion ? (
+        <Glass variant="light" className="overflow-hidden">
+          <ReportHeader
+            title="Paid vs expired per reseller"
+            subtitle="Orders placed in the range: paid and confirmed, expired after 4 hours, rejected, or still waiting."
+            onExport={() =>
+              downloadCsv(`hcs-portal-paid-vs-expired-${range}.csv`, [
+                ['Reseller', 'Placed', 'Paid', 'Expired', 'Rejected', 'Still open', 'Paid %'],
+                ...report.conversion!.map((row) => [
+                  row.customerName,
+                  row.placed,
+                  row.paid,
+                  row.expired,
+                  row.rejected,
+                  row.open,
+                  row.paidPercent ?? '',
+                ]),
+              ])
+            }
+          />
+          <ReportTable
+            headings={['Reseller', 'Placed', 'Paid', 'Expired', 'Rejected', 'Paid %']}
+            rows={report.conversion.map((row) => [
+              <div key="reseller">
+                <strong>{row.customerName}</strong>
+                {row.open > 0 ? (
+                  <div className="text-xs text-ink-500">{row.open} still waiting for payment or review</div>
+                ) : null}
+              </div>,
+              row.placed,
+              row.paid,
+              row.expired > 0 ? (
+                <span key="expired" className="font-semibold text-amber-800">
+                  {row.expired}
+                </span>
+              ) : (
+                0
+              ),
+              row.rejected,
+              row.paidPercent === null ? '—' : `${row.paidPercent}%`,
+            ])}
+          />
+        </Glass>
+      ) : null}
+
+      {report.speed ? (
+        <Glass variant="light" className="overflow-hidden">
+          <ReportHeader
+            title="How fast orders move"
+            subtitle="Median time for each step (half of the orders were faster), for orders placed in the range."
+            onExport={() =>
+              downloadCsv(`hcs-portal-speed-${range}.csv`, [
+                ['Step', 'Orders', 'Median hours', 'Average hours'],
+                ...report.speed!.map((row) => [
+                  speedLabel[row.step],
+                  row.orders,
+                  row.medianHours ?? '',
+                  row.averageHours ?? '',
+                ]),
+              ])
+            }
+          />
+          <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-5">
+            {report.speed.map((row) => (
+              <MetricPanel
+                key={row.step}
+                label={`${speedLabel[row.step]} · ${row.orders} ${row.orders === 1 ? 'order' : 'orders'}`}
+                value={duration(row.medianHours)}
+              />
+            ))}
+          </div>
+        </Glass>
+      ) : null}
 
       <Glass variant="light" className="overflow-hidden">
         <ReportHeader

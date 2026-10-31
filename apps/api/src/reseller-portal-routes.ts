@@ -382,6 +382,22 @@ export function registerResellerPortalRoutes(
     }
   })
 
+  app.get('/v1/portal/statement', async (context) => {
+    const reseller = await resolveReseller(context, true)
+    if (reseller instanceof Response) return reseller
+    return run(context, async () =>
+      context.json(await dependencies.repository.loadStatement(reseller.userId, reseller.tenantId, context.env)),
+    )
+  })
+
+  app.get('/v1/portal/loyalty', async (context) => {
+    const reseller = await resolveReseller(context, true)
+    if (reseller instanceof Response) return reseller
+    return run(context, async () =>
+      context.json(await dependencies.repository.loadLoyalty(reseller.userId, reseller.tenantId, context.env)),
+    )
+  })
+
   app.get('/v1/portal/notifications', async (context) => {
     const reseller = await resolveReseller(context, true)
     if (reseller instanceof Response) return reseller

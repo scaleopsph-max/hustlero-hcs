@@ -2,7 +2,8 @@
 
 import type { PortalCourier, PortalShipment, PortalShipmentStatus, PortalShipmentUpdateRequest } from '@hcs/contracts'
 import { Button, Chip, Glass, cn, formatPeso } from '@hcs/ui'
-import { Check, MapPin, Package, PackageCheck, Phone, ReceiptText, Store, Truck } from 'lucide-react'
+import { Check, MapPin, Package, PackageCheck, Phone, ReceiptText, Store, Truck, Undo2 } from 'lucide-react'
+import Link from 'next/link'
 import { useState } from 'react'
 
 const control =
@@ -161,6 +162,14 @@ function ShipmentCard({
             <span className={shipment.balanceMinor ? 'font-semibold text-signal-light-warning-fg' : 'text-ink-500'}>
               · {shipment.balanceMinor ? `${formatPeso(shipment.balanceMinor)} still to pay` : 'Paid in full'}
             </span>
+          </p>
+        ) : null}
+        {shipment.invoiceId && (shipment.status === 'shipped' || shipment.status === 'delivered') ? (
+          <p className="flex items-center gap-2">
+            <Undo2 size={16} className="flex-none" />
+            <Link className="underline underline-offset-2" href={`/wholesale/returns?invoice=${shipment.invoiceId}`}>
+              Record a return
+            </Link>
           </p>
         ) : null}
         {shipment.deliveredAt ? (

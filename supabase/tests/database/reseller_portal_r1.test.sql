@@ -476,6 +476,36 @@ select is(app.award_portal_loyalty('1e100000-0000-4000-8000-000000000001', '2e10
 select is((select balance_points from app.loyalty_accounts where tenant_id = '2e100000-0000-4000-8000-000000000001' and customer_id = (select customer_id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')),
   25::bigint, 'the reseller''s balance shows the points');
 
+-- Statement of account.
+select is((select x->>'status' from jsonb_array_elements(app.load_reseller_statement('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001')->'invoices') x where x->>'orderNumber' = 'RP-000001'), 'paid',
+  'the statement shows the shipped order''s invoice as paid');
+select is((app.load_reseller_statement('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001')->'summary'->>'outstandingMinor')::bigint, 0::bigint, 'nothing is outstanding once the balance is paid');
+select ok(exists(select 1 from jsonb_array_elements(app.load_reseller_statement('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001')->'activity') x where x->>'kind' = 'payment'),
+  'payments appear in the statement activity');
+select throws_ok($$ select app.load_reseller_statement('1e100000-0000-4000-8000-000000000012', '2e100000-0000-4000-8000-000000000001') $$, 'HCRP1', null, 'a stranger cannot read a statement');
+
+-- Returns on a portal order: credit note, reseller sees it, points reversed.
+select lives_ok($$ select app.post_wholesale_return('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', jsonb_build_object('invoiceId', (select id from app.invoices where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number_snapshot = 'RP-000001'), 'reason', 'One bag arrived torn',
+  'lines', jsonb_build_array(jsonb_build_object('invoiceLineId', (select id from app.invoice_lines where invoice_id = (select id from app.invoices where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number_snapshot = 'RP-000001') and sku = 'COF-250'),
+    'quantityMilli', 1000, 'returnToStock', false))), 'portal-return-key-0001', 'return-hash', 'return-request') $$, 'the owner records a return on a portal invoice');
+select is((select x->>'reason' from jsonb_array_elements(app.list_reseller_portal_orders('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001')->'orders') o, jsonb_array_elements(o->'returns') x
+  where o->>'orderNumber' = 'RP-000001'), 'One bag arrived torn', 'the reseller sees the return on the order');
+select is((select x->>'kind' from jsonb_array_elements(app.load_reseller_notifications('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', 50)->'items') x where x->>'kind' = 'return_recorded'),
+  'return_recorded', 'the reseller is told about the return');
+select is((select balance_points from app.loyalty_accounts where tenant_id = '2e100000-0000-4000-8000-000000000001' and customer_id = (select customer_id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')),
+  22::bigint, 'returning ₱250 of a ₱2,500 sale takes back 3 of 25 points');
+select is((select x->>'type' from jsonb_array_elements(app.load_reseller_loyalty('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001')->'history') x limit 1), 'refund_reversal',
+  'the reseller sees the points that were taken back');
+select is((app.load_reseller_loyalty('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001')->>'spendPerPointMinor')::bigint, 10000::bigint, 'the reseller sees the earning rule');
+select ok((app.load_reseller_statement('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001')->'summary'->>'creditAvailableMinor')::bigint > 0, 'a return on a paid invoice becomes credit');
+
+-- Insights for Reports.
+select is((select (x->>'placed')::integer from jsonb_array_elements(app.load_reseller_portal_insights('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'conversion') x), 3,
+  'conversion counts the reseller''s orders');
+select is((select count(*)::integer from jsonb_array_elements(app.load_reseller_portal_insights('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', current_date - 1, current_date + 1)->'speed')), 5,
+  'speed lists the five steps');
+select throws_ok($$ select app.load_reseller_portal_insights('1e100000-0000-4000-8000-000000000003', '2e100000-0000-4000-8000-000000000001', current_date, current_date) $$, 'HCSD0', null, 'insights need report or portal access');
+
 select lives_ok($$ select app.set_reseller_account_status('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
   (select id from app.reseller_accounts where tenant_id = '2e100000-0000-4000-8000-000000000001'), 'suspended', 'suspend-request') $$,
   'owner suspends the reseller account');

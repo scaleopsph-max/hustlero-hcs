@@ -30,7 +30,12 @@ export function PaymentProofs({
   const verifiedMinor = proofs
     .filter((proof) => proof.status === 'accepted')
     .reduce((sum, proof) => sum + proof.amountMinor, 0)
-  const remainingMinor = Math.max(0, order.totalMinor - verifiedMinor)
+  // Returns lower what is owed on the order.
+  const dueMinor = Math.max(
+    0,
+    order.totalMinor - (order.returns ?? []).reduce((sum, entry) => sum + entry.amountMinor, 0),
+  )
+  const remainingMinor = Math.max(0, dueMinor - verifiedMinor)
   const [open, setOpen] = useState(startOpen)
   const [amount, setAmount] = useState((remainingMinor / 100).toFixed(2))
   const [reference, setReference] = useState('')
@@ -44,8 +49,8 @@ export function PaymentProofs({
     .filter((proof) => proof.status === 'pending')
     .reduce((sum, proof) => sum + proof.amountMinor, 0)
   // Once verified payments cover the order, the proof form closes.
-  const paidInFull = verifiedMinor >= order.totalMinor
-  const accepting = order.status !== 'cancelled' && !paidInFull && verifiedMinor + pendingMinor < order.totalMinor
+  const paidInFull = verifiedMinor >= dueMinor
+  const accepting = order.status !== 'cancelled' && !paidInFull && verifiedMinor + pendingMinor < dueMinor
 
   async function submit(event: FormEvent) {
     event.preventDefault()

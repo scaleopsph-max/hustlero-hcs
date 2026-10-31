@@ -149,6 +149,33 @@ export function OrdersView({
                           </>
                         ) : null}
                       </dl>
+                      {order.returns?.length ? (
+                        <div className="flex flex-col gap-2 rounded-control border border-white/10 bg-white/5 p-3">
+                          <p className="text-small font-semibold">Returns</p>
+                          {order.returns.map((entry) => (
+                            <div key={entry.id} className="text-small">
+                              <p className="flex justify-between gap-3">
+                                <span>{formatDateTime(entry.recordedAt)}</span>
+                                <span className="font-semibold text-signal-dark-success-fg">
+                                  −{formatPeso(entry.amountMinor)}
+                                </span>
+                              </p>
+                              <p className="text-ink-300">
+                                {entry.lines
+                                  .map(
+                                    (line) =>
+                                      `${formatQuantity(line.quantityMilli)} × ${line.productName} ${line.variantName}`,
+                                  )
+                                  .join(', ')}
+                              </p>
+                              <p className="text-caption text-ink-400">
+                                {entry.reason}
+                                {entry.creditMinor > 0 ? ` · ${formatPeso(entry.creditMinor)} kept as credit` : ''}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                       {order.shipment && order.status !== 'cancelled' ? (
                         <ShipmentTracker shipment={order.shipment} method={order.fulfillmentMethod} />
                       ) : null}
