@@ -2,12 +2,20 @@
 
 import type { ResellerOrder, ResellerPaymentAccount } from '@hcs/contracts'
 import { Button, Chip, Glass, formatPeso } from '@hcs/ui'
-import { ChevronDown, PackageSearch, RefreshCw } from 'lucide-react'
+import { ChevronDown, FileText, PackageSearch, RefreshCw, Undo2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { formatQuantity } from '@/lib/cart'
 import { PaymentProofs } from './PaymentProofs'
-import { formatDateTime, formatTime, orderBadge, paymentLabel, reviewReasonLabel, timeLeft } from '@/lib/labels'
+import {
+  courierLabel,
+  formatDateTime,
+  formatTime,
+  orderBadge,
+  paymentLabel,
+  reviewReasonLabel,
+  timeLeft,
+} from '@/lib/labels'
 import { PaymentInstructions } from './PaymentInstructions'
 import { ShipmentTracker } from './ShipmentTracker'
 
@@ -20,7 +28,11 @@ export function OrdersView({
   focusOrderId,
   paymentInstructions,
   paymentAccounts,
+  onOpenInvoice,
+  onRequestReturn,
 }: {
+  onOpenInvoice: (invoiceId: string) => void
+  onRequestReturn: (order: ResellerOrder, invoiceId: string) => void
   orders: ResellerOrder[]
   /** Order to open on arrival, e.g. right after checkout. */
   focusOrderId?: string | null
@@ -140,15 +152,96 @@ export function OrdersView({
                             <dd className="text-ink-100">{paymentLabel[order.paymentPreference]}</dd>
                           </>
                         ) : null}
-                        {order.invoices.length > 0 ? (
+                        {order.shippingFeeMinor ? (
                           <>
-                            <dt>Invoice</dt>
-                            <dd className="text-ink-100">
-                              {order.invoices.map((invoice) => invoice.invoiceNumber).join(', ')}
-                            </dd>
+                            <dt>Shipping</dt>
+                            <dd className="text-ink-100">{formatPeso(order.shippingFeeMinor)}</dd>
                           </>
                         ) : null}
                       </dl>
+                      {order.invoices.length > 0 ? (
+                        <ul className="flex flex-col gap-2">
+                          {order.invoices.map((invoice) => {
+                            const pending = order.returnRequests?.some(
+                              (request) => request.invoiceId === invoice.id && request.status === 'pending',
+                            )
+                            const returnable = invoice.lines?.some((line) => line.returnableMilli >= 1000)
+                            return (
+                              <li
+                                key={invoice.id}
+                                className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-white/10 bg-white/5 px-3 py-2"
+                              >
+                                <span className="min-w-0 text-small">
+                                  <span className="block font-semibold">{invoice.invoiceNumber}</span>
+                                  <span className="text-ink-300">{formatPeso(invoice.totalMinor)}</span>
+                                </span>
+                                <span className="flex gap-2">
+                                  <Button size="sm" onClick={() => onOpenInvoice(invoice.id)}>
+                                    <FileText size={15} className="mr-1.5" />
+                                    Invoice
+                                  </Button>
+                                  {returnable && !pending ? (
+                                    <Button size="sm" onClick={() => onRequestReturn(order, invoice.id)}>
+                                      <Undo2 size={15} className="mr-1.5" />
+                                      Return
+                                    </Button>
+                                  ) : null}
+                                </span>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      ) : null}
+                      {order.returnRequests?.length ? (
+                        <div className="flex flex-col gap-2 rounded-control border border-white/10 bg-white/5 p-3">
+                          <p className="text-small font-semibold">Return requests</p>
+                          {order.returnRequests.map((request) => (
+                            <div key={request.requestId} className="text-small">
+                              <p className="flex justify-between gap-3">
+                                <span>{formatDateTime(request.createdAt)}</span>
+                                <Chip
+                                  tone={
+                                    request.status === 'approved'
+                                      ? 'success'
+                                      : request.status === 'declined'
+                                        ? 'critical'
+                                        : 'attention'
+                                  }
+                                >
+                                  {request.status === 'approved'
+                                    ? 'Approved'
+                                    : request.status === 'declined'
+                                      ? 'Declined'
+                                      : 'Waiting for review'}
+                                </Chip>
+                              </p>
+                              <p className="text-ink-300">
+                                {request.lines
+                                  .map(
+                                    (line) =>
+                                      `${formatQuantity(line.quantityMilli)} × ${line.productName} ${line.variantName}`,
+                                  )
+                                  .join(', ')}
+                              </p>
+                              <p className="text-caption text-ink-400">
+                                {request.reason}
+                                {request.photoCount
+                                  ? ` · ${request.photoCount} photo${request.photoCount === 1 ? '' : 's'}`
+                                  : ''}
+                              </p>
+                              {request.status === 'declined' && request.decisionReason ? (
+                                <p className="text-caption text-signal-dark-critical-fg">
+                                  Reason: {request.decisionReason}
+                                </p>
+                              ) : request.status === 'approved' ? (
+                                <p className="text-caption text-signal-dark-success-fg">
+                                  Approved. The return is recorded once the items are received.
+                                </p>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                       {order.returns?.length ? (
                         <div className="flex flex-col gap-2 rounded-control border border-white/10 bg-white/5 p-3">
                           <p className="text-small font-semibold">Returns</p>
@@ -171,6 +264,33 @@ export function OrdersView({
                               <p className="text-caption text-ink-400">
                                 {entry.reason}
                                 {entry.creditMinor > 0 ? ` · ${formatPeso(entry.creditMinor)} kept as credit` : ''}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      {order.parcels?.length ? (
+                        <div className="flex flex-col gap-2 rounded-control border border-white/10 p-3">
+                          <p className="text-small font-semibold">Sent ahead</p>
+                          {order.parcels.map((parcel) => (
+                            <div key={parcel.parcelId} className="text-small">
+                              <p className="flex justify-between gap-3">
+                                <span className="font-semibold">Parcel {parcel.parcelNumber}</span>
+                                <span className="text-ink-300">
+                                  {parcel.deliveredAt ? 'Delivered' : `Shipped ${formatDateTime(parcel.shippedAt)}`}
+                                </span>
+                              </p>
+                              <p className="text-ink-300">
+                                {courierLabel[parcel.courier]}
+                                {parcel.trackingNumber ? ` · ${parcel.trackingNumber}` : ''}
+                              </p>
+                              <p className="text-caption text-ink-400">
+                                {parcel.lines
+                                  .map(
+                                    (line) =>
+                                      `${formatQuantity(line.quantityMilli)} × ${line.productName} ${line.variantName}`,
+                                  )
+                                  .join(', ')}
                               </p>
                             </div>
                           ))}

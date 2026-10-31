@@ -82,6 +82,9 @@ const errorMap: Record<string, { status: ContentfulStatusCode; code: string; mes
   },
   HCRA4: { status: 404, code: 'RESELLER_RECORD_NOT_FOUND', message: 'The payment proof was not found.' },
   HCRA5: { status: 409, code: 'RESELLER_RECORD_ALREADY_DECIDED', message: 'This payment proof was already reviewed.' },
+  HCRR3: { status: 404, code: 'RETURN_REQUEST_NOT_FOUND', message: 'The return request was not found.' },
+  HCRR4: { status: 409, code: 'RETURN_PHOTO_LIMIT', message: 'Up to 4 photos can be added.' },
+  HCRR5: { status: 409, code: 'RETURN_REQUEST_REVIEWED', message: 'This return request was already reviewed.' },
   HCS08: {
     status: 409,
     code: 'IDEMPOTENCY_KEY_CONFLICT',
@@ -612,6 +615,74 @@ export function registerFileRoutes(app: Hono<{ Bindings: Bindings }>, dependenci
   })
 
   // Back Office review ------------------------------------------------------
+
+  app.post('/v1/portal/return-requests/:requestId/photos', async (context) => {
+    const token = readBearerToken(context.req.header('authorization'))
+    const user = token ? await dependencies.verifyAccessToken(token, context.env) : null
+    if (!user) return fail(context, 401, 'AUTHENTICATION_REQUIRED', 'Sign in to the reseller portal.')
+    const tenantId = context.req.header('x-tenant-id')
+    const requestId = context.req.param('requestId')
+    const key = context.req.header('idempotency-key')
+    if (
+      !tenantId ||
+      !uuidPattern.test(tenantId) ||
+      !uuidPattern.test(requestId) ||
+      !key ||
+      !idempotencyPattern.test(key)
+    )
+      return fail(context, 400, 'INVALID_FILE', 'Choose the return request and provide a valid Idempotency-Key.')
+    const bucket = storage(context)
+    if (!bucket) return fail(context, 503, 'FILES_NOT_CONFIGURED', 'File storage is not configured.')
+    const form = await readForm(context)
+    if (form === 'too_large') return partProblem(context, 'too_large', 'upload', UPLOAD_REQUEST_MAX_BYTES)
+    if (form === 'invalid') return fail(context, 400, 'INVALID_FILE', 'Send the photo as multipart form data.')
+    const main = await readPart(form.image, PAYMENT_PROOF_MAX_BYTES, ['image/jpeg', 'image/png', 'image/webp'])
+    if (typeof main === 'string') return partProblem(context, main, 'photo', PAYMENT_PROOF_MAX_BYTES)
+    let thumb: Upload | null = null
+    if (form.thumb !== undefined) {
+      const result = await readPart(form.thumb, THUMB_MAX_BYTES, ['image/jpeg', 'image/png', 'image/webp'])
+      if (typeof result === 'string') return partProblem(context, result, 'thumbnail', THUMB_MAX_BYTES)
+      thumb = result
+    }
+    try {
+      await dependencies.repository.assertReturnPhotoUpload(user.userId, tenantId, requestId, context.env)
+      const fileId = crypto.randomUUID()
+      const mainKey = storageKey(tenantId, 'return_photo', fileId, 'main')
+      const thumbKey = storageKey(tenantId, 'return_photo', fileId, 'thumb')
+      const keys = thumb ? [mainKey, thumbKey] : [mainKey]
+      await putAll(bucket, [{ key: mainKey, upload: main }, ...(thumb ? [{ key: thumbKey, upload: thumb }] : [])])
+      try {
+        const response = await dependencies.repository.recordReturnPhoto(
+          user.userId,
+          tenantId,
+          requestId,
+          {
+            fileId,
+            mimeType: main.mime,
+            sizeBytes: main.bytes.length,
+            ...(thumb ? { thumbSizeBytes: thumb.bytes.length } : {}),
+            sha256: main.sha256,
+            originalFilename: main.filename,
+          },
+          {
+            idempotencyKey: key,
+            requestHash: await dependencies.requestHash({ requestId, file: main.sha256 }),
+            requestId: context.get('requestId'),
+          },
+          context.env,
+        )
+        if (response.fileId !== fileId) await bucket.delete(keys)
+        return context.json(response, 201)
+      } catch (error) {
+        await bucket.delete(keys).catch(() => undefined)
+        throw error
+      }
+    } catch (error) {
+      const response = mapError(context, error)
+      if (response) return response
+      throw error
+    }
+  })
 
   app.get('/v1/reseller-portal/payment-proofs', async (context) => {
     const admin = await dependencies.resolveBackofficeTenant(context)

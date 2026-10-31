@@ -12,6 +12,11 @@ import {
   resellerPortalReportFilterSchema,
   resellerNotificationReadRequestSchema,
   resellerCreditApplyRequestSchema,
+  portalParcelRequestSchema,
+  resellerShippingSettingsSchema,
+  returnRequestDecisionSchema,
+  returnRequestSubmitSchema,
+  type ReturnRequest,
   resellerFavoriteRequestSchema,
   resellerStockAlertRequestSchema,
   resellerPointsRedeemRequestSchema,
@@ -39,6 +44,7 @@ import type {
   StoredBranding,
   StoredPaymentAccount,
   StoredResellerOrder,
+  StoredReturnRequest,
 } from './reseller-portal-repository'
 
 type AppContext = Context<{ Bindings: Bindings }>
@@ -75,6 +81,25 @@ const decisionIdempotencyPattern = /^[A-Za-z0-9_-]{16,120}$/
 const errorMap: Record<string, { status: ContentfulStatusCode; code: string; message: string }> = {
   HCSD0: { status: 403, code: 'REPORTING_ACCESS_DENIED', message: 'Your role cannot view these reports.' },
   HCSD1: { status: 400, code: 'INVALID_REPORT_FILTERS', message: 'Choose a valid date range of up to one year.' },
+  HCRS1: {
+    status: 409,
+    code: 'PARCEL_NOT_ALLOWED',
+    message: 'Only delivery orders that are not shipped yet can be sent in parts.',
+  },
+  HCRS2: {
+    status: 409,
+    code: 'PARCEL_TAKES_EVERYTHING',
+    message: 'Leave something for the last shipment, or ship the whole order.',
+  },
+  HCRI1: { status: 404, code: 'INVOICE_NOT_FOUND', message: 'The invoice was not found.' },
+  HCRR1: {
+    status: 409,
+    code: 'RETURN_REQUEST_PENDING',
+    message: 'A return request for this invoice is waiting for review.',
+  },
+  HCRR2: { status: 409, code: 'RETURN_TOO_MANY', message: 'That is more than you can return for an item.' },
+  HCRR3: { status: 404, code: 'RETURN_REQUEST_NOT_FOUND', message: 'The return request was not found.' },
+  HCRR4: { status: 409, code: 'RETURN_PHOTO_LIMIT', message: 'Up to 4 photos can be added.' },
   HCRF1: { status: 404, code: 'PRODUCT_NOT_IN_CATALOG', message: 'This product is not in your catalog.' },
   HCRF2: { status: 409, code: 'ITEM_IN_STOCK', message: 'This item is in stock. You can order it now.' },
   HCRB1: { status: 409, code: 'INVOICE_ALREADY_PAID', message: 'This invoice has nothing left to pay.' },
@@ -213,6 +238,23 @@ async function presentAccounts(
       qrUrl: qrStorageKey && sign ? await sign(qrStorageKey, bindings).catch(() => null) : null,
     })),
   )
+}
+
+async function presentReturnRequest(
+  stored: StoredReturnRequest,
+  bindings: Bindings,
+  sign: ResellerPortalRouteDependencies['signFileKey'],
+): Promise<ReturnRequest> {
+  const photos = await Promise.all(
+    stored.photos.map(async (photo) => {
+      const url = sign ? await sign(photo.storageKey, bindings).catch(() => null) : null
+      if (!url) return null
+      const thumbUrl =
+        photo.thumbStorageKey && sign ? await sign(photo.thumbStorageKey, bindings).catch(() => null) : null
+      return { url, thumbUrl }
+    }),
+  )
+  return { ...stored, photos: photos.filter((photo) => photo !== null) }
 }
 
 async function presentBranding(
@@ -490,6 +532,44 @@ export function registerResellerPortalRoutes(
       dependencies.repository.saveStockAlert(reseller.userId, reseller.tenantId, request, context.env),
   )
 
+  app.get('/v1/portal/invoices/:invoiceId', async (context) => {
+    const reseller = await resolveReseller(context, true)
+    if (reseller instanceof Response) return reseller
+    const invoiceId = context.req.param('invoiceId')
+    if (!uuidPattern.test(invoiceId)) return fail(context, 400, 'INVALID_RESELLER_PORTAL_REQUEST', 'Choose an invoice.')
+    return run(context, async () => {
+      const { branding, ...invoice } = await dependencies.repository.loadInvoice(
+        reseller.userId,
+        reseller.tenantId,
+        invoiceId,
+        context.env,
+      )
+      const presented = await presentBranding(branding, context.env, dependencies.signFileKey)
+      return context.json({ ...invoice, ...(presented ? { branding: presented } : {}) })
+    })
+  })
+
+  app.post('/v1/portal/return-requests', async (context) => {
+    const reseller = await resolveReseller(context, true)
+    if (reseller instanceof Response) return reseller
+    const request = await readJson(context, returnRequestSubmitSchema)
+    const portalCommand = request ? await command(context, request) : null
+    if (!request || !portalCommand)
+      return fail(context, 400, 'INVALID_RESELLER_PORTAL_REQUEST', 'Choose the items, quantities, and a reason.')
+    return run(context, async () =>
+      context.json(
+        await dependencies.repository.submitReturnRequest(
+          reseller.userId,
+          reseller.tenantId,
+          request,
+          portalCommand,
+          context.env,
+        ),
+        201,
+      ),
+    )
+  })
+
   app.get('/v1/portal/notifications', async (context) => {
     const reseller = await resolveReseller(context, true)
     if (reseller instanceof Response) return reseller
@@ -728,6 +808,101 @@ export function registerResellerPortalRoutes(
           request,
           context.get('requestId'),
           context.env,
+        ),
+      ),
+    )
+  })
+
+  app.post('/v1/reseller-portal/shipments/:orderId/parcels', async (context) => {
+    const admin = await resolveAdmin(context)
+    if (admin instanceof Response) return admin
+    const orderId = context.req.param('orderId')
+    const request = await readJson(context, portalParcelRequestSchema)
+    if (!uuidPattern.test(orderId) || !request)
+      return fail(context, 400, 'INVALID_SHIPMENT_UPDATE', 'Choose the items, quantities, and courier for this parcel.')
+    return run(context, async () =>
+      context.json(
+        await dependencies.repository.shipParcel(
+          admin.userId,
+          admin.tenantId,
+          orderId,
+          request,
+          context.get('requestId'),
+          context.env,
+        ),
+      ),
+    )
+  })
+
+  app.post('/v1/reseller-portal/parcels/:parcelId/delivered', async (context) => {
+    const admin = await resolveAdmin(context)
+    if (admin instanceof Response) return admin
+    const parcelId = context.req.param('parcelId')
+    if (!uuidPattern.test(parcelId)) return fail(context, 400, 'INVALID_SHIPMENT_UPDATE', 'Choose a parcel.')
+    return run(context, async () =>
+      context.json(
+        await dependencies.repository.deliverParcel(
+          admin.userId,
+          admin.tenantId,
+          parcelId,
+          context.get('requestId'),
+          context.env,
+        ),
+      ),
+    )
+  })
+
+  app.post('/v1/reseller-portal/shipping-settings', async (context) => {
+    const admin = await resolveAdmin(context)
+    if (admin instanceof Response) return admin
+    const request = await readJson(context, resellerShippingSettingsSchema)
+    if (!request)
+      return fail(context, 400, 'INVALID_RESELLER_PORTAL_REQUEST', 'Enter the fee and the free-shipping amount.')
+    return run(context, async () =>
+      context.json(
+        await dependencies.repository.saveShippingSettings(
+          admin.userId,
+          admin.tenantId,
+          request,
+          context.get('requestId'),
+          context.env,
+        ),
+      ),
+    )
+  })
+
+  app.get('/v1/reseller-portal/return-requests', async (context) => {
+    const admin = await resolveAdmin(context)
+    if (admin instanceof Response) return admin
+    return run(context, async () => {
+      const stored = await dependencies.repository.loadReturnRequests(admin.userId, admin.tenantId, context.env)
+      const requests = await Promise.all(
+        stored.map((request) => presentReturnRequest(request, context.env, dependencies.signFileKey)),
+      )
+      return context.json({ requests })
+    })
+  })
+
+  app.post('/v1/reseller-portal/return-requests/:requestId/decision', async (context) => {
+    const admin = await resolveAdmin(context)
+    if (admin instanceof Response) return admin
+    const requestId = context.req.param('requestId')
+    const decision = await readJson(context, returnRequestDecisionSchema)
+    if (!uuidPattern.test(requestId) || !decision)
+      return fail(context, 400, 'INVALID_RESELLER_PORTAL_REQUEST', 'Approve, or decline with a reason.')
+    return run(context, async () =>
+      context.json(
+        await presentReturnRequest(
+          await dependencies.repository.decideReturnRequest(
+            admin.userId,
+            admin.tenantId,
+            requestId,
+            decision,
+            context.get('requestId'),
+            context.env,
+          ),
+          context.env,
+          dependencies.signFileKey,
         ),
       ),
     )

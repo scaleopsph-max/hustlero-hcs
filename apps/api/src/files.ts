@@ -4,7 +4,7 @@
  * an Authorization header and objects are never public.
  */
 
-export type FileKind = 'product_image' | 'payment_proof' | 'payment_qr' | 'brand_logo'
+export type FileKind = 'product_image' | 'payment_proof' | 'payment_qr' | 'brand_logo' | 'return_photo'
 export type StoredMime = 'image/jpeg' | 'image/png' | 'image/webp' | 'application/pdf'
 
 /** The slice of the R2 binding the API uses. */
@@ -28,7 +28,7 @@ export function storageKey(tenantId: string, kind: FileKind, fileId: string, var
 }
 
 const storageKeyPattern =
-  /^t\/[0-9a-f-]{36}\/(product_image|payment_proof|payment_qr|brand_logo)\/[0-9a-f-]{36}\/(main|thumb)$/
+  /^t\/[0-9a-f-]{36}\/(product_image|payment_proof|payment_qr|brand_logo|return_photo)\/[0-9a-f-]{36}\/(main|thumb)$/
 
 /** Detects the real type from the first bytes; the browser-reported type is never trusted. */
 export function detectMime(bytes: Uint8Array): StoredMime | null {

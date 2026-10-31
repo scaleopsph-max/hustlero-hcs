@@ -15,6 +15,12 @@ import {
   resellerPortalAvailabilitySchema,
   resellerPointsSettingsResponseSchema,
   resellerBrandingSchema,
+  resellerShippingSettingsSchema,
+  returnRequestSchema,
+  returnRequestsSchema,
+  type ReturnRequest,
+  portalParcelResponseSchema,
+  portalParcelDeliveredResponseSchema,
   sessionContextResponseSchema,
   type PendingPaymentProof,
   type ResellerOrderReviewRequest,
@@ -23,6 +29,7 @@ import {
 } from '@hcs/contracts'
 import { Button, Chip, Glass, cn, formatPeso, useToast } from '@hcs/ui'
 import { Check, Copy, RefreshCw, UserPlus, X } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { selectActiveTenant } from '@/lib/active-tenant'
@@ -30,6 +37,8 @@ import { LogisticsBoard } from './LogisticsBoard'
 import { PaymentAccountsCard } from './PaymentAccountsCard'
 import { BrandingCard } from './BrandingCard'
 import { PointsSettingsCard } from './PointsSettingsCard'
+import { ReturnRequestsPanel, returnFormHref } from './ReturnRequestsPanel'
+import { ShippingSettingsCard } from './ShippingSettingsCard'
 import { PortalActivation, PortalOffSwitch } from './PortalActivation'
 import { fileUrl } from './ProductPhotos'
 import {
@@ -60,8 +69,8 @@ const stockTone = { in_stock: 'success', low_stock: 'warning', out_of_stock: 'cr
 const stockText = { in_stock: 'In stock', low_stock: 'Low', out_of_stock: 'Out' } as const
 
 type Scope = { token: string; tenantId: string }
-type PortalTab = 'orders' | 'logistics' | 'payments' | 'resellers' | 'settings'
-const portalTabs: PortalTab[] = ['orders', 'logistics', 'payments', 'resellers', 'settings']
+type PortalTab = 'orders' | 'logistics' | 'payments' | 'returns' | 'resellers' | 'settings'
+const portalTabs: PortalTab[] = ['orders', 'logistics', 'payments', 'returns', 'resellers', 'settings']
 
 /** The tab named in the URL hash, so a refresh or shared link opens the same section. */
 function readTab(): PortalTab {
@@ -96,6 +105,7 @@ export function ResellerPortalWorkspace() {
   const [busy, setBusy] = useState<string | null>('load')
   const [error, setError] = useState<string | null>(null)
   const toast = useToast()
+  const router = useRouter()
   const keys = useRef(new Map<string, string>())
   const [tab, setTab] = useState<PortalTab>('orders')
   // Read the hash after mounting so the server and first client render agree.
@@ -112,6 +122,7 @@ export function ResellerPortalWorkspace() {
   }
 
   const [proofs, setProofs] = useState<PendingPaymentProof[] | null>(null)
+  const [returnRequests, setReturnRequests] = useState<ReturnRequest[] | null>(null)
   const load = useCallback(async (next: Scope) => {
     const status = resellerPortalAvailabilitySchema.parse(await call('/v1/reseller-portal/availability', next))
     setAvailability(status)
@@ -125,6 +136,11 @@ export function ResellerPortalWorkspace() {
       setProofs(pendingPaymentProofsSchema.parse(await call('/v1/reseller-portal/payment-proofs', next)).proofs)
     } catch {
       setProofs(null)
+    }
+    try {
+      setReturnRequests(returnRequestsSchema.parse(await call('/v1/reseller-portal/return-requests', next)).requests)
+    } catch {
+      setReturnRequests(null)
     }
   }, [])
 
@@ -235,6 +251,11 @@ export function ResellerPortalWorkspace() {
       ).length,
     },
     { id: 'payments', label: 'Balance payments', count: proofs?.length ?? 0 },
+    {
+      id: 'returns',
+      label: 'Returns',
+      count: (returnRequests ?? []).filter((request) => request.status === 'pending').length,
+    },
     { id: 'resellers', label: 'Resellers', count: pendingApplications.length },
     { id: 'settings', label: 'Settings', count: admin.settings ? 0 : 1 },
   ].filter((entry) => canManage || (entry.id !== 'resellers' && entry.id !== 'settings')) as {
@@ -386,6 +407,63 @@ export function ResellerPortalWorkspace() {
                 body,
                 (v) => portalShipmentUpdateResponseSchema.parse(v),
                 (result) => shipmentMessage(shipment, body.status, result),
+              )
+            }
+            onShipParcel={(shipment, body) =>
+              run(
+                `shipment:${shipment.salesOrderId}`,
+                `/v1/reseller-portal/shipments/${shipment.salesOrderId}/parcels`,
+                body,
+                (v) => portalParcelResponseSchema.parse(v),
+                (result) =>
+                  `Parcel ${result.parcelNumber} of ${shipment.orderNumber} shipped. Invoice ${result.invoiceNumber} issued.`,
+              )
+            }
+            onParcelDelivered={(shipment, parcelId) =>
+              run(
+                `shipment:${shipment.salesOrderId}`,
+                `/v1/reseller-portal/parcels/${parcelId}/delivered`,
+                {},
+                (v) => portalParcelDeliveredResponseSchema.parse(v),
+                'Parcel marked delivered.',
+              )
+            }
+          />
+        </div>
+      ) : null}
+
+      {shownTab === 'returns' ? (
+        <div
+          role="tabpanel"
+          id="portal-panel-returns"
+          aria-labelledby="portal-tab-returns"
+          className="flex flex-col gap-4"
+        >
+          <p className="text-sm text-ink-500">
+            Resellers ask to return items from an invoice. Approve to open the Returns form with the items filled in,
+            then record it once the items arrive. Declining tells the reseller why.
+          </p>
+          <ReturnRequestsPanel
+            requests={returnRequests}
+            busy={busy}
+            onApprove={async (request) => {
+              const saved = await run(
+                `return:${request.requestId}`,
+                `/v1/reseller-portal/return-requests/${request.requestId}/decision`,
+                { decision: 'approve' },
+                (v) => returnRequestSchema.parse(v),
+                'Return request approved. Record the return once the items arrive.',
+              )
+              if (saved) router.push(returnFormHref(request))
+              return saved
+            }}
+            onDecline={(request, reason) =>
+              run(
+                `return:${request.requestId}`,
+                `/v1/reseller-portal/return-requests/${request.requestId}/decision`,
+                { decision: 'decline', reason },
+                (v) => returnRequestSchema.parse(v),
+                'Return request declined. The reseller was told why.',
               )
             }
           />
@@ -591,6 +669,24 @@ export function ResellerPortalWorkspace() {
                 await load(scope)
                 toast.success('Logo saved.')
               }}
+            />
+          ) : null}
+
+          {admin.settings ? (
+            <ShippingSettingsCard
+              key={`${admin.settings.shippingFeeMinor ?? 0}-${admin.settings.freeShippingAboveMinor ?? 'none'}`}
+              feeMinor={admin.settings.shippingFeeMinor ?? 0}
+              freeAboveMinor={admin.settings.freeShippingAboveMinor ?? null}
+              busy={busy === 'shipping'}
+              onSave={(body) =>
+                run(
+                  'shipping',
+                  '/v1/reseller-portal/shipping-settings',
+                  body,
+                  (v) => resellerShippingSettingsSchema.parse(v),
+                  body.feeMinor === 0 ? 'Delivery is free.' : 'Shipping fee saved.',
+                )
+              }
             />
           ) : null}
 

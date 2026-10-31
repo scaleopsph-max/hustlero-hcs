@@ -99,10 +99,28 @@ export function WholesaleReturnsWorkspace() {
         if (active) {
           setData(next)
           // Opened from a reseller portal order: start a return for that invoice.
-          const requested = new URLSearchParams(window.location.search).get('invoice')
-          if (requested && !restored && next.invoices.some((row) => row.invoiceId === requested)) {
+          const params = new URLSearchParams(window.location.search)
+          const requested = params.get('invoice')
+          const target = next.invoices.find((row) => row.invoiceId === requested)
+          if (requested && !restored && target) {
             setMode('return')
             setInvoice(requested)
+            // Opened from an approved reseller return request: fill in the items and reason.
+            const asked = Object.fromEntries(
+              (params.get('lines') ?? '')
+                .split(',')
+                .map((entry) => entry.split(':'))
+                .filter(
+                  (pair): pair is [string, string] =>
+                    pair.length === 2 &&
+                    /^\d+$/.test(pair[1] ?? '') &&
+                    target.lines.some((line) => line.invoiceLineId === pair[0]),
+                )
+                .map(([lineId, milli]) => [lineId, String(Number(milli) / 1000)]),
+            )
+            if (Object.keys(asked).length > 0) setQuantities(asked)
+            const askedReason = params.get('reason')
+            if (askedReason) setReason(askedReason.slice(0, 200))
           }
         }
       } catch (cause) {

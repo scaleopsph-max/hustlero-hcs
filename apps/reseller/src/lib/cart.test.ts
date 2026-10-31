@@ -1,7 +1,7 @@
 import type { ResellerCatalogItem } from '@hcs/contracts'
 import { describe, expect, it } from 'vitest'
 
-import { formatQuantity, lineAmountMinor, quantityInCart, setCartQuantity, summarizeCart } from './cart'
+import { formatQuantity, lineAmountMinor, quantityInCart, setCartQuantity, summarizeCart, shippingFeeFor } from './cart'
 
 const item = (overrides: Partial<ResellerCatalogItem>): ResellerCatalogItem => ({
   variantId: '50000000-0000-4000-8000-000000000001',
@@ -101,5 +101,16 @@ describe('reseller cart', () => {
   it('formats quantities as whole units when possible', () => {
     expect(formatQuantity(12_000)).toBe('12')
     expect(formatQuantity(1_500)).toBe('1.5')
+  })
+})
+
+describe('shipping fee', () => {
+  const shipping = { feeMinor: 15_000, freeAboveMinor: 500_000 }
+  it('charges delivery below the free-shipping amount only', () => {
+    expect(shippingFeeFor(shipping, 351_000, 'delivery')).toBe(15_000)
+    expect(shippingFeeFor(shipping, 500_000, 'delivery')).toBe(0)
+    expect(shippingFeeFor(shipping, 351_000, 'pickup')).toBe(0)
+    expect(shippingFeeFor({ feeMinor: 15_000, freeAboveMinor: null }, 9_000_000, 'delivery')).toBe(15_000)
+    expect(shippingFeeFor(undefined, 1_000, 'delivery')).toBe(0)
   })
 })

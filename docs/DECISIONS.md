@@ -225,3 +225,15 @@ authorized by these development decisions.
 - **Decision:** Resellers mark products as favorites (a heart on each catalog card, `app.save_reseller_favorite`) and filter the catalog to Favorites. For an out-of-stock variant they tap "Notify me when back in stock" (`app.save_reseller_stock_alert`); when notifications are next built (opening Updates, or the five-minute push cron), each open alert whose item is available again becomes one `back_in_stock` notification and push, and the alert closes. Alerts for items that leave the reseller's catalog close silently. Products created in the last 14 days are flagged `isNew`; the portal shows "New" badges and a New filter only when some products are not new, so a brand-new catalog is not all badges. Quick reorder stays the existing "Order again" on past orders.
 - **Reason:** Owner selection on 2026-10-31 (faster ordering).
 - **Review trigger:** A separate "published to portal" date, promos, or back-in-stock alerts by email.
+
+## ADR-053: Reseller operations — shipping fee, printable invoice, partial shipment, return requests
+
+- **Date:** 2026-11-01
+- **Status:** Accepted
+- **Decision:**
+  - **Shipping fee.** Reseller portal → Settings sets a flat delivery fee and an optional free-shipping amount; pickup is free. The fee is fixed on the order when the reseller submits it (shown in the cart first), kept when the order is confirmed, and billed once on the order's first invoice (`invoices.shipping_fee`; `total = subtotal − discount + tax + shipping_fee`). The wholesale sale keeps the items total only, so product sales reports exclude shipping, and returns never refund it.
+  - **Printable invoice.** Resellers open any of their invoices from an order (`app.load_reseller_invoice`) and print or save it as PDF from the browser; only the invoice paper prints.
+  - **Partial shipment.** In Logistics, a delivery order that is not shipped yet can send part of its items as a parcel (`app.ship_portal_parcel`). Each parcel leaves stock immediately, gets its own invoice and receivable, and verified payments are recorded against it; the last shipment sends the rest the usual way. A verified payment proof is now recorded across several invoices (`payment_proofs.recorded_amount` is the running total). The reseller is notified per parcel.
+  - **Return requests.** Resellers ask to return items from an invoice with a reason and up to four photos (`return_photo` files, private). Quantities are limited to what was invoiced less recorded returns and pending requests; one pending request per invoice. The team approves (which opens Wholesale returns with the items and reason filled in, to record once the items arrive) or declines with a reason. Both sides are notified.
+- **Reason:** Owner selection on 2026-10-31 (Operations), with "per parcel" stock and invoicing and "flat + free above" shipping chosen on 2026-10-31.
+- **Review trigger:** Distance- or courier-based shipping rates, splitting pickup orders, or recording a return straight from an approved request.

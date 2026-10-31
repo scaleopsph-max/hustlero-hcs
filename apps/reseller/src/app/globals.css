@@ -24,3 +24,26 @@
     opacity: 1;
   }
 }
+
+/* Printing an invoice prints only the invoice paper. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    box-shadow: none;
+  }
+  .no-print {
+    display: none !important;
+  }
+  @page {
+    margin: 12mm;
+  }
+}

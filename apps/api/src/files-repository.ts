@@ -9,6 +9,8 @@ import {
   type PaymentProofReviewRequest,
   type PaymentProofReviewResponse,
   type PaymentProofUploadResponse,
+  returnPhotoResponseSchema,
+  type ReturnPhotoResponse,
   type ProductImageArchiveResponse,
   type ProductImageOrderResponse,
   type ProductImageUploadResponse,
@@ -127,6 +129,15 @@ export interface FilesRepository {
     command: PortalCommand,
     bindings: Bindings,
   ): Promise<PaymentProofUploadResponse>
+  assertReturnPhotoUpload(authUserId: string, tenantId: string, requestId: string, bindings: Bindings): Promise<void>
+  recordReturnPhoto(
+    authUserId: string,
+    tenantId: string,
+    requestId: string,
+    file: StoredFileMetadata,
+    command: PortalCommand,
+    bindings: Bindings,
+  ): Promise<ReturnPhotoResponse>
   listPendingProofs(userId: string, tenantId: string, bindings: Bindings): Promise<StoredPendingProof[]>
   reviewPaymentProof(
     userId: string,
@@ -256,6 +267,28 @@ export const filesPostgresRepository: FilesRepository = {
       'select app.assert_payment_proof_upload($1::uuid, $2::uuid, $3::uuid)::text response',
       [authUserId, tenantId, salesOrderId],
       ignore,
+    ),
+  assertReturnPhotoUpload: (authUserId, tenantId, requestId, bindings) =>
+    queryOne(
+      bindings,
+      'select app.assert_return_photo_upload($1::uuid, $2::uuid, $3::uuid)::text response',
+      [authUserId, tenantId, requestId],
+      ignore,
+    ),
+  recordReturnPhoto: (authUserId, tenantId, requestId, file, command, bindings) =>
+    queryOne(
+      bindings,
+      'select app.record_return_photo($1::uuid, $2::uuid, $3::uuid, $4::jsonb, $5::text, $6::text, $7::text) response',
+      [
+        authUserId,
+        tenantId,
+        requestId,
+        JSON.stringify(file),
+        command.idempotencyKey,
+        command.requestHash,
+        command.requestId,
+      ],
+      (value) => returnPhotoResponseSchema.parse(value),
     ),
   recordPaymentProof: (authUserId, tenantId, salesOrderId, file, command, bindings) =>
     queryOne(

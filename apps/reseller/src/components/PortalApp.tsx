@@ -18,6 +18,10 @@ import {
   resellerPortalSessionSchema,
   type ResellerNotification,
   type ResellerCatalogItem,
+  type ResellerInvoice,
+  resellerInvoiceSchema,
+  returnPhotoResponseSchema,
+  returnRequestSubmitResponseSchema,
   type ResellerNotifications,
   type ResellerOrder,
   type ResellerOrderSubmitRequest,
@@ -34,18 +38,20 @@ import {
   disablePush,
   formatPeso,
   enablePush,
+  preparePhoto,
   pushState,
   pushSupport,
   useToast,
 } from '@hcs/ui'
 import { Bell, ClipboardList, Store, ShoppingCart, UserRound, type LucideIcon } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { readCart, setCartQuantity, summarizeCart, writeCart, type CartLine } from '@/lib/cart'
 import { applyAccent } from '@/lib/branding'
 import {
   PortalApiError,
   fileUrl,
+  newIdempotencyKey,
   portalAuth,
   portalRequest,
   readSelectedTenant,
@@ -56,7 +62,9 @@ import { AccountView } from './AccountView'
 import { CartView } from './CartView'
 import { CatalogView } from './CatalogView'
 import { NotificationsSheet, type PushStatus } from './NotificationsSheet'
+import { InvoiceSheet } from './InvoiceSheet'
 import { OrdersView } from './OrdersView'
+import { ReturnRequestSheet } from './ReturnRequestSheet'
 import { SignIn } from './SignIn'
 
 type Tab = 'catalog' | 'cart' | 'orders' | 'account'
@@ -74,6 +82,15 @@ export function PortalApp() {
   const [session, setSession] = useState<ResellerPortalSession | null>(null)
   const [tenantId, setTenantId] = useState<string | null>(null)
   const [catalog, setCatalog] = useState<ResellerPortalCatalog | null>(null)
+  const [invoiceView, setInvoiceView] = useState<{
+    invoice: ResellerInvoice | null
+    loading: boolean
+    error: string | null
+  } | null>(null)
+  const [returnTarget, setReturnTarget] = useState<ResellerOrder['invoices'][number] | null>(null)
+  const closeInvoice = useCallback(() => setInvoiceView(null), [])
+  // The last return request attempt; a retry reuses its keys so nothing is sent twice.
+  const returnAttempt = useRef<{ fingerprint: string; key: string; photoKeys: string[] } | null>(null)
   const [orders, setOrders] = useState<ResellerOrder[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
   const [cart, setCart] = useState<CartLine[]>([])
@@ -402,6 +419,80 @@ export function PortalApp() {
     return response
   }
 
+  async function openInvoice(invoiceId: string) {
+    if (!token || !tenantId) return
+    setInvoiceView({ invoice: null, loading: true, error: null })
+    try {
+      const invoice = await portalRequest(
+        `/v1/portal/invoices/${invoiceId}`,
+        (value) => resellerInvoiceSchema.parse(value),
+        {
+          token,
+          tenantId,
+        },
+      )
+      setInvoiceView({ invoice, loading: false, error: null })
+    } catch (cause) {
+      setInvoiceView({ invoice: null, loading: false, error: cause instanceof Error ? cause.message : null })
+    }
+  }
+
+  async function sendReturnRequest(
+    request: { invoiceId: string; reason: string; lines: { invoiceLineId: string; quantityMilli: number }[] },
+    photos: File[],
+  ) {
+    if (!token || !tenantId) throw new Error('Please sign in again.')
+    const fingerprint = JSON.stringify(request)
+    if (returnAttempt.current?.fingerprint !== fingerprint)
+      returnAttempt.current = {
+        fingerprint,
+        key: newIdempotencyKey('return'),
+        photoKeys: photos.map(() => newIdempotencyKey('rphoto')),
+      }
+    const attempt = returnAttempt.current
+    const created = await portalRequest(
+      '/v1/portal/return-requests',
+      (value) => returnRequestSubmitResponseSchema.parse(value),
+      {
+        token,
+        tenantId,
+        method: 'POST',
+        body: request,
+        idempotencyKey: attempt.key,
+      },
+    )
+    let failed = 0
+    for (const [index, file] of photos.entries()) {
+      try {
+        const prepared = await preparePhoto(file)
+        const body = new FormData()
+        body.append('image', prepared.image, prepared.filename)
+        body.append('thumb', prepared.thumb, `thumb-${prepared.filename}`)
+        await portalRequest(
+          `/v1/portal/return-requests/${created.requestId}/photos`,
+          (value) => returnPhotoResponseSchema.parse(value),
+          {
+            token,
+            tenantId,
+            method: 'POST',
+            body,
+            idempotencyKey: attempt.photoKeys[index] ?? newIdempotencyKey('rphoto'),
+          },
+        )
+      } catch {
+        failed += 1
+      }
+    }
+    returnAttempt.current = null
+    setReturnTarget(null)
+    toast.success(
+      failed > 0
+        ? `Return request sent. ${failed} photo${failed === 1 ? '' : 's'} did not upload.`
+        : "Return request sent. We'll let you know once it is reviewed.",
+    )
+    await loadOrders()
+  }
+
   async function uploadProof(orderId: string, body: FormData, idempotencyKey: string) {
     if (!token || !tenantId) throw new Error('Please sign in again.')
     await portalRequest(
@@ -561,6 +652,10 @@ export function PortalApp() {
               focusOrderId={focusOrderId}
               paymentInstructions={catalog.payment?.instructions ?? null}
               paymentAccounts={catalog.payment?.accounts}
+              onOpenInvoice={(invoiceId) => void openInvoice(invoiceId)}
+              onRequestReturn={(order, invoiceId) =>
+                setReturnTarget(order.invoices.find((invoice) => invoice.id === invoiceId) ?? null)
+              }
             />
           ) : session && tenantId ? (
             <AccountView
@@ -601,6 +696,21 @@ export function PortalApp() {
             />
           ) : null}
         </main>
+        {invoiceView ? (
+          <InvoiceSheet
+            invoice={invoiceView.invoice}
+            loading={invoiceView.loading}
+            error={invoiceView.error}
+            onClose={closeInvoice}
+          />
+        ) : null}
+        {returnTarget ? (
+          <ReturnRequestSheet
+            invoice={returnTarget}
+            onSubmit={sendReturnRequest}
+            onClose={() => setReturnTarget(null)}
+          />
+        ) : null}
         <BottomNav tab={tab} onTab={setTab} cartCount={cartCount} />
       </div>
     )

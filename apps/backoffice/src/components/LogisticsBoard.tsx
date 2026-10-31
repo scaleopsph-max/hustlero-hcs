@@ -1,8 +1,14 @@
 'use client'
 
-import type { PortalCourier, PortalShipment, PortalShipmentStatus, PortalShipmentUpdateRequest } from '@hcs/contracts'
+import type {
+  PortalCourier,
+  PortalParcelRequest,
+  PortalShipment,
+  PortalShipmentStatus,
+  PortalShipmentUpdateRequest,
+} from '@hcs/contracts'
 import { Button, Chip, Glass, cn, formatPeso } from '@hcs/ui'
-import { Check, MapPin, Package, PackageCheck, Phone, ReceiptText, Store, Truck, Undo2 } from 'lucide-react'
+import { Boxes, Check, MapPin, Package, PackageCheck, Phone, ReceiptText, Store, Truck, Undo2 } from 'lucide-react'
 import Link from 'next/link'
 import { useState } from 'react'
 
@@ -35,10 +41,14 @@ export function LogisticsBoard({
   shipments,
   busy,
   onUpdate,
+  onShipParcel,
+  onParcelDelivered,
 }: {
   shipments: PortalShipment[]
   busy: string | null
   onUpdate: (shipment: PortalShipment, body: PortalShipmentUpdateRequest) => Promise<boolean>
+  onShipParcel: (shipment: PortalShipment, body: PortalParcelRequest) => Promise<boolean>
+  onParcelDelivered: (shipment: PortalShipment, parcelId: string) => Promise<boolean>
 }) {
   const [view, setView] = useState<Column['id']>('to_pack')
   const count = (status: PortalShipmentStatus) => shipments.filter((shipment) => shipment.status === status).length
@@ -79,6 +89,8 @@ export function LogisticsBoard({
               busy={busy === `shipment:${shipment.salesOrderId}`}
               anyBusy={busy !== null}
               onUpdate={(body) => onUpdate(shipment, body)}
+              onShipParcel={(body) => onShipParcel(shipment, body)}
+              onParcelDelivered={(parcelId) => onParcelDelivered(shipment, parcelId)}
             />
           ))}
         </div>
@@ -92,12 +104,22 @@ function ShipmentCard({
   busy,
   anyBusy,
   onUpdate,
+  onShipParcel,
+  onParcelDelivered,
 }: {
   shipment: PortalShipment
   busy: boolean
   anyBusy: boolean
   onUpdate: (body: PortalShipmentUpdateRequest) => Promise<boolean>
+  onShipParcel: (body: PortalParcelRequest) => Promise<boolean>
+  onParcelDelivered: (parcelId: string) => Promise<boolean>
 }) {
+  const [splitting, setSplitting] = useState(false)
+  const parcels = shipment.parcels ?? []
+  const canSplit =
+    shipment.method === 'delivery' &&
+    (shipment.status === 'to_pack' || shipment.status === 'packed') &&
+    shipment.lines.reduce((sum, line) => sum + (line.remainingMilli ?? line.quantityMilli), 0) > 1000
   const [courier, setCourier] = useState<PortalCourier>('jnt')
   const [tracking, setTracking] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
@@ -125,7 +147,12 @@ function ShipmentCard({
             <span className="min-w-0">
               {line.productName} {line.variantName} <span className="text-ink-500">{line.sku}</span>
             </span>
-            <span className="flex-none font-semibold">× {line.quantityMilli / 1000}</span>
+            <span className="flex-none font-semibold">
+              × {line.quantityMilli / 1000}
+              {line.remainingMilli !== undefined && line.remainingMilli < line.quantityMilli ? (
+                <span className="font-normal text-ink-500"> ({line.remainingMilli / 1000} left)</span>
+              ) : null}
+            </span>
           </li>
         ))}
       </ul>
@@ -179,6 +206,56 @@ function ShipmentCard({
           </p>
         ) : null}
       </div>
+
+      {parcels.length > 0 ? (
+        <div className="flex flex-col gap-2 rounded-control border border-ink-900/10 p-3 text-sm">
+          <p className="font-semibold">Sent ahead</p>
+          {parcels.map((parcel) => (
+            <div key={parcel.parcelId} className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p>
+                  Parcel {parcel.parcelNumber} · {courierLabel[parcel.courier]}
+                  {parcel.trackingNumber ? ` · ${parcel.trackingNumber}` : ''}
+                  <span className="text-ink-500"> · {parcel.invoiceNumber}</span>
+                </p>
+                <p className="text-ink-500">
+                  {parcel.lines
+                    .map((line) => `${line.quantityMilli / 1000} × ${line.productName} ${line.variantName}`)
+                    .join(', ')}
+                </p>
+              </div>
+              {parcel.deliveredAt ? (
+                <span className="text-signal-light-success-fg">Delivered {time(parcel.deliveredAt)}</span>
+              ) : (
+                <Button size="sm" disabled={anyBusy} onClick={() => void onParcelDelivered(parcel.parcelId)}>
+                  Mark delivered
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {canSplit && !splitting ? (
+        <Button size="sm" disabled={anyBusy} onClick={() => setSplitting(true)} className="self-start">
+          <Boxes size={16} className="mr-2" />
+          Send part now
+        </Button>
+      ) : null}
+      {canSplit && splitting ? (
+        <ParcelForm
+          shipment={shipment}
+          busy={busy}
+          anyBusy={anyBusy}
+          onCancel={() => setSplitting(false)}
+          onSubmit={(body) =>
+            onShipParcel(body).then((saved) => {
+              if (saved) setSplitting(false)
+              return saved
+            })
+          }
+        />
+      ) : null}
 
       {shipment.status === 'to_pack' ? (
         <Button variant="confirm" disabled={anyBusy} onClick={() => void onUpdate({ status: 'packed' })}>
@@ -243,7 +320,9 @@ function ShipmentCard({
             {busy ? 'Saving…' : 'Mark shipped'}
           </Button>
           <p className="text-xs text-ink-500 sm:col-span-3">
-            Shipping takes the items out of stock, issues the invoice, and records the verified payments.
+            {parcels.length > 0
+              ? 'Ships everything not sent yet: the rest leaves stock, gets its own invoice, and verified payments are recorded.'
+              : 'Shipping takes the items out of stock, issues the invoice, and records the verified payments.'}
           </p>
           {problem ? <p className="text-sm text-signal-light-critical-fg sm:col-span-3">{problem}</p> : null}
         </form>
@@ -256,5 +335,106 @@ function ShipmentCard({
         </Button>
       ) : null}
     </Glass>
+  )
+}
+
+/** Choose what goes in a parcel sent ahead of the rest of the order. */
+function ParcelForm({
+  shipment,
+  busy,
+  anyBusy,
+  onCancel,
+  onSubmit,
+}: {
+  shipment: PortalShipment
+  busy: boolean
+  anyBusy: boolean
+  onCancel: () => void
+  onSubmit: (body: PortalParcelRequest) => Promise<boolean>
+}) {
+  const [quantities, setQuantities] = useState<Record<string, string>>({})
+  const [courier, setCourier] = useState<PortalCourier>('jnt')
+  const [tracking, setTracking] = useState('')
+  const [problem, setProblem] = useState<string | null>(null)
+  const lines = shipment.lines.filter((line) => line.salesOrderLineId && (line.remainingMilli ?? 0) > 0)
+  return (
+    <form
+      className="flex flex-col gap-3 rounded-control border border-ink-900/15 bg-white/60 p-3"
+      onSubmit={(event) => {
+        event.preventDefault()
+        const chosen: PortalParcelRequest['lines'] = []
+        for (const line of lines) {
+          const text = (quantities[line.salesOrderLineId!] ?? '').trim()
+          if (!text) continue
+          const units = Number(text)
+          if (!/^\d+$/.test(text) || units > (line.remainingMilli ?? 0) / 1000)
+            return setProblem(`Enter up to ${(line.remainingMilli ?? 0) / 1000} for ${line.productName}.`)
+          if (units > 0) chosen.push({ salesOrderLineId: line.salesOrderLineId!, quantityMilli: units * 1000 })
+        }
+        if (chosen.length === 0) return setProblem('Enter how many of each item go in this parcel.')
+        const trimmed = tracking.trim()
+        if (courier === 'jnt' && trimmed.length < 3) return setProblem('Enter the J&T tracking number.')
+        setProblem(null)
+        void onSubmit({ courier, ...(trimmed.length >= 3 ? { trackingNumber: trimmed } : {}), lines: chosen })
+      }}
+    >
+      <p className="text-sm font-semibold">Send part now</p>
+      <ul className="flex flex-col gap-2">
+        {lines.map((line) => (
+          <li key={line.salesOrderLineId} className="flex items-center justify-between gap-3 text-sm">
+            <span className="min-w-0">
+              {line.productName} {line.variantName}
+              <span className="block text-xs text-ink-500">{(line.remainingMilli ?? 0) / 1000} not sent yet</span>
+            </span>
+            <input
+              className={cn(control, 'w-20 flex-none text-right')}
+              inputMode="numeric"
+              placeholder="0"
+              aria-label={`Quantity of ${line.productName} ${line.variantName} in this parcel`}
+              value={quantities[line.salesOrderLineId!] ?? ''}
+              onChange={(event) =>
+                setQuantities((current) => ({ ...current, [line.salesOrderLineId!]: event.target.value }))
+              }
+            />
+          </li>
+        ))}
+      </ul>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="flex flex-col gap-1.5 text-sm font-semibold">
+          Courier
+          <select
+            className={control}
+            value={courier}
+            onChange={(event) => setCourier(event.target.value as PortalCourier)}
+          >
+            <option value="jnt">J&amp;T Express</option>
+            <option value="lalamove">Lalamove</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1.5 text-sm font-semibold">
+          {courier === 'lalamove' ? 'Booking ID (optional)' : 'Tracking number'}
+          <input
+            className={control}
+            maxLength={80}
+            value={tracking}
+            onChange={(event) => setTracking(event.target.value)}
+          />
+        </label>
+      </div>
+      <p className="text-xs text-ink-500">
+        This parcel leaves stock now and gets its own invoice. Leave at least one item for the last shipment.
+      </p>
+      {problem ? <p className="text-sm text-signal-light-critical-fg">{problem}</p> : null}
+      <div className="flex gap-2">
+        <Button type="submit" variant="confirm" disabled={anyBusy}>
+          <Truck size={16} className="mr-2" />
+          {busy ? 'Saving…' : 'Ship this parcel'}
+        </Button>
+        <Button type="button" disabled={anyBusy} onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </form>
   )
 }

@@ -10,7 +10,7 @@ import { Button, Glass, cn, formatPeso } from '@hcs/ui'
 import { CircleCheck, Clock, ShoppingCart, TriangleAlert, Upload } from 'lucide-react'
 import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 
-import { formatQuantity, summarizeCart, type CartLine } from '@/lib/cart'
+import { formatQuantity, shippingFeeFor, summarizeCart, type CartLine } from '@/lib/cart'
 import { formatTime, paymentLabel, reviewReasonLabel, stockLabel } from '@/lib/labels'
 import { newIdempotencyKey } from '@/lib/portal-api'
 import { readStockIssues, stockIssueText } from '@/lib/stock-issues'
@@ -123,6 +123,7 @@ export function CartView({
   }
 
   const deliveryMissing = method === 'delivery' && address.trim().length < 5
+  const shippingMinor = shippingFeeFor(catalog.shipping, summary.totalMinor, method)
   const blocked = summary.shortfalls.length > 0 || summary.hasOutOfStock || deliveryMissing || busy
 
   async function submit(event: FormEvent) {
@@ -269,11 +270,29 @@ export function CartView({
       </Glass>
 
       <Glass variant="strong" className="flex flex-col gap-3 rounded-sheet p-5">
+        {shippingMinor > 0 || (method === 'delivery' && catalog.shipping && catalog.shipping.feeMinor > 0) ? (
+          <div className="flex flex-col gap-1 text-small">
+            <div className="flex justify-between">
+              <span className="text-ink-300">Items</span>
+              <span>{formatPeso(summary.totalMinor)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-ink-300">Shipping</span>
+              <span>{shippingMinor > 0 ? formatPeso(shippingMinor) : 'Free'}</span>
+            </div>
+            {shippingMinor > 0 && catalog.shipping?.freeAboveMinor ? (
+              <p className="text-caption text-ink-400">
+                Free shipping from {formatPeso(catalog.shipping.freeAboveMinor)}. Add{' '}
+                {formatPeso(catalog.shipping.freeAboveMinor - summary.totalMinor)} more.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex items-baseline justify-between">
           <span className="text-ink-300">
             Total ({summary.itemCount} {summary.itemCount === 1 ? 'item' : 'items'})
           </span>
-          <span className="text-pos-price">{formatPeso(summary.totalMinor)}</span>
+          <span className="text-pos-price">{formatPeso(summary.totalMinor + shippingMinor)}</span>
         </div>
         {summary.potentialProfitMinor > 0 ? (
           <p className="text-small text-signal-dark-success-fg">

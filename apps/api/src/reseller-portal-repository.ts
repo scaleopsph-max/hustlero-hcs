@@ -1,4 +1,17 @@
 import {
+  portalParcelDeliveredResponseSchema,
+  portalParcelResponseSchema,
+  resellerInvoiceSchema,
+  resellerShippingSettingsSchema,
+  returnRequestSchema,
+  returnRequestSubmitResponseSchema,
+  type PortalParcelDeliveredResponse,
+  type PortalParcelRequest,
+  type PortalParcelResponse,
+  type ResellerShippingSettings,
+  type ReturnRequestDecision,
+  type ReturnRequestSubmit,
+  type ReturnRequestSubmitResponse,
   resellerAccountInviteResponseSchema,
   resellerAccountStatusResponseSchema,
   resellerApplicationDecisionResponseSchema,
@@ -90,6 +103,12 @@ export const storedBrandingSchema = resellerBrandingSchema
   .omit({ logoUrl: true })
   .extend({ logoStorageKey: z.string().min(1).nullable() })
 export type StoredBranding = z.infer<typeof storedBrandingSchema>
+export const storedInvoiceSchema = resellerInvoiceSchema.extend({ branding: storedBrandingSchema.optional() })
+export type StoredResellerInvoice = z.infer<typeof storedInvoiceSchema>
+export const storedReturnRequestSchema = returnRequestSchema.extend({
+  photos: z.array(z.object({ storageKey: z.string().min(1), thumbStorageKey: z.string().nullable() })),
+})
+export type StoredReturnRequest = z.infer<typeof storedReturnRequestSchema>
 const storedResellerPortalPublicSchema = resellerPortalPublicSchema.extend({
   branding: storedBrandingSchema.optional(),
 })
@@ -191,6 +210,50 @@ export interface ResellerPortalRepository {
     requestId: string,
     bindings: Bindings,
   ): Promise<PortalShipmentUpdateResponse>
+  shipParcel(
+    userId: string,
+    tenantId: string,
+    salesOrderId: string,
+    request: PortalParcelRequest,
+    requestId: string,
+    bindings: Bindings,
+  ): Promise<PortalParcelResponse>
+  deliverParcel(
+    userId: string,
+    tenantId: string,
+    parcelId: string,
+    requestId: string,
+    bindings: Bindings,
+  ): Promise<PortalParcelDeliveredResponse>
+  saveShippingSettings(
+    userId: string,
+    tenantId: string,
+    request: ResellerShippingSettings,
+    requestId: string,
+    bindings: Bindings,
+  ): Promise<ResellerShippingSettings>
+  loadInvoice(
+    authUserId: string,
+    tenantId: string,
+    invoiceId: string,
+    bindings: Bindings,
+  ): Promise<StoredResellerInvoice>
+  submitReturnRequest(
+    authUserId: string,
+    tenantId: string,
+    request: ReturnRequestSubmit,
+    command: PortalCommand,
+    bindings: Bindings,
+  ): Promise<ReturnRequestSubmitResponse>
+  loadReturnRequests(userId: string, tenantId: string, bindings: Bindings): Promise<StoredReturnRequest[]>
+  decideReturnRequest(
+    userId: string,
+    tenantId: string,
+    requestId: string,
+    decision: ReturnRequestDecision,
+    commandRequestId: string,
+    bindings: Bindings,
+  ): Promise<StoredReturnRequest>
   /** Cart items that cannot be filled right now; used after a stock refusal. */
   checkCartStock(
     authUserId: string,
@@ -524,5 +587,54 @@ export const resellerPortalPostgresRepository: ResellerPortalRepository = {
       'select app.update_portal_shipment($1::uuid, $2::uuid, $3::uuid, $4::jsonb, $5::text) response',
       [userId, tenantId, salesOrderId, JSON.stringify(request), requestId],
       (value) => portalShipmentUpdateResponseSchema.parse(value),
+    ),
+  shipParcel: (userId, tenantId, salesOrderId, request, requestId, bindings) =>
+    queryOne(
+      bindings,
+      'select app.ship_portal_parcel($1::uuid, $2::uuid, $3::uuid, $4::jsonb, $5::text) response',
+      [userId, tenantId, salesOrderId, JSON.stringify(request), requestId],
+      (value) => portalParcelResponseSchema.parse(value),
+    ),
+  deliverParcel: (userId, tenantId, parcelId, requestId, bindings) =>
+    queryOne(
+      bindings,
+      'select app.deliver_portal_parcel($1::uuid, $2::uuid, $3::uuid, $4::text) response',
+      [userId, tenantId, parcelId, requestId],
+      (value) => portalParcelDeliveredResponseSchema.parse(value),
+    ),
+  saveShippingSettings: (userId, tenantId, request, requestId, bindings) =>
+    queryOne(
+      bindings,
+      'select app.save_reseller_shipping_settings($1::uuid, $2::uuid, $3::jsonb, $4::text) response',
+      [userId, tenantId, JSON.stringify(request), requestId],
+      (value) => resellerShippingSettingsSchema.parse(value),
+    ),
+  loadInvoice: (authUserId, tenantId, invoiceId, bindings) =>
+    queryOne(
+      bindings,
+      'select app.load_reseller_invoice($1::uuid, $2::uuid, $3::uuid) response',
+      [authUserId, tenantId, invoiceId],
+      (value) => storedInvoiceSchema.parse(value),
+    ),
+  submitReturnRequest: (authUserId, tenantId, request, command, bindings) =>
+    queryOne(
+      bindings,
+      'select app.submit_reseller_return_request($1::uuid, $2::uuid, $3::jsonb, $4::text, $5::text, $6::text) response',
+      [authUserId, tenantId, JSON.stringify(request), command.idempotencyKey, command.requestHash, command.requestId],
+      (value) => returnRequestSubmitResponseSchema.parse(value),
+    ),
+  loadReturnRequests: (userId, tenantId, bindings) =>
+    queryOne(
+      bindings,
+      'select app.load_reseller_return_requests($1::uuid, $2::uuid) response',
+      [userId, tenantId],
+      (value) => z.object({ requests: z.array(storedReturnRequestSchema) }).parse(value).requests,
+    ),
+  decideReturnRequest: (userId, tenantId, requestId, decision, commandRequestId, bindings) =>
+    queryOne(
+      bindings,
+      'select app.decide_reseller_return_request($1::uuid, $2::uuid, $3::uuid, $4::jsonb, $5::text) response',
+      [userId, tenantId, requestId, JSON.stringify(decision), commandRequestId],
+      (value) => storedReturnRequestSchema.parse(value),
     ),
 }

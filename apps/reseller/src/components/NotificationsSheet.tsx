@@ -40,6 +40,9 @@ const icons: Record<ResellerNotificationKind, { Icon: LucideIcon; tone: string }
   payment_overdue: { Icon: TriangleAlert, tone: 'text-signal-dark-critical-fg' },
   payment_window_closing: { Icon: Clock, tone: 'text-signal-dark-attention-fg' },
   back_in_stock: { Icon: PackagePlus, tone: 'text-signal-dark-success-fg' },
+  parcel_shipped: { Icon: Truck, tone: 'text-gold-300' },
+  return_request_approved: { Icon: Undo2, tone: 'text-signal-dark-success-fg' },
+  return_request_declined: { Icon: Ban, tone: 'text-signal-dark-critical-fg' },
 }
 
 /** Glass sheet with the reseller's order updates; tapping one opens that order. */

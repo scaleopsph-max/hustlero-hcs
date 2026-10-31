@@ -125,7 +125,7 @@ describe('file helpers', () => {
   })
 
   it('signs links for every stored kind, including portal logos', async () => {
-    for (const kind of ['product_image', 'payment_proof', 'payment_qr', 'brand_logo'] as const) {
+    for (const kind of ['product_image', 'payment_proof', 'payment_qr', 'brand_logo', 'return_photo'] as const) {
       const key = storageKey(tenantId, kind, '40000000-0000-4000-8000-000000000001', 'main')
       const url = new URL(await createFileUrlSigner(secret).sign(key, now + 600), 'https://api.example.test')
       const read = (name: string) => url.searchParams.get(name) ?? undefined

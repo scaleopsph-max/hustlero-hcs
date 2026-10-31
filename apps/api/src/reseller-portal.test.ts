@@ -2,6 +2,8 @@ import {
   apiErrorResponseSchema,
   resellerOrderSubmitResponseSchema,
   resellerPortalCatalogSchema,
+  resellerInvoiceSchema,
+  returnRequestsSchema,
   type ResellerOrderSubmitRequest,
   type ResellerPortalAdmin,
   type ResellerPortalCatalog,
@@ -647,6 +649,135 @@ describe('reseller portal API', () => {
     }
     expect(publicPage.branding).not.toHaveProperty('logoStorageKey')
     expect(String(publicPage.branding.logoUrl)).toMatch(/^\/v1\/files\//)
+  })
+
+  it('shows a reseller their invoice and takes return requests', async () => {
+    const invoiceId = '3d000000-0000-4000-8000-000000000001'
+    const lineId = '3d000000-0000-4000-8000-000000000002'
+    const loadInvoice = vi.fn(async () => ({
+      businessName: 'Sample Store',
+      invoiceId,
+      invoiceNumber: 'INV-20261101-000001',
+      issuedAt: '2026-11-01T02:00:00.000Z',
+      orderNumber: 'RP-000004',
+      customerName: 'Maria Santos',
+      customerNumber: 'CUST-000001',
+      locationName: 'Main Warehouse',
+      paymentTerm: 'prepaid' as const,
+      dueDate: '2026-11-01',
+      lines: [],
+      subtotalMinor: 138_000,
+      discountMinor: 0,
+      taxMinor: 0,
+      shippingFeeMinor: 15_000,
+      totalMinor: 153_000,
+      settlements: [],
+      balanceMinor: 0,
+      status: 'paid' as const,
+      branding: { portalName: 'Sample Store', accentColor: 'gold' as const, logoStorageKey: null },
+    }))
+    const submitReturnRequest = vi.fn(async () => ({
+      requestId: '3d000000-0000-4000-8000-000000000003',
+      status: 'pending' as const,
+      invoiceNumber: 'INV-20261101-000001',
+    }))
+    const app = portalApp(repository({ loadInvoice, submitReturnRequest }))
+    const headers = {
+      authorization: 'Bearer reseller-token',
+      'content-type': 'application/json',
+      'x-tenant-id': tenantId,
+    }
+    const invoice = await app.request(`/v1/portal/invoices/${invoiceId}`, { headers }, bindings)
+    expect(invoice.status).toBe(200)
+    const body = resellerInvoiceSchema.parse(await invoice.json())
+    expect(body.shippingFeeMinor).toBe(15_000)
+    expect(body.branding?.logoUrl).toBeNull()
+    expect((await app.request('/v1/portal/invoices/nope', { headers }, bindings)).status).toBe(400)
+    const payload = {
+      invoiceId,
+      reason: 'Two pouches were torn',
+      lines: [{ invoiceLineId: lineId, quantityMilli: 2000 }],
+    }
+    const missingKey = await app.request(
+      '/v1/portal/return-requests',
+      { method: 'POST', headers, body: JSON.stringify(payload) },
+      bindings,
+    )
+    expect(missingKey.status).toBe(400)
+    const sent = await app.request(
+      '/v1/portal/return-requests',
+      {
+        method: 'POST',
+        headers: { ...headers, 'idempotency-key': 'return-request-000001' },
+        body: JSON.stringify(payload),
+      },
+      bindings,
+    )
+    expect(sent.status).toBe(201)
+    expect(submitReturnRequest).toHaveBeenCalledWith(
+      resellerUserId,
+      tenantId,
+      payload,
+      expect.objectContaining({ idempotencyKey: 'return-request-000001' }),
+      bindings,
+    )
+  })
+
+  it('lets the team ship parcels, set shipping, and review return requests with signed photos', async () => {
+    const orderId = '3e000000-0000-4000-8000-000000000001'
+    const lineId = '3e000000-0000-4000-8000-000000000002'
+    const requestId = '3e000000-0000-4000-8000-000000000003'
+    const shipParcel = vi.fn(async () => Promise.reject(postgresError('HCRS2')))
+    const saveShippingSettings = vi.fn(async () => ({ feeMinor: 15_000, freeAboveMinor: 500_000 }))
+    const stored = {
+      requestId,
+      status: 'pending' as const,
+      reason: 'Torn pouches',
+      decisionReason: null,
+      createdAt: '2026-11-01T02:00:00.000Z',
+      decidedAt: null,
+      invoiceId: orderId,
+      invoiceNumber: 'INV-1',
+      salesOrderId: orderId,
+      orderNumber: 'RP-000001',
+      customerName: 'Maria Santos',
+      lines: [],
+      photos: [{ storageKey: `t/${tenantId}/return_photo/${requestId}/main`, thumbStorageKey: null }],
+    }
+    const loadReturnRequests = vi.fn(async () => [stored])
+    const app = portalApp(repository({ shipParcel, saveShippingSettings, loadReturnRequests }))
+    const headers = { authorization: 'Bearer owner-token', 'content-type': 'application/json', 'x-tenant-id': tenantId }
+    const parcel = await app.request(
+      `/v1/reseller-portal/shipments/${orderId}/parcels`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ courier: 'jnt', lines: [{ salesOrderLineId: lineId, quantityMilli: 6000 }] }),
+      },
+      bindings,
+    )
+    expect(parcel.status).toBe(409)
+    expect(apiErrorResponseSchema.parse(await parcel.json()).error.code).toBe('PARCEL_TAKES_EVERYTHING')
+    const shipping = await app.request(
+      '/v1/reseller-portal/shipping-settings',
+      { method: 'POST', headers, body: JSON.stringify({ feeMinor: 15_000, freeAboveMinor: 500_000 }) },
+      bindings,
+    )
+    expect(shipping.status).toBe(200)
+    const listed = await app.request(
+      '/v1/reseller-portal/return-requests',
+      { headers },
+      { ...bindings, FILES_URL_SECRET: 'test-secret-for-signing-links-0001' },
+    )
+    const text = await listed.text()
+    expect(text).not.toContain('storageKey')
+    expect(returnRequestsSchema.parse(JSON.parse(text)).requests[0]?.photos[0]?.url).toMatch(/^\/v1\/files\/content/)
+    const decline = await app.request(
+      `/v1/reseller-portal/return-requests/${requestId}/decision`,
+      { method: 'POST', headers, body: JSON.stringify({ decision: 'decline' }) },
+      bindings,
+    )
+    expect(decline.status).toBe(400)
   })
 
   it('signs payment QR links and never returns storage keys', async () => {

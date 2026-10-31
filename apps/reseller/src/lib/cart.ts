@@ -143,3 +143,14 @@ export function writeCart(tenantId: string, lines: CartLine[]): void {
     // The cart is a convenience; a blocked storage keeps it in memory only.
   }
 }
+
+/** The delivery fee the order will carry: flat, free from the business's minimum, never for pickup. */
+export function shippingFeeFor(
+  shipping: { feeMinor: number; freeAboveMinor: number | null } | undefined,
+  itemsTotalMinor: number,
+  method: 'delivery' | 'pickup',
+): number {
+  if (!shipping || method === 'pickup' || shipping.feeMinor <= 0) return 0
+  if (shipping.freeAboveMinor !== null && itemsTotalMinor >= shipping.freeAboveMinor) return 0
+  return shipping.feeMinor
+}
