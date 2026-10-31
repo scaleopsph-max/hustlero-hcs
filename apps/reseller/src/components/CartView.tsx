@@ -73,7 +73,7 @@ export function CartView({
             <p className="text-ink-200">
               Your stock is on hold
               {placed.paymentDueAt ? ` until ${formatTime(placed.paymentDueAt)}` : ` for ${holdHours} hours`}. Upload
-              your payment proof before then or the order is cancelled. A downpayment is fine.
+              your payment proof for the full amount before then or the order is cancelled.
             </p>
             <PaymentInstructions
               accounts={catalog.payment?.accounts}
@@ -83,11 +83,13 @@ export function CartView({
           </>
         ) : (
           <p className="text-ink-200">
-            {confirmed
-              ? 'Your stock is reserved. Watch for updates on payment and delivery.'
-              : placed.reviewReason
-                ? reviewReasonLabel[placed.reviewReason]
-                : 'The team will review your order first.'}
+            {confirmed && placed.onCredit
+              ? 'Charged to your Platinum credit. We are packing your order. Pay by the due date on your statement.'
+              : confirmed
+                ? 'Your stock is reserved. Watch for updates on payment and delivery.'
+                : placed.reviewReason
+                  ? reviewReasonLabel[placed.reviewReason]
+                  : 'The team will review your order first.'}
           </p>
         )}
         <Button
@@ -124,6 +126,9 @@ export function CartView({
 
   const deliveryMissing = method === 'delivery' && address.trim().length < 5
   const shippingMinor = shippingFeeFor(catalog.shipping, summary.totalMinor, method)
+  const onCredit =
+    catalog.account.creditOrderingMinor != null &&
+    catalog.account.creditOrderingMinor >= summary.totalMinor + shippingMinor
   const blocked = summary.shortfalls.length > 0 || summary.hasOutOfStock || deliveryMissing || busy
 
   async function submit(event: FormEvent) {
@@ -299,13 +304,22 @@ export function CartView({
             Estimated profit if sold at SRP: {formatPeso(summary.potentialProfitMinor)}
           </p>
         ) : null}
-        <p className="text-small text-ink-300">
-          After you place the order, send your payment within {holdHours} hours to keep the stock on hold. A downpayment
-          is fine.
-        </p>
+        {onCredit ? (
+          <p className="rounded-control bg-signal-dark-success-bg px-3 py-2 text-small text-signal-dark-success-fg">
+            Platinum credit: this order is confirmed right away and added to your balance.{' '}
+            {formatPeso(catalog.account.creditOrderingMinor ?? 0)} of credit available.
+          </p>
+        ) : (
+          <p className="text-small text-ink-300">
+            After you place the order, send your full payment within {holdHours} hours to keep the stock on hold.
+            {catalog.account.creditOrderingMinor != null
+              ? ' This order is more than your available credit, so it is pay-first.'
+              : ''}
+          </p>
+        )}
         {error ? <p className="text-small text-signal-dark-critical-fg">{error}</p> : null}
         <Button type="submit" variant="primary" size="xl" disabled={blocked}>
-          {busy ? 'Sending…' : 'Place order'}
+          {busy ? 'Sending…' : onCredit ? 'Place order on credit' : 'Place order'}
         </Button>
       </Glass>
     </form>

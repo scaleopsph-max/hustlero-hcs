@@ -78,7 +78,7 @@ select app.update_portal_shipment('aa000000-0000-4000-8000-000000000001', 'bb000
 select app.update_portal_shipment('aa000000-0000-4000-8000-000000000001', 'bb000000-0000-4000-8000-000000000001', pg_temp.o('RP-000001'),
   '{"status":"shipped","courier":"jnt","trackingNumber":"JT0098765432"}', 'r4');
 select app.record_payment_proof('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001', pg_temp.o('RP-000002'),
-  pg_temp.proof('b0000000-0000-4000-8000-000000000002', 300000, 'BDO-551902', 'bank_transfer'), 'rep-proof-key-0002', 'h5', 'r5');
+  pg_temp.proof('b0000000-0000-4000-8000-000000000002', 492000, 'BDO-551902', 'bank_transfer'), 'rep-proof-key-0002', 'h5', 'r5');
 select app.review_reseller_portal_order('aa000000-0000-4000-8000-000000000001', 'bb000000-0000-4000-8000-000000000001', pg_temp.o('RP-000002'),
   '{"decision":"approve"}', 'rep-review-key-0002', 'h6', 'r6');
 select app.submit_reseller_portal_order('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001',

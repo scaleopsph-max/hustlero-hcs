@@ -12,6 +12,8 @@ import {
   resellerPortalReportFilterSchema,
   resellerNotificationReadRequestSchema,
   resellerCreditApplyRequestSchema,
+  resellerTierSettingsSchema,
+  resellerAccountControlsSchema,
   portalParcelRequestSchema,
   resellerShippingSettingsSchema,
   returnRequestDecisionSchema,
@@ -81,6 +83,12 @@ const decisionIdempotencyPattern = /^[A-Za-z0-9_-]{16,120}$/
 const errorMap: Record<string, { status: ContentfulStatusCode; code: string; message: string }> = {
   HCSD0: { status: 403, code: 'REPORTING_ACCESS_DENIED', message: 'Your role cannot view these reports.' },
   HCSD1: { status: 400, code: 'INVALID_REPORT_FILTERS', message: 'Choose a valid date range of up to one year.' },
+  HCRT1: {
+    status: 409,
+    code: 'PAYMENT_NOT_FULL',
+    message:
+      'The payment does not cover the order total. Silver and Gold resellers pay in full before the order is confirmed.',
+  },
   HCRS1: {
     status: 409,
     code: 'PARCEL_NOT_ALLOWED',
@@ -532,6 +540,14 @@ export function registerResellerPortalRoutes(
       dependencies.repository.saveStockAlert(reseller.userId, reseller.tenantId, request, context.env),
   )
 
+  app.get('/v1/portal/tier', async (context) => {
+    const reseller = await resolveReseller(context, true)
+    if (reseller instanceof Response) return reseller
+    return run(context, async () =>
+      context.json(await dependencies.repository.loadTier(reseller.userId, reseller.tenantId, context.env)),
+    )
+  })
+
   app.get('/v1/portal/invoices/:invoiceId', async (context) => {
     const reseller = await resolveReseller(context, true)
     if (reseller instanceof Response) return reseller
@@ -845,6 +861,51 @@ export function registerResellerPortalRoutes(
           admin.userId,
           admin.tenantId,
           parcelId,
+          context.get('requestId'),
+          context.env,
+        ),
+      ),
+    )
+  })
+
+  app.post('/v1/reseller-portal/tier-settings', async (context) => {
+    const admin = await resolveAdmin(context)
+    if (admin instanceof Response) return admin
+    const request = await readJson(context, resellerTierSettingsSchema)
+    if (!request)
+      return fail(context, 400, 'INVALID_RESELLER_PORTAL_REQUEST', 'Check the tier thresholds, points, and credit.')
+    if (
+      request.platinumMinReferrals <= request.goldMinReferrals ||
+      request.platinumMinSalesMinor <= request.goldMinSalesMinor
+    )
+      return fail(context, 400, 'INVALID_RESELLER_PORTAL_REQUEST', 'Platinum must need more than Gold.')
+    return run(context, async () =>
+      context.json(
+        await dependencies.repository.saveTierSettings(
+          admin.userId,
+          admin.tenantId,
+          request,
+          context.get('requestId'),
+          context.env,
+        ),
+      ),
+    )
+  })
+
+  app.post('/v1/reseller-portal/accounts/:accountId/controls', async (context) => {
+    const admin = await resolveAdmin(context)
+    if (admin instanceof Response) return admin
+    const accountId = context.req.param('accountId')
+    const request = await readJson(context, resellerAccountControlsSchema)
+    if (!uuidPattern.test(accountId) || !request)
+      return fail(context, 400, 'INVALID_RESELLER_PORTAL_REQUEST', 'Check the credit and referral details.')
+    return run(context, async () =>
+      context.json(
+        await dependencies.repository.saveAccountControls(
+          admin.userId,
+          admin.tenantId,
+          accountId,
+          request,
           context.get('requestId'),
           context.env,
         ),

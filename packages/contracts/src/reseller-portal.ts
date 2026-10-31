@@ -77,6 +77,12 @@ export const resellerApplicationRequestSchema = z.strictObject({
     .pipe(z.string().regex(/^\+?[0-9]{7,15}$/)),
   city: z.string().trim().min(2).max(120).optional(),
   message: z.string().trim().max(1000).optional(),
+  /** From a reseller's referral link; an unknown code is ignored. */
+  referralCode: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9]{6,12}$/)
+    .optional(),
 })
 
 export const resellerApplicationResponseSchema = z.object({ status: z.literal('received') })
@@ -144,6 +150,9 @@ export const resellerPortalCatalogSchema = z.object({
     creditLimitMinor: minor.nullable(),
     availableCreditMinor: minor.nullable(),
     pointsBalance: z.number().int().nonnegative(),
+    tier: z.lazy(() => resellerTierNameSchema).optional(),
+    /** Set when this reseller can order on credit right now: what is left of the limit. */
+    creditOrderingMinor: minor.nullable().optional(),
   }),
   fulfillmentLocationName: z.string().min(1),
   /** Where to send payment. Optional so older API versions still parse. */
@@ -359,6 +368,8 @@ export const resellerOrderSubmitResponseSchema = z.object({
   lineCount: z.number().int().positive(),
   totalMinor: minor,
   shippingFeeMinor: minor.optional(),
+  /** Platinum on credit: confirmed at once, billed with the reseller's term. */
+  onCredit: z.boolean().optional(),
 })
 
 // Back Office administration ---------------------------------------------
@@ -495,6 +506,7 @@ export const resellerPortalAdminSchema = z.object({
       pointsMinRedeem: z.number().int().positive().optional(),
       shippingFeeMinor: minor.optional(),
       freeShippingAboveMinor: minor.nullable().optional(),
+      tiers: z.lazy(() => resellerTierSettingsSchema).optional(),
       updatedAt: timestamp,
     })
     .nullable(),
@@ -526,6 +538,7 @@ export const resellerPortalAdminSchema = z.object({
       message: z.string().nullable(),
       status: z.enum(['pending', 'approved', 'rejected']),
       decisionReason: z.string().nullable(),
+      referredByName: z.string().nullable().optional(),
       reviewedAt: timestamp.nullable(),
       createdAt: timestamp,
     }),
@@ -542,6 +555,14 @@ export const resellerPortalAdminSchema = z.object({
       priceListName: z.string().min(1),
       activatedAt: timestamp.nullable(),
       createdAt: timestamp,
+      tier: z.enum(['silver', 'gold', 'platinum']).optional(),
+      referralCode: z.string().optional(),
+      referredByAccountId: uuid.nullable().optional(),
+      referredByName: z.string().nullable().optional(),
+      activeReferrals: z.number().int().nonnegative().optional(),
+      lifetimeSalesMinor: minor.optional(),
+      creditHold: z.boolean().optional(),
+      creditLimitOverrideMinor: minor.nullable().optional(),
     }),
   ),
   reviewQueue: z.array(resellerOrderSchema),
@@ -623,6 +644,7 @@ export const resellerNotificationKindSchema = z.enum([
   'parcel_shipped',
   'return_request_approved',
   'return_request_declined',
+  'tier_changed',
 ])
 export const resellerNotificationSchema = z.object({
   id: uuid,
@@ -881,3 +903,65 @@ export type ReturnRequestSubmit = z.infer<typeof returnRequestSubmitSchema>
 export type ReturnRequestSubmitResponse = z.infer<typeof returnRequestSubmitResponseSchema>
 export type ReturnPhotoResponse = z.infer<typeof returnPhotoResponseSchema>
 export type ReturnRequestDecision = z.infer<typeof returnRequestDecisionSchema>
+
+// Reseller tiers ----------------------------------------------------------------
+export const resellerTierNameSchema = z.enum(['silver', 'gold', 'platinum'])
+export const resellerTierSchema = z.object({
+  tier: resellerTierNameSchema,
+  tierChangedAt: timestamp.nullable(),
+  activeReferrals: z.number().int().nonnegative(),
+  totalReferrals: z.number().int().nonnegative(),
+  lifetimeSalesMinor: minor,
+  activeDays: z.number().int().positive(),
+  tiers: z.array(
+    z.object({
+      tier: resellerTierNameSchema,
+      minReferrals: z.number().int().nonnegative(),
+      minSalesMinor: minor,
+      spendPerPointMinor: z.number().int().positive(),
+      credit: z.boolean(),
+    }),
+  ),
+  referralCode: z.string().min(1),
+  tenantSlug: z.string().min(1),
+  referrals: z.array(z.object({ name: z.string().min(1), joinedAt: timestamp, active: z.boolean() })),
+  credit: z.object({
+    limitMinor: minor.nullable(),
+    paymentTerm: z.enum(['prepaid', 'cod', 'net_7', 'net_15', 'net_30']).nullable(),
+    availableMinor: minor.nullable(),
+    blockedReason: z.enum(['not_platinum', 'on_hold', 'overdue', 'unavailable']).nullable(),
+  }),
+})
+const wholePesosMinor = z.number().int().min(100).max(1_000_000_000_000)
+export const resellerTierSettingsSchema = z.strictObject({
+  goldMinReferrals: z.number().int().min(1).max(100_000),
+  goldMinSalesMinor: wholePesosMinor,
+  platinumMinReferrals: z.number().int().min(2).max(100_000),
+  platinumMinSalesMinor: wholePesosMinor,
+  silverSpendPerPointMinor: z.number().int().min(100).max(10_000_000),
+  goldSpendPerPointMinor: z.number().int().min(100).max(10_000_000),
+  platinumSpendPerPointMinor: z.number().int().min(100).max(10_000_000),
+  platinumCreditLimitMinor: z.number().int().min(0).max(10_000_000_000),
+  platinumPaymentTerm: z.enum(['cod', 'net_7', 'net_15', 'net_30']),
+  activeDays: z.number().int().min(7).max(365),
+})
+export const resellerAccountTierSchema = z.object({
+  tier: resellerTierNameSchema,
+  referralCode: z.string().min(1),
+  referredByAccountId: uuid.nullable(),
+  referredByName: z.string().nullable(),
+  activeReferrals: z.number().int().nonnegative(),
+  lifetimeSalesMinor: minor,
+  creditHold: z.boolean(),
+  creditLimitOverrideMinor: minor.nullable(),
+})
+export const resellerAccountControlsSchema = z.strictObject({
+  creditHold: z.boolean().optional(),
+  creditLimitOverrideMinor: z.number().int().min(0).max(1_000_000_000_000).nullable().optional(),
+  referredByAccountId: uuid.nullable().optional(),
+})
+export type ResellerTierName = z.infer<typeof resellerTierNameSchema>
+export type ResellerTier = z.infer<typeof resellerTierSchema>
+export type ResellerTierSettings = z.infer<typeof resellerTierSettingsSchema>
+export type ResellerAccountTier = z.infer<typeof resellerAccountTierSchema>
+export type ResellerAccountControls = z.infer<typeof resellerAccountControlsSchema>

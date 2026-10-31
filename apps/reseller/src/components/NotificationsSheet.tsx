@@ -3,6 +3,7 @@
 import type { ResellerNotification, ResellerNotificationKind } from '@hcs/contracts'
 import { Button } from '@hcs/ui'
 import {
+  Award,
   BadgeCheck,
   Ban,
   Bell,
@@ -43,6 +44,7 @@ const icons: Record<ResellerNotificationKind, { Icon: LucideIcon; tone: string }
   parcel_shipped: { Icon: Truck, tone: 'text-gold-300' },
   return_request_approved: { Icon: Undo2, tone: 'text-signal-dark-success-fg' },
   return_request_declined: { Icon: Ban, tone: 'text-signal-dark-critical-fg' },
+  tier_changed: { Icon: Award, tone: 'text-gold-300' },
 }
 
 /** Glass sheet with the reseller's order updates; tapping one opens that order. */

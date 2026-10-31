@@ -5,13 +5,16 @@ import { deliverPushNotifications } from './push-delivery'
 
 type Sweep = (bindings: Bindings) => Promise<number>
 
-/** Cancels pay-first reseller orders whose four-hour payment window passed, releasing their stock. */
+/** Cancels pay-first reseller orders whose four-hour payment window passed, releasing their stock,
+ * and refreshes reseller tiers (at most once a day per business). */
 export const expireResellerPaymentHolds: Sweep = async (bindings) => {
   if (!bindings.HYPERDRIVE?.connectionString) return 0
   const client = new Client({ connectionString: bindings.HYPERDRIVE.connectionString })
   try {
     await client.connect()
     const result = await client.query<{ expired: number }>('select app.expire_reseller_payment_holds(null) as expired')
+    // Reseller tiers are refreshed once a day per business (active referrals lapse with time).
+    await client.query('select app.refresh_reseller_tiers()')
     return Number(result.rows[0]?.expired ?? 0)
   } finally {
     await client.end()

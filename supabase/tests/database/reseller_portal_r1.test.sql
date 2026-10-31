@@ -105,8 +105,10 @@ select is(app.decide_reseller_application('1e100000-0000-4000-8000-000000000001'
   'portal-approve-key-01', 'approve-hash', 'approve-request')->>'status', 'approved', 'owner approves the application');
 select is((select customer_type from app.customers where tenant_id = '2e100000-0000-4000-8000-000000000001' and email = 'maria@example.invalid'),
   'reseller', 'approval creates a reseller customer');
-select is((select credit_limit from app.wholesale_customer_credit_settings where tenant_id = '2e100000-0000-4000-8000-000000000001'),
+select is((select credit_limit from app.wholesale_customer_credit_settings where tenant_id = '2e100000-0000-4000-8000-000000000001' order by revision limit 1),
   20000.00::numeric, 'approval records explicit credit settings');
+select is((select payment_term || ':' || credit_limit from app.wholesale_customer_credit_settings where tenant_id = '2e100000-0000-4000-8000-000000000001' order by revision desc limit 1),
+  'prepaid:0.00', 'a new reseller starts as Silver, without credit');
 select is((select status from app.reseller_accounts where tenant_id = '2e100000-0000-4000-8000-000000000001'), 'invited',
   'approval creates an invited portal account');
 select ok(exists(select 1 from app.customer_price_list_assignments where tenant_id = '2e100000-0000-4000-8000-000000000001'),
@@ -209,6 +211,16 @@ select is(jsonb_array_length(app.load_reseller_portal_admin('1e100000-0000-4000-
 select is(jsonb_array_length(app.list_pending_payment_proofs('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001')->'proofs'), 0,
   'proofs on orders in review are handled from the review card');
 
+-- Silver and Gold pay in full: a downpayment alone does not confirm the order.
+select throws_ok($$ select app.review_reseller_portal_order('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
+  (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'),
+  '{"decision":"approve"}', 'portal-review-key-0d', 'review-hash-0d', 'review-request-0d') $$, 'HCRT1', null,
+  'a downpayment alone does not confirm a Silver order');
+select is(app.record_payment_proof('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001',
+  (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'),
+  pg_temp.proof('be100000-0000-4000-8000-000000000009', (select (total * 100)::bigint - 50000 from app.sales_orders
+    where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')), 'portal-proof-key-09', 'proof-hash-9', 'proof-request-9')->>'status',
+  'pending', 'the reseller sends the rest');
 -- One step: verify the payment and confirm the order.
 select is(app.review_reseller_portal_order('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
   (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'),
@@ -223,9 +235,9 @@ select is((select array_agg(reason || ':' || quantity_delta order by reason) fro
   array['order_confirmed:10.000', 'payment_hold:10.000', 'payment_hold_released:-10.000'], 'the ledger shows hold, release, and confirmation');
 select ok(exists(select 1 from app.wholesale_order_credit_snapshots s join app.sales_orders o on o.tenant_id = s.tenant_id and o.id = s.sales_order_id
   where o.order_number = 'RP-000001'), 'confirmation snapshots the credit terms like Back Office confirmation');
-select is(app.wholesale_verified_prepayments('2e100000-0000-4000-8000-000000000001', (select customer_id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')), 500.00::numeric,
-  'the verified downpayment counts as paid toward credit exposure');
-select is(app.wholesale_credit_exposure('2e100000-0000-4000-8000-000000000001', (select customer_id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')), 2000.00::numeric, 'exposure is the order total less the verified payment');
+select is(app.wholesale_verified_prepayments('2e100000-0000-4000-8000-000000000001', (select customer_id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')), 2500.00::numeric,
+  'the verified payment counts as paid toward credit exposure');
+select is(app.wholesale_credit_exposure('2e100000-0000-4000-8000-000000000001', (select customer_id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')), 0.00::numeric, 'a fully paid order adds no credit exposure');
 
 -- Logistics: the confirmed order waits to be packed, then moves forward one step at a time.
 select is((select status from app.sales_order_shipments where tenant_id = '2e100000-0000-4000-8000-000000000001' and sales_order_id = (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')), 'to_pack',
@@ -256,20 +268,13 @@ select is((select p.amount || ':' || p.reference || ':' || m.method_type || ':' 
   join app.wholesale_payment_references r on r.tenant_id = p.tenant_id and r.payment_id = p.id
   where proof.file_id = 'be100000-0000-4000-8000-000000000001'), '500.00:GC-1029-3845:e_wallet:3845',
   'the verified GCash proof is recorded as an e-wallet payment with its reference');
-select is(app.wholesale_invoice_open_balance('2e100000-0000-4000-8000-000000000001', (select id from app.invoices where tenant_id = '2e100000-0000-4000-8000-000000000001' and sales_order_id = (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'))), 2000.00::numeric,
-  'the invoice balance is the order total less the downpayment');
-select is(app.wholesale_credit_exposure('2e100000-0000-4000-8000-000000000001', (select customer_id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')), 2000.00::numeric,
+select is(app.wholesale_invoice_open_balance('2e100000-0000-4000-8000-000000000001', (select id from app.invoices where tenant_id = '2e100000-0000-4000-8000-000000000001' and sales_order_id = (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'))), 0.00::numeric,
+  'both verified proofs pay the invoice in full');
+select is(app.wholesale_credit_exposure('2e100000-0000-4000-8000-000000000001', (select customer_id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')), 0.00::numeric,
   'exposure is unchanged by completing the sale');
 select is((select payload->>'invoiceNumber' from app.portal_shipment_json('2e100000-0000-4000-8000-000000000001', (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')) payload), (select invoice_number::text from app.invoices where tenant_id = '2e100000-0000-4000-8000-000000000001' and sales_order_id = (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')),
   'Logistics shows the invoice number');
 select is(app.fulfill_portal_order('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001', (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'), 'again')->>'recordedPaymentMinor', '0', 'completing again records nothing twice');
--- A balance payment accepted after shipping is recorded right away.
-select lives_ok($$ select app.record_payment_proof('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'),
-  pg_temp.proof('be100000-0000-4000-8000-000000000009', 200000), 'portal-proof-key-09', 'proof-hash-9', 'proof-request-9') $$, 'the reseller sends the balance after shipping');
-select lives_ok($$ select app.review_payment_proof('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
-  (select id from app.payment_proofs where file_id = 'be100000-0000-4000-8000-000000000009'), '{"decision":"accept"}', 'balance-review') $$, 'owner verifies the balance payment');
-select is(app.wholesale_invoice_open_balance('2e100000-0000-4000-8000-000000000001', (select id from app.invoices where tenant_id = '2e100000-0000-4000-8000-000000000001' and sales_order_id = (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'))), 0.00::numeric,
-  'the balance payment is recorded against the invoice as soon as it is verified');
 select is((select count(*)::integer from app.wholesale_payments where tenant_id = '2e100000-0000-4000-8000-000000000001' and customer_id = (select customer_id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001')), 2,
   'each verified proof is one recorded payment');
 select throws_ok($$ select app.update_portal_shipment('1e100000-0000-4000-8000-000000000003', '2e100000-0000-4000-8000-000000000001', (select id from app.sales_orders where tenant_id = '2e100000-0000-4000-8000-000000000001' and order_number = 'RP-000001'), '{"status":"delivered"}', 'ship-5') $$,
@@ -375,15 +380,15 @@ select is(jsonb_array_length(app.load_reseller_portal_admin('1e100000-0000-4000-
 
 -- Reseller notifications: one per event, derived from the orders, shipments, and proofs.
 select is((select array_agg(x->>'kind' order by x->>'kind') from jsonb_array_elements(app.load_reseller_notifications('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', 50)->'items') x),
-  array['delivered', 'order_confirmed', 'order_expired', 'order_rejected', 'payment_verified', 'shipped'],
-  'the reseller is told about confirmation, shipping, delivery, a balance payment, expiry, and rejection');
+  array['delivered', 'order_confirmed', 'order_expired', 'order_rejected', 'shipped'],
+  'the reseller is told about confirmation, shipping, delivery, expiry, and rejection');
 select is((select x->>'message' from jsonb_array_elements(app.load_reseller_notifications('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', 50)->'items') x where x->>'kind' = 'shipped'),
   'Shipped by J&T Express · tracking JT0012345678.', 'the shipped notice names the courier and tracking number');
 select is((select x->>'message' from jsonb_array_elements(app.load_reseller_notifications('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', 50)->'items') x where x->>'kind' = 'order_expired'),
   'Payment was not received within 4 hours.', 'the expiry notice says why');
-select is((select count(*)::integer from app.reseller_notifications where tenant_id = '2e100000-0000-4000-8000-000000000001'), 6, 'loading again adds no duplicates');
-select is((app.load_reseller_notifications('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', 50)->>'unreadCount')::integer, 6, 'all are unread at first');
-select is((app.mark_reseller_notifications_read('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', (select id from app.reseller_notifications where tenant_id = '2e100000-0000-4000-8000-000000000001' and kind = 'shipped'))->>'unreadCount')::integer, 5,
+select is((select count(*)::integer from app.reseller_notifications where tenant_id = '2e100000-0000-4000-8000-000000000001'), 5, 'loading again adds no duplicates');
+select is((app.load_reseller_notifications('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', 50)->>'unreadCount')::integer, 5, 'all are unread at first');
+select is((app.mark_reseller_notifications_read('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', (select id from app.reseller_notifications where tenant_id = '2e100000-0000-4000-8000-000000000001' and kind = 'shipped'))->>'unreadCount')::integer, 4,
   'opening one marks it read');
 select is((app.mark_reseller_notifications_read('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', null)->>'unreadCount')::integer, 0, 'mark all read clears the badge');
 select throws_ok($$ select app.mark_reseller_notifications_read('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001', gen_random_uuid()) $$, 'HCRA4', null, 'unknown notifications are refused');

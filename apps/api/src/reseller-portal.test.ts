@@ -2,6 +2,7 @@ import {
   apiErrorResponseSchema,
   resellerOrderSubmitResponseSchema,
   resellerPortalCatalogSchema,
+  resellerTierSchema,
   resellerInvoiceSchema,
   returnRequestsSchema,
   type ResellerOrderSubmitRequest,
@@ -778,6 +779,69 @@ describe('reseller portal API', () => {
       bindings,
     )
     expect(decline.status).toBe(400)
+  })
+
+  it('serves the tier card and lets owners set tiers and credit controls', async () => {
+    const accountId = '3f000000-0000-4000-8000-000000000001'
+    const loadTier = vi.fn(async () => ({
+      tier: 'gold' as const,
+      tierChangedAt: null,
+      activeReferrals: 5,
+      totalReferrals: 6,
+      lifetimeSalesMinor: 12_000_000,
+      activeDays: 90,
+      tiers: [],
+      referralCode: 'MARIA123',
+      tenantSlug: 'sample-store',
+      referrals: [],
+      credit: {
+        limitMinor: null,
+        paymentTerm: 'prepaid' as const,
+        availableMinor: null,
+        blockedReason: 'not_platinum' as const,
+      },
+    }))
+    const saveTierSettings = vi.fn(async (_u: string, _t: string, request: unknown) => request as never)
+    const saveAccountControls = vi.fn(async () => Promise.reject(postgresError('HCRP3')))
+    const app = portalApp(repository({ loadTier, saveTierSettings, saveAccountControls }))
+    const tier = await app.request(
+      '/v1/portal/tier',
+      { headers: { authorization: 'Bearer reseller-token', 'x-tenant-id': tenantId } },
+      bindings,
+    )
+    expect(resellerTierSchema.parse(await tier.json()).referralCode).toBe('MARIA123')
+    const headers = { authorization: 'Bearer owner-token', 'content-type': 'application/json', 'x-tenant-id': tenantId }
+    const settings = {
+      goldMinReferrals: 5,
+      goldMinSalesMinor: 20_000_000,
+      platinumMinReferrals: 15,
+      platinumMinSalesMinor: 50_000_000,
+      silverSpendPerPointMinor: 10_000,
+      goldSpendPerPointMinor: 8_000,
+      platinumSpendPerPointMinor: 5_000,
+      platinumCreditLimitMinor: 2_000_000,
+      platinumPaymentTerm: 'net_15',
+      activeDays: 90,
+    }
+    const inverted = await app.request(
+      '/v1/reseller-portal/tier-settings',
+      { method: 'POST', headers, body: JSON.stringify({ ...settings, platinumMinReferrals: 5 }) },
+      bindings,
+    )
+    expect(inverted.status).toBe(400)
+    expect(saveTierSettings).not.toHaveBeenCalled()
+    const saved = await app.request(
+      '/v1/reseller-portal/tier-settings',
+      { method: 'POST', headers, body: JSON.stringify(settings) },
+      bindings,
+    )
+    expect(saved.status).toBe(200)
+    const loop = await app.request(
+      `/v1/reseller-portal/accounts/${accountId}/controls`,
+      { method: 'POST', headers, body: JSON.stringify({ referredByAccountId: accountId }) },
+      bindings,
+    )
+    expect(loop.status).toBe(400)
   })
 
   it('signs payment QR links and never returns storage keys', async () => {

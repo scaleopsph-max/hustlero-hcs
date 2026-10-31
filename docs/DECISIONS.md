@@ -237,3 +237,15 @@ authorized by these development decisions.
   - **Return requests.** Resellers ask to return items from an invoice with a reason and up to four photos (`return_photo` files, private). Quantities are limited to what was invoiced less recorded returns and pending requests; one pending request per invoice. The team approves (which opens Wholesale returns with the items and reason filled in, to record once the items arrive) or declines with a reason. Both sides are notified.
 - **Reason:** Owner selection on 2026-10-31 (Operations), with "per parcel" stock and invoicing and "flat + free above" shipping chosen on 2026-10-31.
 - **Review trigger:** Distance- or courier-based shipping rates, splitting pickup orders, or recording a return straight from an approved request.
+
+## ADR-054: Reseller tiers — Silver, Gold, Platinum; credit only for Platinum
+
+- **Date:** 2026-11-01
+- **Status:** Accepted
+- **Decision:**
+  - **Tiers.** Every reseller is Silver, Gold, or Platinum. They reach a tier with **either** enough active direct referrals **or** enough lifetime invoiced sales (items less returns, no shipping). Defaults: Gold 5 or ₱200,000; Platinum 15 or ₱500,000. A referral is active with an invoice in the last 90 days. Tiers update by themselves on every invoice and return (for the reseller and whoever referred them), once a day by the API cron, and when settings change; they can go down when active referrals lapse. Resellers are told when their tier changes.
+  - **Referrals.** Each reseller has a referral code and link (`/apply?b=…&ref=CODE`, with Copy, Share, and QR in the portal). An application made with the link is linked to that reseller once approved; only direct referrals count. The owner can change who referred whom (no loops). Commission is not part of this decision.
+  - **Credit.** Only Platinum orders on credit: default ₱20,000 at net 15, with a per-reseller limit override and a credit hold switch. A Platinum order within the available credit is confirmed at submit, goes straight to Logistics, and is billed with the term. Over the limit, with an overdue invoice, or on hold, the order is pay-first. Silver and Gold have no credit and pay in full before confirmation (no downpayments). Credit is written as customer credit settings revisions, so existing credit checks, statements, and reminders apply unchanged; existing resellers lost credit unless they qualified for Platinum.
+  - **Points.** Each tier earns at its own rate: Silver ₱100, Gold ₱80, Platinum ₱50 per point (owner-set). Orders on credit earn points only once their invoice is paid.
+- **Reason:** Owner decisions on 2026-10-31.
+- **Review trigger:** Commission on referrals' sales, multi-level referrals, or tier-specific price lists.

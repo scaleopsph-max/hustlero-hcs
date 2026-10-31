@@ -18,6 +18,7 @@ import {
   resellerPortalSessionSchema,
   type ResellerNotification,
   type ResellerCatalogItem,
+  resellerTierSchema,
   type ResellerInvoice,
   resellerInvoiceSchema,
   returnPhotoResponseSchema,
@@ -283,6 +284,11 @@ export function PortalApp() {
   const loadLoyalty = useCallback(() => {
     if (!token || !tenantId) return Promise.reject(new Error('Please sign in again.'))
     return portalRequest('/v1/portal/loyalty', (value) => resellerLoyaltySchema.parse(value), { token, tenantId })
+  }, [token, tenantId])
+
+  const loadTier = useCallback(() => {
+    if (!token || !tenantId) return Promise.reject(new Error('Please sign in again.'))
+    return portalRequest('/v1/portal/tier', (value) => resellerTierSchema.parse(value), { token, tenantId })
   }, [token, tenantId])
 
   async function markRead(notificationId: string | null) {
@@ -666,6 +672,7 @@ export function PortalApp() {
               onSignOut={signOut}
               loadStatement={loadStatement}
               loadLoyalty={loadLoyalty}
+              loadTier={loadTier}
               onApplyCredit={async (invoiceId, amountMinor, idempotencyKey) => {
                 if (!token || !tenantId) throw new Error('Please sign in again.')
                 const result = await portalRequest(

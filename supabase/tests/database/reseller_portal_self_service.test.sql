@@ -77,13 +77,16 @@ select app.review_reseller_portal_order('aa000000-0000-4000-8000-000000000001', 
 select app.update_portal_shipment('aa000000-0000-4000-8000-000000000001', 'bb000000-0000-4000-8000-000000000001', pg_temp.o('RP-000001'), '{"status":"packed"}', 'r3');
 select app.update_portal_shipment('aa000000-0000-4000-8000-000000000001', 'bb000000-0000-4000-8000-000000000001', pg_temp.o('RP-000001'),
   '{"status":"shipped","courier":"jnt","trackingNumber":"JT0098765432"}', 'r4');
+select app.submit_reseller_portal_order('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001',
+  '{"lines":[{"variantId":"ff000000-0000-4000-8000-000000000003","quantityMilli":6000}],"fulfillmentMethod":"pickup","paymentPreference":"gcash"}',
+  'rep-order-0000003', 'h7', 'r7');
+-- Maria reaches Platinum (a low threshold for the test), so RP-000002 can be confirmed with a downpayment on credit.
+update app.reseller_portal_settings set tier_platinum_min_sales = 1000 where tenant_id = 'bb000000-0000-4000-8000-000000000001';
+select app.evaluate_reseller_tier('bb000000-0000-4000-8000-000000000001', (select id from app.reseller_accounts where auth_user_id = 'aa000000-0000-4000-8000-000000000002'));
 select app.record_payment_proof('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001', pg_temp.o('RP-000002'),
   pg_temp.proof('b0000000-0000-4000-8000-000000000002', 300000, 'BDO-551902', 'bank_transfer'), 'rep-proof-key-0002', 'h5', 'r5');
 select app.review_reseller_portal_order('aa000000-0000-4000-8000-000000000001', 'bb000000-0000-4000-8000-000000000001', pg_temp.o('RP-000002'),
   '{"decision":"approve"}', 'rep-review-key-0002', 'h6', 'r6');
-select app.submit_reseller_portal_order('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001',
-  '{"lines":[{"variantId":"ff000000-0000-4000-8000-000000000003","quantityMilli":6000}],"fulfillmentMethod":"pickup","paymentPreference":"gcash"}',
-  'rep-order-0000003', 'h7', 'r7');
 -- Loyalty on, RP-000002 picked up with a balance owed, and a return on the paid RP-000001 (credit).
 update app.loyalty_policies set enabled = true, spend_per_point = 100 where tenant_id = 'bb000000-0000-4000-8000-000000000001';
 select app.award_portal_loyalty('aa000000-0000-4000-8000-000000000001', 'bb000000-0000-4000-8000-000000000001',
@@ -128,8 +131,8 @@ select is((select m.name || ':' || m.is_active from app.wholesale_payments p joi
   where p.tenant_id = 'bb000000-0000-4000-8000-000000000001' and p.reference = '50 points'), 'Loyalty points:false', 'the points payment uses a hidden Loyalty points method');
 select ok(exists(select 1 from jsonb_array_elements(app.load_reseller_loyalty('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001')->'history') x where x->>'type' = 'redemption' and (x->>'points')::integer = -50), 'the redemption is in the points history');
 select is((select lifetime_earned_points - balance_points from app.loyalty_accounts where tenant_id = 'bb000000-0000-4000-8000-000000000001'
-  and customer_id = (select customer_id from app.reseller_accounts where tenant_id = 'bb000000-0000-4000-8000-000000000001')), 55::bigint, 'earned 84, gave back 5, spent 50');
-select throws_ok($$ select app.redeem_reseller_points('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001', jsonb_build_object('invoiceId', (select id from app.invoices where tenant_id = 'bb000000-0000-4000-8000-000000000001' and order_number_snapshot = 'RP-000002'), 'points', 30), 'points-key-000000004', 'h', 'r') $$,
+  and customer_id = (select customer_id from app.reseller_accounts where tenant_id = 'bb000000-0000-4000-8000-000000000001')), 59::bigint, 'Platinum earns ₱50 per point: earned 168, gave back 9, spent 50');
+select throws_ok($$ select app.redeem_reseller_points('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001', jsonb_build_object('invoiceId', (select id from app.invoices where tenant_id = 'bb000000-0000-4000-8000-000000000001' and order_number_snapshot = 'RP-000002'), 'points', 200), 'points-key-000000004', 'h', 'r') $$,
   'HCRB6', null, 'more points than the reseller has are refused');
 update app.reseller_portal_settings set points_redeem_value = null where tenant_id = 'bb000000-0000-4000-8000-000000000001';
 select throws_ok($$ select app.redeem_reseller_points('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001', jsonb_build_object('invoiceId', (select id from app.invoices where tenant_id = 'bb000000-0000-4000-8000-000000000001' and order_number_snapshot = 'RP-000002'), 'points', 10), 'points-key-000000005', 'h', 'r') $$,

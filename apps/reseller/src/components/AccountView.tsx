@@ -1,13 +1,20 @@
 'use client'
 
-import type { ResellerLoyalty, ResellerPortalCatalog, ResellerPortalSession, ResellerStatement } from '@hcs/contracts'
-import { Button, Glass, formatPeso } from '@hcs/ui'
+import type {
+  ResellerLoyalty,
+  ResellerPortalCatalog,
+  ResellerPortalSession,
+  ResellerStatement,
+  ResellerTier,
+} from '@hcs/contracts'
+import { Button, Glass } from '@hcs/ui'
 import { LogOut } from 'lucide-react'
 
 import { paymentTermLabel } from '@/lib/labels'
 
 import { LoyaltyCard } from './LoyaltyCard'
 import { StatementCard } from './StatementCard'
+import { TierCard } from './TierCard'
 
 export function AccountView({
   catalog,
@@ -17,6 +24,7 @@ export function AccountView({
   onSignOut,
   loadStatement,
   loadLoyalty,
+  loadTier,
   onOpenOrder,
   onApplyCredit,
   onRedeemPoints,
@@ -28,6 +36,7 @@ export function AccountView({
   onSignOut: () => void
   loadStatement: () => Promise<ResellerStatement>
   loadLoyalty: () => Promise<ResellerLoyalty>
+  loadTier: () => Promise<ResellerTier>
   onOpenOrder: (salesOrderId: string) => void
   onApplyCredit: (invoiceId: string, amountMinor: number, key: string) => Promise<unknown>
   onRedeemPoints: (invoiceId: string, points: number, key: string) => Promise<unknown>
@@ -40,20 +49,14 @@ export function AccountView({
         <p className="text-ink-300">Reseller of {account.businessName}</p>
       </div>
 
+      <TierCard load={loadTier} />
+
       <Glass className="grid grid-cols-2 gap-4 rounded-glass p-4">
         <Stat
           label="Payment terms"
           value={account.paymentTerm ? paymentTermLabel[account.paymentTerm] : 'Not set yet'}
         />
         <Stat label="Price list" value={account.priceListName} />
-        <Stat
-          label="Credit limit"
-          value={account.creditLimitMinor === null ? '—' : formatPeso(account.creditLimitMinor)}
-        />
-        <Stat
-          label="Available credit"
-          value={account.availableCreditMinor === null ? '—' : formatPeso(account.availableCreditMinor)}
-        />
       </Glass>
 
       <StatementCard

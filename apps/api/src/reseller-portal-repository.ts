@@ -1,4 +1,11 @@
 import {
+  resellerTierSchema,
+  resellerTierSettingsSchema,
+  resellerAccountTierSchema,
+  type ResellerTier,
+  type ResellerTierSettings,
+  type ResellerAccountTier,
+  type ResellerAccountControls,
   portalParcelDeliveredResponseSchema,
   portalParcelResponseSchema,
   resellerInvoiceSchema,
@@ -254,6 +261,22 @@ export interface ResellerPortalRepository {
     commandRequestId: string,
     bindings: Bindings,
   ): Promise<StoredReturnRequest>
+  loadTier(authUserId: string, tenantId: string, bindings: Bindings): Promise<ResellerTier>
+  saveTierSettings(
+    userId: string,
+    tenantId: string,
+    request: ResellerTierSettings,
+    requestId: string,
+    bindings: Bindings,
+  ): Promise<ResellerTierSettings>
+  saveAccountControls(
+    userId: string,
+    tenantId: string,
+    accountId: string,
+    request: ResellerAccountControls,
+    requestId: string,
+    bindings: Bindings,
+  ): Promise<ResellerAccountTier>
   /** Cart items that cannot be filled right now; used after a stock refusal. */
   checkCartStock(
     authUserId: string,
@@ -636,5 +659,23 @@ export const resellerPortalPostgresRepository: ResellerPortalRepository = {
       'select app.decide_reseller_return_request($1::uuid, $2::uuid, $3::uuid, $4::jsonb, $5::text) response',
       [userId, tenantId, requestId, JSON.stringify(decision), commandRequestId],
       (value) => storedReturnRequestSchema.parse(value),
+    ),
+  loadTier: (authUserId, tenantId, bindings) =>
+    queryOne(bindings, 'select app.load_reseller_tier($1::uuid, $2::uuid) response', [authUserId, tenantId], (value) =>
+      resellerTierSchema.parse(value),
+    ),
+  saveTierSettings: (userId, tenantId, request, requestId, bindings) =>
+    queryOne(
+      bindings,
+      'select app.save_reseller_tier_settings($1::uuid, $2::uuid, $3::jsonb, $4::text) response',
+      [userId, tenantId, JSON.stringify(request), requestId],
+      (value) => resellerTierSettingsSchema.parse(value),
+    ),
+  saveAccountControls: (userId, tenantId, accountId, request, requestId, bindings) =>
+    queryOne(
+      bindings,
+      'select app.save_reseller_account_controls($1::uuid, $2::uuid, $3::uuid, $4::jsonb, $5::text) response',
+      [userId, tenantId, accountId, JSON.stringify(request), requestId],
+      (value) => resellerAccountTierSchema.parse(value),
     ),
 }

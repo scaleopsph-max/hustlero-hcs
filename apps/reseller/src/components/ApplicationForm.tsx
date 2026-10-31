@@ -18,6 +18,7 @@ const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 /** Public reseller application, opened from a link like /apply?b=<business-slug>. */
 export function ApplicationForm() {
   const [slug, setSlug] = useState<string | null>(null)
+  const [referralCode, setReferralCode] = useState<string | null>(null)
   const [portal, setPortal] = useState<ResellerPortalPublic | null>(null)
   const [unavailable, setUnavailable] = useState(false)
   const [form, setForm] = useState({ fullName: '', businessName: '', email: '', phone: '', city: '', message: '' })
@@ -26,7 +27,10 @@ export function ApplicationForm() {
   const [received, setReceived] = useState(false)
 
   useEffect(() => {
-    const value = new URLSearchParams(window.location.search).get('b')?.toLowerCase() ?? ''
+    const params = new URLSearchParams(window.location.search)
+    const value = params.get('b')?.toLowerCase() ?? ''
+    const ref = params.get('ref')?.trim() ?? ''
+    if (/^[A-Za-z0-9]{6,12}$/.test(ref)) setReferralCode(ref.toUpperCase())
     if (!slugPattern.test(value)) {
       setUnavailable(true)
       return
@@ -50,6 +54,7 @@ export function ApplicationForm() {
       ...(form.businessName.trim() ? { businessName: form.businessName } : {}),
       ...(form.city.trim() ? { city: form.city } : {}),
       ...(form.message.trim() ? { message: form.message } : {}),
+      ...(referralCode ? { referralCode } : {}),
     })
     if (!parsed.success) {
       setError('Check your name, email, and mobile number (e.g. 09171234567).')
@@ -129,6 +134,11 @@ export function ApplicationForm() {
         ) : (
           <Glass className="rounded-sheet p-6">
             <form className="flex flex-col gap-4" onSubmit={submit}>
+              {referralCode ? (
+                <p className="rounded-control bg-white/10 px-3 py-2 text-small text-ink-200">
+                  Invited with referral code <span className="font-mono font-semibold">{referralCode}</span>
+                </p>
+              ) : null}
               <Field label="Full name" autoComplete="name" required value={form.fullName} onChange={set('fullName')} />
               <Field
                 label="Store name (optional)"

@@ -16,6 +16,9 @@ import {
   resellerPointsSettingsResponseSchema,
   resellerBrandingSchema,
   resellerShippingSettingsSchema,
+  resellerTierSettingsSchema,
+  resellerAccountTierSchema,
+  type ResellerAccountControls,
   returnRequestSchema,
   returnRequestsSchema,
   type ReturnRequest,
@@ -30,7 +33,7 @@ import {
 import { Button, Chip, Glass, cn, formatPeso, useToast } from '@hcs/ui'
 import { Check, Copy, RefreshCw, UserPlus, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { selectActiveTenant } from '@/lib/active-tenant'
 import { LogisticsBoard } from './LogisticsBoard'
@@ -39,6 +42,8 @@ import { BrandingCard } from './BrandingCard'
 import { PointsSettingsCard } from './PointsSettingsCard'
 import { ReturnRequestsPanel, returnFormHref } from './ReturnRequestsPanel'
 import { ShippingSettingsCard } from './ShippingSettingsCard'
+import { TierSettingsCard } from './TierSettingsCard'
+import { AccountTierControls, TierChip } from './AccountTierControls'
 import { PortalActivation, PortalOffSwitch } from './PortalActivation'
 import { fileUrl } from './ProductPhotos'
 import {
@@ -58,13 +63,6 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 const portalOrigin = process.env.NEXT_PUBLIC_RESELLER_PORTAL_URL
 const control =
   'min-h-10 w-full min-w-0 rounded-control border border-ink-900/15 bg-white px-3 text-sm outline-none focus:border-ink-900'
-const terms = [
-  ['prepaid', 'Prepaid'],
-  ['cod', 'Cash on delivery'],
-  ['net_7', 'Net 7'],
-  ['net_15', 'Net 15'],
-  ['net_30', 'Net 30'],
-] as const
 const stockTone = { in_stock: 'success', low_stock: 'warning', out_of_stock: 'critical' } as const
 const stockText = { in_stock: 'In stock', low_stock: 'Low', out_of_stock: 'Out' } as const
 
@@ -548,6 +546,15 @@ export function ResellerPortalWorkspace() {
           <AccountsCard
             admin={admin}
             busy={busy}
+            onControls={(accountId, body) =>
+              run(
+                `controls:${accountId}`,
+                `/v1/reseller-portal/accounts/${accountId}/controls`,
+                body,
+                (v) => resellerAccountTierSchema.parse(v),
+                (result) => `Saved. Tier: ${result.tier[0]!.toUpperCase()}${result.tier.slice(1)}.`,
+              )
+            }
             onInvite={(body) =>
               run(
                 'invite',
@@ -670,6 +677,25 @@ export function ResellerPortalWorkspace() {
                 toast.success('Logo saved.')
               }}
             />
+          ) : null}
+
+          {admin.settings ? (
+            admin.settings.tiers ? (
+              <TierSettingsCard
+                key={JSON.stringify(admin.settings.tiers)}
+                settings={admin.settings.tiers}
+                busy={busy === 'tiers'}
+                onSave={(body) =>
+                  run(
+                    'tiers',
+                    '/v1/reseller-portal/tier-settings',
+                    body,
+                    (v) => resellerTierSettingsSchema.parse(v),
+                    'Tier settings saved. Every reseller was checked against them.',
+                  )
+                }
+              />
+            ) : null
           ) : null}
 
           {admin.settings ? (
@@ -1137,6 +1163,9 @@ function ApplicationCard({
             {application.city ? ` · ${application.city}` : ''}
           </p>
           {application.message ? <p className="mt-1 text-sm text-ink-700">“{application.message}”</p> : null}
+          {application.referredByName ? (
+            <p className="mt-1 text-sm text-ink-700">Referred by {application.referredByName}</p>
+          ) : null}
         </div>
         <Chip surface="light" tone={pending ? 'info' : application.status === 'approved' ? 'success' : 'neutral'}>
           {pending ? 'Pending' : application.status === 'approved' ? 'Approved' : 'Rejected'}
@@ -1144,7 +1173,7 @@ function ApplicationCard({
       </div>
       {pending ? (
         <>
-          <div className="grid gap-3 md:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-2">
             <label className="flex flex-col gap-1.5 text-sm font-semibold">
               Customer record
               <select
@@ -1175,34 +1204,10 @@ function ApplicationCard({
                 ))}
               </select>
             </label>
-            <label className="flex flex-col gap-1.5 text-sm font-semibold">
-              Payment terms
-              <select
-                className={control}
-                value={form.paymentTerm}
-                onChange={(event) => setForm({ ...form, paymentTerm: event.target.value })}
-              >
-                {terms.map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1.5 text-sm font-semibold">
-              Credit limit (₱)
-              <input
-                className={control}
-                inputMode="decimal"
-                value={form.creditLimit}
-                onChange={(event) => setForm({ ...form, creditLimit: event.target.value })}
-              />
-            </label>
           </div>
           <p className="text-caption text-ink-500">
-            The credit limit caps confirmed orders whose payment is not yet recorded in Wholesale payments, even for
-            prepaid terms. Verified proofs do not count until the payment is recorded, so set it at least as high as the
-            orders you confirm before recording payment.
+            Every new reseller starts as Silver and pays in full before orders are confirmed. Credit opens by itself
+            when they reach Platinum (Settings → Reseller tiers).
           </p>
           <div className="flex flex-wrap items-end gap-3">
             <label className="flex min-w-60 flex-1 flex-col gap-1.5 text-sm font-semibold">
@@ -1237,12 +1242,15 @@ function AccountsCard({
   busy,
   onInvite,
   onStatus,
+  onControls,
 }: {
   admin: ResellerPortalAdmin
   busy: string | null
   onInvite: (body: unknown) => void
   onStatus: (accountId: string, status: 'active' | 'suspended') => void
+  onControls: (accountId: string, body: ResellerAccountControls) => Promise<boolean>
 }) {
+  const [managing, setManaging] = useState<string | null>(null)
   const [customerId, setCustomerId] = useState('')
   const [email, setEmail] = useState('')
   const [priceListId, setPriceListId] = useState(admin.settings?.defaultPriceListId ?? '')
@@ -1257,6 +1265,7 @@ function AccountsCard({
             <tr>
               <th className="px-4 py-3">Reseller</th>
               <th className="px-4 py-3">Sign-in email</th>
+              <th className="px-4 py-3">Tier</th>
               <th className="px-4 py-3">Price list</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3" />
@@ -1265,41 +1274,78 @@ function AccountsCard({
           <tbody>
             {admin.accounts.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-ink-500">
+                <td colSpan={6} className="px-4 py-6 text-ink-500">
                   No reseller accounts yet.
                 </td>
               </tr>
             ) : (
               admin.accounts.map((account) => (
-                <tr key={account.id} className="border-t border-ink-900/10">
-                  <td className="px-4 py-3 font-semibold">
-                    {account.customerName} <span className="font-normal text-ink-500">{account.customerNumber}</span>
-                  </td>
-                  <td className="px-4 py-3">{account.email}</td>
-                  <td className="px-4 py-3">{account.priceListName}</td>
-                  <td className="px-4 py-3">
-                    <Chip surface="light" tone={statusTone[account.status]}>
-                      {account.status === 'invited'
-                        ? 'Invited, not signed in'
-                        : account.status === 'active'
-                          ? 'Active'
-                          : 'Suspended'}
-                    </Chip>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <Button
-                      size="sm"
-                      disabled={busy !== null}
-                      onClick={() => onStatus(account.id, account.status === 'suspended' ? 'active' : 'suspended')}
-                    >
-                      {busy === `account:${account.id}`
-                        ? 'Saving…'
-                        : account.status === 'suspended'
-                          ? 'Restore access'
-                          : 'Suspend'}
-                    </Button>
-                  </td>
-                </tr>
+                <Fragment key={account.id}>
+                  <tr className="border-t border-ink-900/10">
+                    <td className="px-4 py-3 font-semibold">
+                      {account.customerName} <span className="font-normal text-ink-500">{account.customerNumber}</span>
+                    </td>
+                    <td className="px-4 py-3">{account.email}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col items-start gap-1">
+                        <TierChip tier={account.tier} />
+                        {account.creditHold ? (
+                          <span className="text-xs text-signal-light-warning-fg">Credit on hold</span>
+                        ) : null}
+                        {account.referredByName ? (
+                          <span className="text-xs text-ink-500">Referred by {account.referredByName}</span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">{account.priceListName}</td>
+                    <td className="px-4 py-3">
+                      <Chip surface="light" tone={statusTone[account.status]}>
+                        {account.status === 'invited'
+                          ? 'Invited, not signed in'
+                          : account.status === 'active'
+                            ? 'Active'
+                            : 'Suspended'}
+                      </Chip>
+                    </td>
+                    <td className="flex justify-end gap-2 px-4 py-3">
+                      <Button
+                        size="sm"
+                        aria-expanded={managing === account.id}
+                        onClick={() => setManaging(managing === account.id ? null : account.id)}
+                      >
+                        Tier &amp; credit
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={busy !== null}
+                        onClick={() => onStatus(account.id, account.status === 'suspended' ? 'active' : 'suspended')}
+                      >
+                        {busy === `account:${account.id}`
+                          ? 'Saving…'
+                          : account.status === 'suspended'
+                            ? 'Restore access'
+                            : 'Suspend'}
+                      </Button>
+                    </td>
+                  </tr>
+                  {managing === account.id ? (
+                    <tr>
+                      <td colSpan={6} className="px-4 pb-4">
+                        <AccountTierControls
+                          account={account}
+                          accounts={admin.accounts}
+                          busy={busy === `controls:${account.id}`}
+                          onSave={(body) =>
+                            onControls(account.id, body).then((saved) => {
+                              if (saved) setManaging(null)
+                              return saved
+                            })
+                          }
+                        />
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
               ))
             )}
           </tbody>
