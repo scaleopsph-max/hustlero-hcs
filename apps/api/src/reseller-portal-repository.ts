@@ -20,10 +20,16 @@ import {
   type ResellerBrandingSaveRequest,
   resellerCreditApplyResponseSchema,
   resellerPointsRedeemResponseSchema,
+  resellerFavoriteResponseSchema,
+  resellerStockAlertResponseSchema,
   resellerPointsSettingsResponseSchema,
   type ResellerCreditApplyRequest,
   type ResellerCreditApplyResponse,
   type ResellerPointsRedeemRequest,
+  type ResellerFavoriteRequest,
+  type ResellerFavoriteResponse,
+  type ResellerStockAlertRequest,
+  type ResellerStockAlertResponse,
   type ResellerPointsRedeemResponse,
   type ResellerPointsSettingsRequest,
   resellerStatementSchema,
@@ -206,6 +212,18 @@ export interface ResellerPortalRepository {
     bindings: Bindings,
   ): Promise<ResellerNotificationReadResponse>
   /** Saves this browser's push subscription for a reseller ('reseller') or a Back Office member ('member'). */
+  saveFavorite(
+    authUserId: string,
+    tenantId: string,
+    request: ResellerFavoriteRequest,
+    bindings: Bindings,
+  ): Promise<ResellerFavoriteResponse>
+  saveStockAlert(
+    authUserId: string,
+    tenantId: string,
+    request: ResellerStockAlertRequest,
+    bindings: Bindings,
+  ): Promise<ResellerStockAlertResponse>
   savePushSubscription(
     audience: 'reseller' | 'member',
     userId: string,
@@ -406,6 +424,20 @@ export const resellerPortalPostgresRepository: ResellerPortalRepository = {
       'select app.mark_reseller_notifications_read($1::uuid, $2::uuid, $3::uuid) response',
       [authUserId, tenantId, notificationId],
       (value) => resellerNotificationReadResponseSchema.parse(value),
+    ),
+  saveFavorite: (authUserId, tenantId, request, bindings) =>
+    queryOne(
+      bindings,
+      'select app.save_reseller_favorite($1::uuid, $2::uuid, $3::jsonb) response',
+      [authUserId, tenantId, JSON.stringify(request)],
+      (value) => resellerFavoriteResponseSchema.parse(value),
+    ),
+  saveStockAlert: (authUserId, tenantId, request, bindings) =>
+    queryOne(
+      bindings,
+      'select app.save_reseller_stock_alert($1::uuid, $2::uuid, $3::jsonb) response',
+      [authUserId, tenantId, JSON.stringify(request)],
+      (value) => resellerStockAlertResponseSchema.parse(value),
     ),
   savePushSubscription: (audience, userId, tenantId, subscription, bindings) =>
     queryOne(

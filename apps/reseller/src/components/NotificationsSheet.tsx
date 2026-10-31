@@ -9,6 +9,7 @@ import {
   CircleCheck,
   Clock,
   PackageCheck,
+  PackagePlus,
   Store,
   Truck,
   TriangleAlert,
@@ -38,6 +39,7 @@ const icons: Record<ResellerNotificationKind, { Icon: LucideIcon; tone: string }
   payment_due_soon: { Icon: CalendarClock, tone: 'text-signal-dark-attention-fg' },
   payment_overdue: { Icon: TriangleAlert, tone: 'text-signal-dark-critical-fg' },
   payment_window_closing: { Icon: Clock, tone: 'text-signal-dark-attention-fg' },
+  back_in_stock: { Icon: PackagePlus, tone: 'text-signal-dark-success-fg' },
 }
 
 /** Glass sheet with the reseller's order updates; tapping one opens that order. */

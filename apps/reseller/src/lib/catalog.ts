@@ -12,6 +12,9 @@ export type ProductGroup = {
   maxPriceMinor: number
   /** Best availability across the variants: in stock beats low stock beats out of stock. */
   stockStatus: ResellerStockStatus
+  isFavorite: boolean
+  /** Any variant was added in the last 14 days. */
+  isNew: boolean
 }
 
 const stockRank: Record<ResellerStockStatus, number> = { in_stock: 0, low_stock: 1, out_of_stock: 2 }
@@ -32,6 +35,8 @@ export function groupCatalog(items: ResellerCatalogItem[]): ProductGroup[] {
         minPriceMinor: item.unitPriceMinor,
         maxPriceMinor: item.unitPriceMinor,
         stockStatus: item.stockStatus,
+        isFavorite: item.isFavorite ?? false,
+        isNew: item.isNew ?? false,
       })
       continue
     }
@@ -41,6 +46,8 @@ export function groupCatalog(items: ResellerCatalogItem[]): ProductGroup[] {
     group.categoryName ??= item.categoryName
     group.minPriceMinor = Math.min(group.minPriceMinor, item.unitPriceMinor)
     group.maxPriceMinor = Math.max(group.maxPriceMinor, item.unitPriceMinor)
+    group.isFavorite ||= item.isFavorite ?? false
+    group.isNew ||= item.isNew ?? false
     if (stockRank[item.stockStatus] < stockRank[group.stockStatus]) group.stockStatus = item.stockStatus
   }
   return [...groups.values()]
@@ -49,15 +56,28 @@ export function groupCatalog(items: ResellerCatalogItem[]): ProductGroup[] {
 /** Keeps products whose name, or any variant name or SKU, matches the search and the filters. */
 export function filterGroups(
   groups: ProductGroup[],
-  filters: { search: string; category: string | null; availableOnly: boolean },
+  filters: {
+    search: string
+    category: string | null
+    availableOnly: boolean
+    favoritesOnly?: boolean
+    newOnly?: boolean
+  },
 ): ProductGroup[] {
   const term = filters.search.trim().toLowerCase()
   return groups.filter(
     (group) =>
+      (!filters.favoritesOnly || group.isFavorite) &&
+      (!filters.newOnly || group.isNew) &&
       (!filters.category || group.categoryName === filters.category) &&
       (!filters.availableOnly || group.stockStatus !== 'out_of_stock') &&
       (!term ||
         group.productName.toLowerCase().includes(term) ||
         group.variants.some((variant) => `${variant.variantName} ${variant.sku}`.toLowerCase().includes(term))),
   )
+}
+
+/** "New" only means something when some products are not new; a brand-new catalog shows no badges. */
+export function showNewBadges(groups: ProductGroup[]): boolean {
+  return groups.some((group) => group.isNew) && groups.some((group) => !group.isNew)
 }

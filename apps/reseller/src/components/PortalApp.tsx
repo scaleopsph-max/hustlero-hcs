@@ -13,8 +13,11 @@ import {
   resellerOrderSubmitResponseSchema,
   resellerOrdersSchema,
   resellerPortalCatalogSchema,
+  resellerFavoriteResponseSchema,
+  resellerStockAlertResponseSchema,
   resellerPortalSessionSchema,
   type ResellerNotification,
+  type ResellerCatalogItem,
   type ResellerNotifications,
   type ResellerOrder,
   type ResellerOrderSubmitRequest,
@@ -291,6 +294,63 @@ export function PortalApp() {
       setFocusOrderId(notification.salesOrderId)
       setTab('orders')
       void loadOrders()
+    } else if (notification.kind === 'back_in_stock') {
+      setTab('catalog')
+      void refreshCatalog()
+    }
+  }
+
+  async function refreshCatalog() {
+    if (!token || !tenantId) return
+    await portalRequest('/v1/portal/catalog', (value) => resellerPortalCatalogSchema.parse(value), { token, tenantId })
+      .then(setCatalog)
+      .catch(() => undefined)
+  }
+
+  function patchCatalog(change: (item: ResellerCatalogItem) => ResellerCatalogItem) {
+    setCatalog((current) => (current ? { ...current, items: current.items.map(change) } : current))
+  }
+
+  async function saveFavorite(productId: string, favorite: boolean) {
+    if (!token || !tenantId) return
+    const apply = (value: boolean) =>
+      patchCatalog((item) => (item.productId === productId ? { ...item, isFavorite: value } : item))
+    apply(favorite)
+    try {
+      await portalRequest('/v1/portal/favorites', (value) => resellerFavoriteResponseSchema.parse(value), {
+        token,
+        tenantId,
+        method: 'POST',
+        body: { productId, favorite },
+      })
+    } catch (cause) {
+      apply(!favorite)
+      toast.error(cause instanceof Error ? cause.message : 'Your favorite was not saved. Please try again.')
+    }
+  }
+
+  async function saveStockAlert(variantId: string, notify: boolean) {
+    if (!token || !tenantId) return
+    const apply = (value: boolean) =>
+      patchCatalog((item) => (item.variantId === variantId ? { ...item, notifyRequested: value } : item))
+    apply(notify)
+    try {
+      await portalRequest('/v1/portal/stock-alerts', (value) => resellerStockAlertResponseSchema.parse(value), {
+        token,
+        tenantId,
+        method: 'POST',
+        body: { variantId, notify },
+      })
+      if (notify)
+        toast.success(
+          pushStatus === 'on'
+            ? "We'll notify you when it's back in stock."
+            : "We'll tell you in Updates when it's back. Turn on phone notifications there to get it on your phone.",
+        )
+    } catch (cause) {
+      apply(!notify)
+      toast.error(cause instanceof Error ? cause.message : 'The alert was not saved. Please try again.')
+      void refreshCatalog()
     }
   }
 
@@ -466,6 +526,8 @@ export function PortalApp() {
               catalog={catalog}
               cart={cart}
               onQuantity={(id, qty) => updateCart(setCartQuantity(cart, id, qty))}
+              onFavorite={(productId, favorite) => void saveFavorite(productId, favorite)}
+              onNotify={(variantId, notify) => void saveStockAlert(variantId, notify)}
             />
           ) : tab === 'cart' ? (
             <CartView

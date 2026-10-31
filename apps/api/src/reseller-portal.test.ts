@@ -554,6 +554,39 @@ describe('reseller portal API', () => {
     expect(apiErrorResponseSchema.parse(await points.json()).error.code).toBe('NOT_ENOUGH_POINTS')
   })
 
+  it('saves favorites and back-in-stock alerts for the signed-in reseller', async () => {
+    const productId = '40000000-0000-4000-8000-000000000001'
+    const variantId = '50000000-0000-4000-8000-000000000001'
+    const saveFavorite = vi.fn(async () => ({ productId, favorite: true }))
+    const saveStockAlert = vi.fn(async () => Promise.reject(postgresError('HCRF2')))
+    const app = portalApp(repository({ saveFavorite, saveStockAlert }))
+    const headers = {
+      authorization: 'Bearer reseller-token',
+      'content-type': 'application/json',
+      'x-tenant-id': tenantId,
+    }
+    const bad = await app.request(
+      '/v1/portal/favorites',
+      { method: 'POST', headers, body: JSON.stringify({ productId, favorite: 'yes' }) },
+      bindings,
+    )
+    expect(bad.status).toBe(400)
+    const saved = await app.request(
+      '/v1/portal/favorites',
+      { method: 'POST', headers, body: JSON.stringify({ productId, favorite: true }) },
+      bindings,
+    )
+    expect(saved.status).toBe(200)
+    expect(saveFavorite).toHaveBeenCalledWith(resellerUserId, tenantId, { productId, favorite: true }, bindings)
+    const alert = await app.request(
+      '/v1/portal/stock-alerts',
+      { method: 'POST', headers, body: JSON.stringify({ variantId, notify: true }) },
+      bindings,
+    )
+    expect(alert.status).toBe(409)
+    expect(apiErrorResponseSchema.parse(await alert.json()).error.code).toBe('ITEM_IN_STOCK')
+  })
+
   it('lists reseller notifications and marks them read', async () => {
     const loadNotifications = vi.fn(async () => ({ unreadCount: 0, items: [] }))
     const markNotificationsRead = vi.fn(async () => ({ unreadCount: 0 }))

@@ -1,7 +1,7 @@
 import type { ResellerCatalogItem } from '@hcs/contracts'
 import { describe, expect, it } from 'vitest'
 
-import { filterGroups, groupCatalog } from './catalog'
+import { filterGroups, groupCatalog, showNewBadges } from './catalog'
 
 const shirt = '51000000-0000-4000-8000-000000000001'
 const cap = '51000000-0000-4000-8000-000000000002'
@@ -80,5 +80,26 @@ describe('filterGroups', () => {
     const outOnly = groupCatalog([item({})])
     expect(filterGroups(outOnly, { ...all, availableOnly: true })).toEqual([])
     expect(filterGroups(groups, { ...all, availableOnly: true })).toHaveLength(2)
+  })
+})
+
+describe('favorites and new products', () => {
+  const marked = groupCatalog([
+    item({ isFavorite: true }),
+    item({ variantId: '50000000-0000-4000-8000-000000000002', productId: cap, productName: 'Cap', isNew: true }),
+  ])
+  const all = { search: '', category: null, availableOnly: false }
+
+  it('filters to favorites or new products', () => {
+    expect(filterGroups(marked, { ...all, favoritesOnly: true }).map((group) => group.productName)).toEqual([
+      'Triple Black',
+    ])
+    expect(filterGroups(marked, { ...all, newOnly: true }).map((group) => group.productName)).toEqual(['Cap'])
+  })
+
+  it('shows New badges only when some products are not new', () => {
+    expect(showNewBadges(marked)).toBe(true)
+    expect(showNewBadges(groupCatalog([item({ isNew: true })]))).toBe(false)
+    expect(showNewBadges(groupCatalog([item({})]))).toBe(false)
   })
 })

@@ -114,7 +114,22 @@ export const resellerCatalogItemSchema = z.object({
   /** Signed API-relative paths of the primary product photo. */
   imageUrl: z.string().nullable().optional(),
   thumbUrl: z.string().nullable().optional(),
+  /** Added to the catalog in the last 14 days. */
+  isNew: z.boolean().optional(),
+  /** The reseller saved this product as a favorite. */
+  isFavorite: z.boolean().optional(),
+  /** The reseller asked to be told when this out-of-stock variant is back. */
+  notifyRequested: z.boolean().optional(),
 })
+
+export const resellerFavoriteRequestSchema = z.strictObject({ productId: uuid, favorite: z.boolean() })
+export const resellerFavoriteResponseSchema = z.object({ productId: uuid, favorite: z.boolean() })
+export const resellerStockAlertRequestSchema = z.strictObject({ variantId: uuid, notify: z.boolean() })
+export const resellerStockAlertResponseSchema = z.object({ variantId: uuid, notify: z.boolean() })
+export type ResellerFavoriteRequest = z.infer<typeof resellerFavoriteRequestSchema>
+export type ResellerFavoriteResponse = z.infer<typeof resellerFavoriteResponseSchema>
+export type ResellerStockAlertRequest = z.infer<typeof resellerStockAlertRequestSchema>
+export type ResellerStockAlertResponse = z.infer<typeof resellerStockAlertResponseSchema>
 
 export const resellerPortalCatalogSchema = z.object({
   branding: resellerBrandingSchema.optional(),
@@ -538,6 +553,7 @@ export const resellerNotificationKindSchema = z.enum([
   'payment_due_soon',
   'payment_overdue',
   'payment_window_closing',
+  'back_in_stock',
 ])
 export const resellerNotificationSchema = z.object({
   id: uuid,

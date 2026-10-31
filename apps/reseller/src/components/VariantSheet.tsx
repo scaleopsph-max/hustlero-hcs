@@ -9,6 +9,7 @@ import type { ProductGroup } from '@/lib/catalog'
 import { stockLabel } from '@/lib/labels'
 import { fileUrl } from '@/lib/portal-api'
 
+import { NotifyButton } from './NotifyButton'
 import { QuantityStepper } from './QuantityStepper'
 
 /** Glass bottom sheet listing one product's variants, each with its own price, stock, and quantity. */
@@ -16,11 +17,13 @@ export function VariantSheet({
   group,
   cart,
   onQuantity,
+  onNotify,
   onClose,
 }: {
   group: ProductGroup
   cart: CartLine[]
   onQuantity: (variantId: string, quantityMilli: number) => void
+  onNotify: (variantId: string, notify: boolean) => void
   onClose: () => void
 }) {
   const closeButton = useRef<HTMLButtonElement>(null)
@@ -129,6 +132,7 @@ export function VariantSheet({
                     onChange={(next) => onQuantity(variant.variantId, next)}
                   />
                 </div>
+                {variant.stockStatus === 'out_of_stock' ? <NotifyButton item={variant} onNotify={onNotify} /> : null}
               </li>
             )
           })}

@@ -156,5 +156,26 @@ select is(app.save_reseller_portal_branding('aa000000-0000-4000-8000-00000000000
 select throws_ok($$ select app.save_reseller_portal_branding('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001', '{"portalName":null,"accentColor":"gold"}', 'brand-4') $$, 'HCRA1', null,
   'resellers cannot change branding');
 
+-- Favorites, back-in-stock alerts, and the New flag.
+select is(app.save_reseller_favorite('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001', '{"productId":"ee000000-0000-4000-8000-000000000002","favorite":true}')->>'favorite', 'true', 'a reseller saves a favorite');
+select lives_ok($$ select app.save_reseller_favorite('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001', '{"productId":"ee000000-0000-4000-8000-000000000002","favorite":true}') $$, 'saving it twice is harmless');
+select is((select count(*)::int from jsonb_array_elements(app.load_reseller_portal_catalog('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001')->'items') i where (i->>'isFavorite')::boolean), 1, 'the catalog marks the favorite');
+select is((select bool_and((i->>'isNew')::boolean) from jsonb_array_elements(app.load_reseller_portal_catalog('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001')->'items') i), true, 'products added in the last 14 days are new');
+select throws_ok($$ select app.save_reseller_favorite('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001', '{"productId":"ee000000-0000-4000-8000-000000000099","favorite":true}') $$, 'HCRF1', null, 'only catalog products can be favorites');
+select is(app.save_reseller_favorite('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001', '{"productId":"ee000000-0000-4000-8000-000000000002","favorite":false}')->>'favorite', 'false', 'a favorite can be removed');
+select throws_ok($$ select app.save_reseller_stock_alert('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001', '{"variantId":"ff000000-0000-4000-8000-000000000003","notify":true}') $$, 'HCRF2', null, 'in-stock items do not need an alert');
+select is(app.save_reseller_stock_alert('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001', '{"variantId":"ff000000-0000-4000-8000-000000000004","notify":true}')->>'notify', 'true', 'a reseller asks to be told when an item is back');
+select lives_ok($$ select app.save_reseller_stock_alert('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001', '{"variantId":"ff000000-0000-4000-8000-000000000004","notify":true}') $$, 'asking twice keeps one alert');
+select is((select count(*)::int from app.reseller_stock_alerts where notified_at is null), 1, 'one open alert');
+select is((select (i->>'notifyRequested')::boolean from jsonb_array_elements(app.load_reseller_portal_catalog('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001')->'items') i where i->>'variantId' = 'ff000000-0000-4000-8000-000000000004'), true, 'the catalog shows the alert is on');
+select app.sync_reseller_stock_alerts('bb000000-0000-4000-8000-000000000001', (select id from app.reseller_accounts where auth_user_id = 'aa000000-0000-4000-8000-000000000002'));
+select is((select count(*)::int from app.reseller_notifications where kind = 'back_in_stock'), 0, 'no notification while still out of stock');
+update app.product_variants set track_inventory = false where id = 'ff000000-0000-4000-8000-000000000004';
+select app.load_reseller_notifications('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001', 30);
+select is((select title from app.reseller_notifications where kind = 'back_in_stock'), 'Buko Pie Bites is back in stock', 'the reseller is told once it is back');
+select is((select count(*)::int from app.reseller_stock_alerts where notified_at is null), 0, 'the alert is closed after notifying');
+select app.load_reseller_notifications('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001', 30);
+select is((select count(*)::int from app.reseller_notifications where kind = 'back_in_stock'), 1, 'it is only sent once');
+
 select * from finish();
 rollback;

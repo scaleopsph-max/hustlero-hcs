@@ -12,6 +12,8 @@ import {
   resellerPortalReportFilterSchema,
   resellerNotificationReadRequestSchema,
   resellerCreditApplyRequestSchema,
+  resellerFavoriteRequestSchema,
+  resellerStockAlertRequestSchema,
   resellerPointsRedeemRequestSchema,
   resellerPointsSettingsRequestSchema,
   resellerBrandingSaveRequestSchema,
@@ -73,6 +75,8 @@ const decisionIdempotencyPattern = /^[A-Za-z0-9_-]{16,120}$/
 const errorMap: Record<string, { status: ContentfulStatusCode; code: string; message: string }> = {
   HCSD0: { status: 403, code: 'REPORTING_ACCESS_DENIED', message: 'Your role cannot view these reports.' },
   HCSD1: { status: 400, code: 'INVALID_REPORT_FILTERS', message: 'Choose a valid date range of up to one year.' },
+  HCRF1: { status: 404, code: 'PRODUCT_NOT_IN_CATALOG', message: 'This product is not in your catalog.' },
+  HCRF2: { status: 409, code: 'ITEM_IN_STOCK', message: 'This item is in stock. You can order it now.' },
   HCRB1: { status: 409, code: 'INVOICE_ALREADY_PAID', message: 'This invoice has nothing left to pay.' },
   HCRB2: {
     status: 409,
@@ -460,6 +464,30 @@ export function registerResellerPortalRoutes(
     resellerPointsRedeemRequestSchema,
     (reseller, request, portalCommand, context) =>
       dependencies.repository.redeemPoints(reseller.userId, reseller.tenantId, request, portalCommand, context.env),
+  )
+
+  const preference = <T>(
+    path: string,
+    schema: ZodType<T>,
+    message: string,
+    act: (reseller: { userId: string; tenantId: string }, request: T, context: AppContext) => Promise<unknown>,
+  ) =>
+    app.post(path, async (context) => {
+      const reseller = await resolveReseller(context, true)
+      if (reseller instanceof Response) return reseller
+      const request = await readJson(context, schema)
+      if (!request) return fail(context, 400, 'INVALID_RESELLER_PORTAL_REQUEST', message)
+      return run(context, async () => context.json(await act(reseller, request, context)))
+    })
+  preference('/v1/portal/favorites', resellerFavoriteRequestSchema, 'Choose a product.', (reseller, request, context) =>
+    dependencies.repository.saveFavorite(reseller.userId, reseller.tenantId, request, context.env),
+  )
+  preference(
+    '/v1/portal/stock-alerts',
+    resellerStockAlertRequestSchema,
+    'Choose an item.',
+    (reseller, request, context) =>
+      dependencies.repository.saveStockAlert(reseller.userId, reseller.tenantId, request, context.env),
   )
 
   app.get('/v1/portal/notifications', async (context) => {

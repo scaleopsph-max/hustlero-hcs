@@ -217,3 +217,11 @@ authorized by these development decisions.
 - **Decision:** Each business sets how its reseller portal looks in Reseller portal → Settings → Portal look: a portal name (2–60 characters; blank uses the business name), one of six accent colors (gold, emerald, sky, rose, violet, orange), and a logo. The logo is a private `brand_logo` file uploaded through `POST /v1/reseller-portal/branding/logo` and served only through short-lived signed links. `app.reseller_branding_json` feeds the public application page, the reseller catalog, and the admin view; the reseller app applies the accent at runtime through CSS variables, so one build serves every business. Only owners and admins can change branding.
 - **Reason:** Owner selection on 2026-10-31 (branding per business) so the portal can be opened to other businesses.
 - **Review trigger:** Custom domains per business, free-form colors, or branded emails.
+
+## ADR-052: Reseller favorites, back-in-stock alerts, and New products
+
+- **Date:** 2026-11-01
+- **Status:** Accepted
+- **Decision:** Resellers mark products as favorites (a heart on each catalog card, `app.save_reseller_favorite`) and filter the catalog to Favorites. For an out-of-stock variant they tap "Notify me when back in stock" (`app.save_reseller_stock_alert`); when notifications are next built (opening Updates, or the five-minute push cron), each open alert whose item is available again becomes one `back_in_stock` notification and push, and the alert closes. Alerts for items that leave the reseller's catalog close silently. Products created in the last 14 days are flagged `isNew`; the portal shows "New" badges and a New filter only when some products are not new, so a brand-new catalog is not all badges. Quick reorder stays the existing "Order again" on past orders.
+- **Reason:** Owner selection on 2026-10-31 (faster ordering).
+- **Review trigger:** A separate "published to portal" date, promos, or back-in-stock alerts by email.
