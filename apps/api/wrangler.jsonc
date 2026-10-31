@@ -49,6 +49,7 @@
         "BACKOFFICE_ORIGIN": "https://hustlero-hcs-backoffice-staging.scaleopsph.workers.dev",
         "POS_ORIGIN": "https://hustlero-hcs-pos-staging.scaleopsph.workers.dev",
         "ADMIN_ORIGIN": "https://hustlero-hcs-admin-staging.scaleopsph.workers.dev",
+        "RESELLER_ORIGIN": "https://hustlero-hcs-reseller-staging.scaleopsph.workers.dev",
         // Contact sent to browser push services (Web Push). Keys: npm run push:keys -- <environment>
         "VAPID_SUBJECT": "https://hustlero-hcs-api-staging.scaleopsph.workers.dev",
       },
