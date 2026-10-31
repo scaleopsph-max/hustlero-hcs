@@ -392,6 +392,9 @@ export const resellerPortalAdminSchema = z.object({
       applicationsOpen: z.boolean(),
       autoConfirm: z.boolean(),
       paymentInstructions: z.string().nullable().optional(),
+      /** What one loyalty point is worth when a reseller pays with points; null = paying with points is off. */
+      pointsRedeemValueMinor: z.number().int().positive().nullable().optional(),
+      pointsMinRedeem: z.number().int().positive().optional(),
       updatedAt: timestamp,
     })
     .nullable(),
@@ -513,6 +516,9 @@ export const resellerNotificationKindSchema = z.enum([
   'order_expired',
   'order_rejected',
   'return_recorded',
+  'payment_due_soon',
+  'payment_overdue',
+  'payment_window_closing',
 ])
 export const resellerNotificationSchema = z.object({
   id: uuid,
@@ -561,6 +567,14 @@ export const resellerStatementSchema = z.object({
     pendingProofsMinor: minor,
     creditAvailableMinor: minor,
   }),
+  points: z
+    .object({
+      balance: z.number().int().nonnegative(),
+      redeemValueMinor: z.number().int().positive().nullable(),
+      minimumPoints: z.number().int().positive(),
+    })
+    .nullable()
+    .optional(),
   invoices: z.array(
     z.object({
       invoiceId: uuid,
@@ -601,12 +615,15 @@ export const resellerStatementSchema = z.object({
 export const resellerLoyaltySchema = z.object({
   enabled: z.boolean(),
   spendPerPointMinor: z.number().int().positive().nullable(),
+  /** Peso value of one point when paying an invoice; null = paying with points is off. */
+  redeemValueMinor: z.number().int().positive().nullable().optional(),
+  minimumPoints: z.number().int().positive().nullable().optional(),
   balancePoints: z.number().int().nonnegative(),
   lifetimeEarnedPoints: z.number().int().nonnegative(),
   history: z.array(
     z.object({
       id: uuid,
-      type: z.enum(['sale_earn', 'refund_reversal']),
+      type: z.enum(['sale_earn', 'refund_reversal', 'redemption']),
       points: z.number().int(),
       balanceAfter: z.number().int().nonnegative(),
       occurredAt: timestamp,
@@ -619,3 +636,40 @@ export const resellerLoyaltySchema = z.object({
 
 export type ResellerStatement = z.infer<typeof resellerStatementSchema>
 export type ResellerLoyalty = z.infer<typeof resellerLoyaltySchema>
+
+export const resellerCreditApplyRequestSchema = z.strictObject({
+  invoiceId: uuid,
+  amountMinor: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+})
+export const resellerCreditApplyResponseSchema = z.object({
+  invoiceId: uuid,
+  amountMinor: minor,
+  balanceMinor: minor,
+  applications: z.number().int().nonnegative(),
+})
+export const resellerPointsRedeemRequestSchema = z.strictObject({
+  invoiceId: uuid,
+  points: z.number().int().positive().max(1_000_000_000),
+})
+export const resellerPointsRedeemResponseSchema = z.object({
+  invoiceId: uuid,
+  paymentId: uuid,
+  points: z.number().int().positive(),
+  amountMinor: minor,
+  balanceMinor: minor,
+  pointsLeft: z.number().int().nonnegative(),
+})
+export const resellerPointsSettingsRequestSchema = z.strictObject({
+  redeemValueMinor: z.number().int().positive().max(10_000_000).nullable(),
+  minimumPoints: z.number().int().min(1).max(1_000_000),
+})
+export const resellerPointsSettingsResponseSchema = z.object({
+  redeemValueMinor: z.number().int().positive().nullable(),
+  minimumPoints: z.number().int().positive(),
+})
+
+export type ResellerCreditApplyRequest = z.infer<typeof resellerCreditApplyRequestSchema>
+export type ResellerCreditApplyResponse = z.infer<typeof resellerCreditApplyResponseSchema>
+export type ResellerPointsRedeemRequest = z.infer<typeof resellerPointsRedeemRequestSchema>
+export type ResellerPointsRedeemResponse = z.infer<typeof resellerPointsRedeemResponseSchema>
+export type ResellerPointsSettingsRequest = z.infer<typeof resellerPointsSettingsRequestSchema>

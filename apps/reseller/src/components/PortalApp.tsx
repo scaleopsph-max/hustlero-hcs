@@ -4,7 +4,9 @@ import {
   paymentProofUploadResponseSchema,
   pushPublicKeyResponseSchema,
   pushSubscriptionResponseSchema,
+  resellerCreditApplyResponseSchema,
   resellerLoyaltySchema,
+  resellerPointsRedeemResponseSchema,
   resellerNotificationReadResponseSchema,
   resellerStatementSchema,
   resellerNotificationsSchema,
@@ -27,6 +29,7 @@ import {
   Surface,
   cn,
   disablePush,
+  formatPeso,
   enablePush,
   pushState,
   pushSupport,
@@ -483,6 +486,28 @@ export function PortalApp() {
               onSignOut={signOut}
               loadStatement={loadStatement}
               loadLoyalty={loadLoyalty}
+              onApplyCredit={async (invoiceId, amountMinor, idempotencyKey) => {
+                if (!token || !tenantId) throw new Error('Please sign in again.')
+                const result = await portalRequest(
+                  '/v1/portal/credit/apply',
+                  (value) => resellerCreditApplyResponseSchema.parse(value),
+                  { token, tenantId, method: 'POST', body: { invoiceId, amountMinor }, idempotencyKey },
+                )
+                toast.success(
+                  `${formatPeso(result.amountMinor)} credit applied. ${formatPeso(result.balanceMinor)} left to pay.`,
+                )
+              }}
+              onRedeemPoints={async (invoiceId, points, idempotencyKey) => {
+                if (!token || !tenantId) throw new Error('Please sign in again.')
+                const result = await portalRequest(
+                  '/v1/portal/points/redeem',
+                  (value) => resellerPointsRedeemResponseSchema.parse(value),
+                  { token, tenantId, method: 'POST', body: { invoiceId, points }, idempotencyKey },
+                )
+                toast.success(
+                  `${result.points} points paid ${formatPeso(result.amountMinor)}. ${formatPeso(result.balanceMinor)} left to pay.`,
+                )
+              }}
               onOpenOrder={(salesOrderId) => {
                 setFocusOrderId(salesOrderId)
                 setTab('orders')

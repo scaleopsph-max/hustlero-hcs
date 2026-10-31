@@ -507,6 +507,53 @@ describe('reseller portal API', () => {
     expect((await app.request('/v1/portal/statement', {}, bindings)).status).toBe(401)
   })
 
+  it('lets resellers apply credit and pay with points, with clear refusals', async () => {
+    const invoiceId = '70000000-0000-4000-8000-000000000001'
+    const applyCredit = vi.fn(async () => ({ invoiceId, amountMinor: 46_000, balanceMinor: 146_000, applications: 1 }))
+    const redeemPoints = vi.fn(async () => Promise.reject(postgresError('HCRB6')))
+    const app = portalApp(repository({ applyCredit, redeemPoints }))
+    const headers = {
+      authorization: 'Bearer reseller-token',
+      'content-type': 'application/json',
+      'x-tenant-id': tenantId,
+      'idempotency-key': 'portal-credit-0001',
+    }
+    const noKey = await app.request(
+      '/v1/portal/credit/apply',
+      {
+        method: 'POST',
+        headers: { ...headers, 'idempotency-key': '' },
+        body: JSON.stringify({ invoiceId, amountMinor: 46_000 }),
+      },
+      bindings,
+    )
+    expect(noKey.status).toBe(400)
+    const applied = await app.request(
+      '/v1/portal/credit/apply',
+      { method: 'POST', headers, body: JSON.stringify({ invoiceId, amountMinor: 46_000 }) },
+      bindings,
+    )
+    expect(applied.status).toBe(200)
+    expect(applyCredit).toHaveBeenCalledWith(
+      resellerUserId,
+      tenantId,
+      { invoiceId, amountMinor: 46_000 },
+      expect.objectContaining({ idempotencyKey: 'portal-credit-0001' }),
+      bindings,
+    )
+    const points = await app.request(
+      '/v1/portal/points/redeem',
+      {
+        method: 'POST',
+        headers: { ...headers, 'idempotency-key': 'portal-points-0001' },
+        body: JSON.stringify({ invoiceId, points: 500 }),
+      },
+      bindings,
+    )
+    expect(points.status).toBe(409)
+    expect(apiErrorResponseSchema.parse(await points.json()).error.code).toBe('NOT_ENOUGH_POINTS')
+  })
+
   it('lists reseller notifications and marks them read', async () => {
     const loadNotifications = vi.fn(async () => ({ unreadCount: 0, items: [] }))
     const markNotificationsRead = vi.fn(async () => ({ unreadCount: 0 }))

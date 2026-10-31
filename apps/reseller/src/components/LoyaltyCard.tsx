@@ -36,6 +36,13 @@ export function LoyaltyCard({
               ? `1 point for every ${formatPeso(loyalty.spendPerPointMinor)} of delivered or picked-up orders, after discounts.`
               : 'The business has not turned on points yet.'}
           </p>
+          {loyalty?.enabled && loyalty.redeemValueMinor ? (
+            <p className="text-small text-gold-200">
+              Pay invoices with points: 1 point = {formatPeso(loyalty.redeemValueMinor)}
+              {loyalty.minimumPoints && loyalty.minimumPoints > 1 ? ` (at least ${loyalty.minimumPoints} points)` : ''}.
+              Use them from your statement above.
+            </p>
+          ) : null}
         </div>
       </div>
       {loyalty && loyalty.history.length > 0 ? (
@@ -55,7 +62,11 @@ export function LoyaltyCard({
                 <li key={entry.id} className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p>
-                      {entry.type === 'sale_earn' ? 'Earned' : 'Returned items'}
+                      {entry.type === 'sale_earn'
+                        ? 'Earned'
+                        : entry.type === 'redemption'
+                          ? 'Paid with points'
+                          : 'Returned items'}
                       {entry.orderNumber
                         ? ` · ${entry.orderNumber}`
                         : entry.invoiceNumber

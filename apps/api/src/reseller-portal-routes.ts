@@ -11,6 +11,9 @@ import {
   portalShipmentUpdateRequestSchema,
   resellerPortalReportFilterSchema,
   resellerNotificationReadRequestSchema,
+  resellerCreditApplyRequestSchema,
+  resellerPointsRedeemRequestSchema,
+  resellerPointsSettingsRequestSchema,
   resellerPortalEnableRequestSchema,
   pushSubscriptionRequestSchema,
   pushUnsubscribeRequestSchema,
@@ -67,6 +70,16 @@ const decisionIdempotencyPattern = /^[A-Za-z0-9_-]{16,120}$/
 const errorMap: Record<string, { status: ContentfulStatusCode; code: string; message: string }> = {
   HCSD0: { status: 403, code: 'REPORTING_ACCESS_DENIED', message: 'Your role cannot view these reports.' },
   HCSD1: { status: 400, code: 'INVALID_REPORT_FILTERS', message: 'Choose a valid date range of up to one year.' },
+  HCRB1: { status: 409, code: 'INVOICE_ALREADY_PAID', message: 'This invoice has nothing left to pay.' },
+  HCRB2: {
+    status: 409,
+    code: 'MORE_THAN_BALANCE',
+    message: 'That is more than the invoice balance. Enter a smaller amount.',
+  },
+  HCRB3: { status: 409, code: 'NOT_ENOUGH_CREDIT', message: 'That is more than your available credit.' },
+  HCRB4: { status: 409, code: 'POINTS_PAYMENT_OFF', message: 'Paying with points is not available right now.' },
+  HCRB5: { status: 400, code: 'POINTS_BELOW_MINIMUM', message: 'Use at least the minimum number of points.' },
+  HCRB6: { status: 409, code: 'NOT_ENOUGH_POINTS', message: 'You do not have that many points.' },
   HCRA8: {
     status: 403,
     code: 'RESELLER_PORTAL_OWNER_ONLY',
@@ -398,6 +411,38 @@ export function registerResellerPortalRoutes(
     )
   })
 
+  const selfService = <T>(
+    path: string,
+    schema: ZodType<T>,
+    act: (
+      reseller: { userId: string; tenantId: string },
+      request: T,
+      portalCommand: PortalCommand,
+      context: AppContext,
+    ) => Promise<unknown>,
+  ) =>
+    app.post(path, async (context) => {
+      const reseller = await resolveReseller(context, true)
+      if (reseller instanceof Response) return reseller
+      const request = await readJson(context, schema)
+      const portalCommand = request ? await command(context, request) : null
+      if (!request || !portalCommand)
+        return fail(context, 400, 'INVALID_RESELLER_PORTAL_REQUEST', 'Check the amount and try again.')
+      return run(context, async () => context.json(await act(reseller, request, portalCommand, context)))
+    })
+  selfService(
+    '/v1/portal/credit/apply',
+    resellerCreditApplyRequestSchema,
+    (reseller, request, portalCommand, context) =>
+      dependencies.repository.applyCredit(reseller.userId, reseller.tenantId, request, portalCommand, context.env),
+  )
+  selfService(
+    '/v1/portal/points/redeem',
+    resellerPointsRedeemRequestSchema,
+    (reseller, request, portalCommand, context) =>
+      dependencies.repository.redeemPoints(reseller.userId, reseller.tenantId, request, portalCommand, context.env),
+  )
+
   app.get('/v1/portal/notifications', async (context) => {
     const reseller = await resolveReseller(context, true)
     if (reseller instanceof Response) return reseller
@@ -503,6 +548,24 @@ export function registerResellerPortalRoutes(
           admin.userId,
           admin.tenantId,
           request.enabled,
+          context.get('requestId'),
+          context.env,
+        ),
+      ),
+    )
+  })
+
+  app.post('/v1/reseller-portal/points-settings', async (context) => {
+    const admin = await resolveAdmin(context)
+    if (admin instanceof Response) return admin
+    const request = await readJson(context, resellerPointsSettingsRequestSchema)
+    if (!request) return fail(context, 400, 'INVALID_RESELLER_PORTAL_REQUEST', 'Enter a value per point and a minimum.')
+    return run(context, async () =>
+      context.json(
+        await dependencies.repository.savePointsSettings(
+          admin.userId,
+          admin.tenantId,
+          request,
           context.get('requestId'),
           context.env,
         ),

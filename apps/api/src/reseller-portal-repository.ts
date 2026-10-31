@@ -16,6 +16,14 @@ import {
   portalShipmentUpdateResponseSchema,
   resellerPortalReportSchema,
   resellerStockIssuesSchema,
+  resellerCreditApplyResponseSchema,
+  resellerPointsRedeemResponseSchema,
+  resellerPointsSettingsResponseSchema,
+  type ResellerCreditApplyRequest,
+  type ResellerCreditApplyResponse,
+  type ResellerPointsRedeemRequest,
+  type ResellerPointsRedeemResponse,
+  type ResellerPointsSettingsRequest,
   resellerStatementSchema,
   resellerLoyaltySchema,
   type ResellerStatement,
@@ -210,6 +218,27 @@ export interface ResellerPortalRepository {
   ): Promise<ResellerPortalAvailability>
   loadStatement(authUserId: string, tenantId: string, bindings: Bindings): Promise<ResellerStatement>
   loadLoyalty(authUserId: string, tenantId: string, bindings: Bindings): Promise<ResellerLoyalty>
+  applyCredit(
+    authUserId: string,
+    tenantId: string,
+    request: ResellerCreditApplyRequest,
+    command: PortalCommand,
+    bindings: Bindings,
+  ): Promise<ResellerCreditApplyResponse>
+  redeemPoints(
+    authUserId: string,
+    tenantId: string,
+    request: ResellerPointsRedeemRequest,
+    command: PortalCommand,
+    bindings: Bindings,
+  ): Promise<ResellerPointsRedeemResponse>
+  savePointsSettings(
+    userId: string,
+    tenantId: string,
+    request: ResellerPointsSettingsRequest,
+    requestId: string,
+    bindings: Bindings,
+  ): Promise<{ redeemValueMinor: number | null; minimumPoints: number }>
   /** Read-only report for the Back Office Reports page; dates are in the business's time zone. */
   loadReport(
     userId: string,
@@ -402,6 +431,27 @@ export const resellerPortalPostgresRepository: ResellerPortalRepository = {
       'select app.load_reseller_loyalty($1::uuid, $2::uuid) response',
       [authUserId, tenantId],
       (value) => resellerLoyaltySchema.parse(value),
+    ),
+  applyCredit: (authUserId, tenantId, request, command, bindings) =>
+    queryOne(
+      bindings,
+      'select app.apply_reseller_credit($1::uuid, $2::uuid, $3::jsonb, $4::text, $5::text, $6::text) response',
+      [authUserId, tenantId, JSON.stringify(request), command.idempotencyKey, command.requestHash, command.requestId],
+      (value) => resellerCreditApplyResponseSchema.parse(value),
+    ),
+  redeemPoints: (authUserId, tenantId, request, command, bindings) =>
+    queryOne(
+      bindings,
+      'select app.redeem_reseller_points($1::uuid, $2::uuid, $3::jsonb, $4::text, $5::text, $6::text) response',
+      [authUserId, tenantId, JSON.stringify(request), command.idempotencyKey, command.requestHash, command.requestId],
+      (value) => resellerPointsRedeemResponseSchema.parse(value),
+    ),
+  savePointsSettings: (userId, tenantId, request, requestId, bindings) =>
+    queryOne(
+      bindings,
+      'select app.save_reseller_points_settings($1::uuid, $2::uuid, $3::jsonb, $4::text) response',
+      [userId, tenantId, JSON.stringify(request), requestId],
+      (value) => resellerPointsSettingsResponseSchema.parse(value),
     ),
   loadReport: (userId, tenantId, from, to, bindings) =>
     queryOne(

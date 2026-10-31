@@ -14,6 +14,7 @@ import {
   TriangleAlert,
   Undo2,
   BellOff,
+  CalendarClock,
   Share,
   Smartphone,
   X,
@@ -34,6 +35,9 @@ const icons: Record<ResellerNotificationKind, { Icon: LucideIcon; tone: string }
   order_expired: { Icon: Clock, tone: 'text-signal-dark-warning-fg' },
   order_rejected: { Icon: Ban, tone: 'text-signal-dark-critical-fg' },
   return_recorded: { Icon: Undo2, tone: 'text-gold-300' },
+  payment_due_soon: { Icon: CalendarClock, tone: 'text-signal-dark-attention-fg' },
+  payment_overdue: { Icon: TriangleAlert, tone: 'text-signal-dark-critical-fg' },
+  payment_window_closing: { Icon: Clock, tone: 'text-signal-dark-attention-fg' },
 }
 
 /** Glass sheet with the reseller's order updates; tapping one opens that order. */

@@ -18,6 +18,8 @@ export function AccountView({
   loadStatement,
   loadLoyalty,
   onOpenOrder,
+  onApplyCredit,
+  onRedeemPoints,
 }: {
   catalog: ResellerPortalCatalog
   session: ResellerPortalSession
@@ -27,6 +29,8 @@ export function AccountView({
   loadStatement: () => Promise<ResellerStatement>
   loadLoyalty: () => Promise<ResellerLoyalty>
   onOpenOrder: (salesOrderId: string) => void
+  onApplyCredit: (invoiceId: string, amountMinor: number, key: string) => Promise<unknown>
+  onRedeemPoints: (invoiceId: string, points: number, key: string) => Promise<unknown>
 }) {
   const { account } = catalog
   return (
@@ -52,7 +56,12 @@ export function AccountView({
         />
       </Glass>
 
-      <StatementCard load={loadStatement} onOpenOrder={onOpenOrder} />
+      <StatementCard
+        load={loadStatement}
+        onOpenOrder={onOpenOrder}
+        onApplyCredit={onApplyCredit}
+        onRedeemPoints={onRedeemPoints}
+      />
 
       <LoyaltyCard load={loadLoyalty} fallbackPoints={account.pointsBalance} />
 

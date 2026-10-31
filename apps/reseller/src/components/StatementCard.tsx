@@ -7,23 +7,31 @@ import { useEffect, useState } from 'react'
 
 import { formatDateTime } from '@/lib/labels'
 
+import { SettleInvoice } from './SettleInvoice'
+
 /** What the reseller owes this business: open invoices, orders not shipped yet, payments, and returns. */
 export function StatementCard({
   load,
   onOpenOrder,
+  onApplyCredit,
+  onRedeemPoints,
 }: {
   load: () => Promise<ResellerStatement>
   onOpenOrder: (salesOrderId: string) => void
+  onApplyCredit: (invoiceId: string, amountMinor: number, key: string) => Promise<unknown>
+  onRedeemPoints: (invoiceId: string, points: number, key: string) => Promise<unknown>
 }) {
   const [statement, setStatement] = useState<ResellerStatement | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showActivity, setShowActivity] = useState(false)
+  const [settling, setSettling] = useState<{ invoiceId: string; mode: 'credit' | 'points' } | null>(null)
+  const [version, setVersion] = useState(0)
 
   useEffect(() => {
     load()
       .then(setStatement)
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'The statement could not load.'))
-  }, [load])
+  }, [load, version])
 
   if (error)
     return (
@@ -41,6 +49,8 @@ export function StatementCard({
   const { summary } = statement
   const totalDue = summary.outstandingMinor + summary.notInvoicedMinor
   const open = statement.invoices.filter((invoice) => invoice.status !== 'paid')
+  const points = statement.points ?? null
+  const canUsePoints = points !== null && points.redeemValueMinor !== null && points.balance >= points.minimumPoints
   return (
     <Glass className="flex flex-col gap-4 rounded-glass p-4">
       <div className="flex items-start justify-between gap-3">
@@ -79,32 +89,71 @@ export function StatementCard({
       {open.length > 0 || statement.notInvoiced.length > 0 ? (
         <ul className="flex flex-col divide-y divide-white/10 border-y border-white/10">
           {open.map((invoice) => (
-            <li key={invoice.invoiceId} className="flex items-center justify-between gap-3 py-3">
-              <div className="min-w-0">
-                <p className="font-semibold">
-                  {invoice.invoiceNumber}
-                  {invoice.orderNumber ? <span className="text-ink-400"> · {invoice.orderNumber}</span> : null}
-                </p>
-                <p
-                  className={
-                    invoice.status === 'overdue'
-                      ? 'text-caption text-signal-dark-critical-fg'
-                      : 'text-caption text-ink-400'
-                  }
-                >
-                  {invoice.status === 'overdue'
-                    ? `${invoice.daysOverdue} ${invoice.daysOverdue === 1 ? 'day' : 'days'} overdue`
-                    : invoice.dueDate
-                      ? `Due ${invoice.dueDate}`
-                      : 'Open'}
-                  {' · '}
-                  {formatPeso(invoice.balanceMinor)} of {formatPeso(invoice.totalMinor)}
-                </p>
+            <li key={invoice.invoiceId} className="py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold">
+                    {invoice.invoiceNumber}
+                    {invoice.orderNumber ? <span className="text-ink-400"> · {invoice.orderNumber}</span> : null}
+                  </p>
+                  <p
+                    className={
+                      invoice.status === 'overdue'
+                        ? 'text-caption text-signal-dark-critical-fg'
+                        : 'text-caption text-ink-400'
+                    }
+                  >
+                    {invoice.status === 'overdue'
+                      ? `${invoice.daysOverdue} ${invoice.daysOverdue === 1 ? 'day' : 'days'} overdue`
+                      : invoice.dueDate
+                        ? `Due ${invoice.dueDate}`
+                        : 'Open'}
+                    {' · '}
+                    {formatPeso(invoice.balanceMinor)} of {formatPeso(invoice.totalMinor)}
+                  </p>
+                </div>
+                {invoice.salesOrderId ? (
+                  <Button size="sm" variant="primary" onClick={() => onOpenOrder(invoice.salesOrderId!)}>
+                    Pay
+                  </Button>
+                ) : null}
               </div>
-              {invoice.salesOrderId ? (
-                <Button size="sm" variant="primary" onClick={() => onOpenOrder(invoice.salesOrderId!)}>
-                  Pay
-                </Button>
+              {summary.creditAvailableMinor > 0 || canUsePoints ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {summary.creditAvailableMinor > 0 ? (
+                    <Button
+                      size="sm"
+                      aria-pressed={settling?.invoiceId === invoice.invoiceId && settling.mode === 'credit'}
+                      onClick={() => setSettling({ invoiceId: invoice.invoiceId, mode: 'credit' })}
+                    >
+                      Use credit
+                    </Button>
+                  ) : null}
+                  {canUsePoints ? (
+                    <Button
+                      size="sm"
+                      aria-pressed={settling?.invoiceId === invoice.invoiceId && settling.mode === 'points'}
+                      onClick={() => setSettling({ invoiceId: invoice.invoiceId, mode: 'points' })}
+                    >
+                      Use points
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+              {settling?.invoiceId === invoice.invoiceId && points ? (
+                <SettleInvoice
+                  key={settling.mode}
+                  invoice={invoice}
+                  mode={settling.mode}
+                  creditAvailableMinor={summary.creditAvailableMinor}
+                  points={points}
+                  onApplyCredit={onApplyCredit}
+                  onRedeemPoints={onRedeemPoints}
+                  onDone={() => {
+                    setSettling(null)
+                    setVersion((value) => value + 1)
+                  }}
+                />
               ) : null}
             </li>
           ))}

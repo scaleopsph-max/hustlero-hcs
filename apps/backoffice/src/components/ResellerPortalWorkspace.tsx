@@ -13,6 +13,7 @@ import {
   portalShipmentUpdateResponseSchema,
   pendingPaymentProofsSchema,
   resellerPortalAvailabilitySchema,
+  resellerPointsSettingsResponseSchema,
   sessionContextResponseSchema,
   type PendingPaymentProof,
   type ResellerOrderReviewRequest,
@@ -26,6 +27,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { selectActiveTenant } from '@/lib/active-tenant'
 import { LogisticsBoard } from './LogisticsBoard'
 import { PaymentAccountsCard } from './PaymentAccountsCard'
+import { PointsSettingsCard } from './PointsSettingsCard'
 import { PortalActivation, PortalOffSwitch } from './PortalActivation'
 import { fileUrl } from './ProductPhotos'
 import {
@@ -550,6 +552,24 @@ export function ResellerPortalWorkspace() {
               toast.success('QR code saved. Resellers see it when they pay.')
             }}
           />
+
+          {admin.settings ? (
+            <PointsSettingsCard
+              key={`${admin.settings.pointsRedeemValueMinor ?? 'off'}-${admin.settings.pointsMinRedeem ?? 1}`}
+              valueMinor={admin.settings.pointsRedeemValueMinor ?? null}
+              minimumPoints={admin.settings.pointsMinRedeem ?? 1}
+              busy={busy === 'points'}
+              onSave={(body) =>
+                run(
+                  'points',
+                  '/v1/reseller-portal/points-settings',
+                  body,
+                  (v) => resellerPointsSettingsResponseSchema.parse(v),
+                  body.redeemValueMinor === null ? 'Paying with points is off.' : 'Points settings saved.',
+                )
+              }
+            />
+          ) : null}
 
           {availability?.canToggle ? (
             <PortalOffSwitch busy={busy === 'enabled'} onDisable={() => void setPortalEnabled(false)} />
