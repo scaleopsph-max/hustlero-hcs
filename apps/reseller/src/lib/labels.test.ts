@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { orderBadge, timeAgo, timeLeft } from './labels'
+import { compactPeso, orderBadge, timeAgo, timeLeft } from './labels'
 
 describe('pay-first labels', () => {
   it('shows where an order is in the payment step', () => {
@@ -36,5 +36,14 @@ describe('timeAgo', () => {
     expect(timeAgo('2026-10-30T11:55:00Z', now)).toBe('5m ago')
     expect(timeAgo('2026-10-30T09:00:00Z', now)).toBe('3h ago')
     expect(timeAgo('2026-10-28T09:00:00Z', now)).toBe('Oct 28, 5:00 PM')
+  })
+})
+
+describe('compact pesos', () => {
+  it('shortens thousands and millions', () => {
+    expect(compactPeso(95_000)).toBe('₱950')
+    expect(compactPeso(1_950_000)).toBe('₱19.5k')
+    expect(compactPeso(20_000_000)).toBe('₱200k')
+    expect(compactPeso(120_000_000)).toBe('₱1.2M')
   })
 })

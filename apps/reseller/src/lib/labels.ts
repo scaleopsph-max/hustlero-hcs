@@ -106,3 +106,13 @@ export function timeAgo(value: string, now: number = Date.now()): string {
   if (minutes < 24 * 60) return `${Math.floor(minutes / 60)}h ago`
   return formatDateTime(value)
 }
+
+/** Short peso amounts for one-line summaries: ₱950, ₱19.5k, ₱1.2M. */
+export function compactPeso(minor: number): string {
+  const pesos = minor / 100
+  const short = (value: number, unit: string) =>
+    `₱${value.toLocaleString('en-PH', { maximumFractionDigits: 1 })}${unit}`
+  if (pesos >= 1_000_000) return short(pesos / 1_000_000, 'M')
+  if (pesos >= 1_000) return short(pesos / 1_000, 'k')
+  return short(pesos, '')
+}
