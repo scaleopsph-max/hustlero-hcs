@@ -14,15 +14,28 @@ import { QrCode } from './QrCode'
 export function TierCard({ load }: { load: () => Promise<ResellerTier> }) {
   const toast = useToast()
   const [card, setCard] = useState<ResellerTier | null>(null)
+  const [failed, setFailed] = useState<string | null>(null)
   const [showQr, setShowQr] = useState(false)
   const [origin, setOrigin] = useState('')
   useEffect(() => {
     setOrigin(window.location.origin)
     load()
-      .then(setCard)
-      .catch(() => setCard(null))
+      .then((next) => {
+        setCard(next)
+        setFailed(null)
+      })
+      .catch((cause: unknown) => {
+        setCard(null)
+        setFailed(cause instanceof Error ? cause.message : 'Your tier could not be loaded.')
+      })
   }, [load])
 
+  if (failed)
+    return (
+      <Glass className="rounded-glass p-4 text-small text-ink-300" role="status">
+        Your tier could not be loaded right now. {failed}
+      </Glass>
+    )
   if (!card) return null
   const style = tierStyle[card.tier]
   const rule = card.tiers.find((entry) => entry.tier === card.tier)
