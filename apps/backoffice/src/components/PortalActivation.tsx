@@ -29,7 +29,7 @@ export function PortalActivation({
           {!entitled
             ? 'Contact HUSTLERO to add the reseller portal to this business.'
             : !advancedWholesaleEnabled
-              ? 'The portal uses Advanced wholesale for prices, credit, and invoices. Turn on Advanced wholesale in Settings first.'
+              ? 'The portal uses Advanced wholesale for prices, credit, and invoices. Turn it on first in Setup → Edit feature choices. If Advanced wholesale is not offered there, its plan has ended: contact HUSTLERO.'
               : canToggle
                 ? 'Turn it on to let resellers apply, order at their wholesale prices, pay by GCash or bank, and track deliveries.'
                 : 'Ask the business owner to turn it on.'}
