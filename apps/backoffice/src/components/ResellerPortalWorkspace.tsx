@@ -881,7 +881,6 @@ function SettingsCard({
   const [priceList, setPriceList] = useState(admin.settings?.defaultPriceListId ?? '')
   const [open, setOpen] = useState(admin.settings?.applicationsOpen ?? true)
   const [instructions, setInstructions] = useState(admin.settings?.paymentInstructions ?? '')
-  const [copied, setCopied] = useState<'apply' | 'portal' | null>(null)
 
   function submit(event: FormEvent) {
     event.preventDefault()
@@ -958,36 +957,73 @@ function SettingsCard({
           <Button type="submit" variant="confirm" disabled={busy || !location}>
             {saving ? 'Saving…' : 'Save settings'}
           </Button>
-          {link ? (
-            <Button
-              size="sm"
-              onClick={() => {
-                void navigator.clipboard.writeText(link).then(() => setCopied('apply'))
-              }}
-            >
-              <Copy size={16} className="mr-2" />
-              {copied === 'apply' ? 'Link copied' : 'Copy application link'}
-            </Button>
-          ) : null}
-          {portalLink ? (
-            <Button
-              size="sm"
-              title="Your portal with your name and logo. Share it with approved resellers."
-              onClick={() => {
-                void navigator.clipboard.writeText(portalLink).then(() => setCopied('portal'))
-              }}
-            >
-              <Copy size={16} className="mr-2" />
-              {copied === 'portal' ? 'Link copied' : 'Copy sign-in link'}
-            </Button>
-          ) : (
-            <span className="text-sm text-ink-500">
-              Application link: /apply?b={admin.tenantSlug} on the reseller portal
-            </span>
-          )}
         </div>
       </form>
+      <div className="mt-5 flex flex-col gap-3 border-t border-ink-900/10 pt-5">
+        <ShareLink
+          label="Sign-in link"
+          hint="Your portal with your name and logo. Give it to approved resellers."
+          value={portalLink}
+          fallback={`/?b=${admin.tenantSlug} on the reseller portal`}
+        />
+        <ShareLink
+          label="Application link"
+          hint="For new resellers to apply. Works while Accept new applications is on."
+          value={link}
+          fallback={`/apply?b=${admin.tenantSlug} on the reseller portal`}
+        />
+      </div>
     </Glass>
+  )
+}
+
+/** A link shown in full so it can always be selected, with a Copy button that falls back to selecting it. */
+function ShareLink({
+  label,
+  hint,
+  value,
+  fallback,
+}: {
+  label: string
+  hint: string
+  value: string | null
+  fallback: string
+}) {
+  const field = useRef<HTMLInputElement>(null)
+  const [state, setState] = useState<'idle' | 'copied' | 'select'>('idle')
+  const shown = value ?? fallback
+  function copy() {
+    const select = () => {
+      field.current?.focus()
+      field.current?.select()
+      setState('select')
+    }
+    if (!value || !navigator.clipboard) return select()
+    navigator.clipboard.writeText(value).then(() => setState('copied'), select)
+  }
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={`share-${label}`} className="text-sm font-semibold">
+        {label}
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <input
+          ref={field}
+          id={`share-${label}`}
+          readOnly
+          value={shown}
+          onFocus={(event) => event.currentTarget.select()}
+          className="min-h-10 min-w-0 flex-1 rounded-control border border-ink-900/15 bg-white px-3 font-mono text-xs"
+        />
+        <Button size="sm" onClick={copy}>
+          <Copy size={16} className="mr-2" />
+          {state === 'copied' ? 'Copied' : 'Copy'}
+        </Button>
+      </div>
+      <span className="text-xs text-ink-500">
+        {state === 'select' ? 'Copying is blocked here. The link is selected: press Ctrl+C.' : hint}
+      </span>
+    </div>
   )
 }
 
