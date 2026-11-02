@@ -144,7 +144,7 @@ select is((select x->>'title' from jsonb_array_elements(app.load_reseller_notifi
   'Send your payment for RP-000003', 'the reseller is reminded within the last hour of the payment window');
 
 -- Branding.
-select is(app.load_reseller_portal_catalog('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001')->'branding'->>'portalName', 'Kape ni Juan Trading', 'the portal uses the business name until branding is set');
+select is(app.load_reseller_portal_catalog('aa000000-0000-4000-8000-000000000002', 'bb000000-0000-4000-8000-000000000001')->'branding'->>'portalName', 'Kape ni Juan Trading Reseller', 'the portal is "<business> Reseller" until branding is set');
 select is(app.save_reseller_portal_branding('aa000000-0000-4000-8000-000000000001', 'bb000000-0000-4000-8000-000000000001', '{"portalName":"Kape Resellers","accentColor":"emerald"}', 'brand-1')->>'accentColor', 'emerald',
   'the owner picks an accent color');
 select throws_ok($$ select app.save_reseller_portal_branding('aa000000-0000-4000-8000-000000000001', 'bb000000-0000-4000-8000-000000000001', '{"portalName":"Kape","accentColor":"neon"}', 'brand-2') $$, 'HCRP3', null,

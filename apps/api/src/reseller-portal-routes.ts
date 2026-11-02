@@ -1,3 +1,4 @@
+import { buildPortalManifest } from './reseller-portal-manifest'
 import {
   apiErrorResponseSchema,
   resellerAccountInviteRequestSchema,
@@ -357,6 +358,46 @@ export function registerResellerPortalRoutes(
       const { branding, ...portal } = await dependencies.repository.loadPublic(slug, context.env)
       const presented = await presentBranding(branding, context.env, dependencies.signFileKey)
       return context.json({ ...portal, ...(presented ? { branding: presented } : {}) })
+    })
+  })
+
+  // The installed app for one business: its name and logo on the reseller's home screen.
+  app.get('/v1/public/reseller-portal/:slug/manifest.webmanifest', (context) => {
+    const slug = context.req.param('slug')
+    const portalOrigin = context.env.RESELLER_ORIGIN
+    if (!portalOrigin || !slugPattern.test(slug) || slug.length > 63)
+      return fail(context, 404, 'RESELLER_PORTAL_UNAVAILABLE', 'The reseller portal is not available.')
+    return run(context, async () => {
+      const { branding, tenantSlug, businessName } = await dependencies.repository.loadPublic(slug, context.env)
+      const iconUrl = branding?.logoStorageKey
+        ? `${new URL(context.req.url).origin}/v1/public/reseller-portal/${encodeURIComponent(tenantSlug)}/icon`
+        : null
+      const manifest = buildPortalManifest({
+        portalOrigin,
+        iconUrl,
+        tenantSlug,
+        portalName: branding?.portalName ?? `${businessName} Reseller`,
+      })
+      return context.body(JSON.stringify(manifest), 200, {
+        'Content-Type': 'application/manifest+json',
+        'Cache-Control': 'public, max-age=300',
+      })
+    })
+  })
+
+  // The business logo as an app icon. Redirects to a fresh signed link so the bucket stays private.
+  app.get('/v1/public/reseller-portal/:slug/icon', (context) => {
+    const slug = context.req.param('slug')
+    if (!slugPattern.test(slug) || slug.length > 63)
+      return fail(context, 404, 'RESELLER_PORTAL_UNAVAILABLE', 'The reseller portal is not available.')
+    return run(context, async () => {
+      const { branding } = await dependencies.repository.loadPublic(slug, context.env)
+      const signed =
+        branding?.logoStorageKey && dependencies.signFileKey
+          ? await dependencies.signFileKey(branding.logoStorageKey, context.env).catch(() => null)
+          : null
+      if (!signed) return fail(context, 404, 'RESELLER_PORTAL_ICON_NOT_FOUND', 'This business has no logo.')
+      return new Response(null, { status: 302, headers: { Location: signed, 'Cache-Control': 'public, max-age=300' } })
     })
   })
 

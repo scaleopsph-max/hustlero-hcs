@@ -68,6 +68,12 @@ export function applicationLink(portalOrigin: string | undefined, tenantSlug: st
   return `${portalOrigin.replace(/\/$/, '')}/apply?b=${encodeURIComponent(tenantSlug)}`
 }
 
+/** The business's own portal link: its name, logo, and color on the sign-in page and the installed app. */
+export function signInLink(portalOrigin: string | undefined, tenantSlug: string): string | null {
+  if (!portalOrigin) return null
+  return `${portalOrigin.replace(/\/$/, '')}/?b=${encodeURIComponent(tenantSlug)}`
+}
+
 /** One key per pending command target; reused until the command succeeds so retries stay idempotent. */
 export function commandKey(keys: Map<string, string>, target: string): string {
   const existing = keys.get(target)

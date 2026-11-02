@@ -31,6 +31,11 @@ export function fileUrl(path: string): string {
   return `${(apiUrl ?? '').replace(/\/$/, '')}${path}`
 }
 
+/** The API origin, for links the browser fetches on its own (manifest, icons). */
+export function apiBase(): string | undefined {
+  return apiUrl
+}
+
 export function apiConfigured(): boolean {
   return Boolean(apiUrl)
 }

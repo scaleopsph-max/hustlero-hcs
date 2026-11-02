@@ -35,7 +35,9 @@ export function BrandingCard({
   onUploadLogo: (body: FormData) => Promise<void>
 }) {
   const toast = useToast()
-  const savedName = branding && branding.portalName !== businessName ? branding.portalName : ''
+  const defaultName = `${businessName} Reseller`
+  const savedName =
+    branding && branding.portalName !== defaultName && branding.portalName !== businessName ? branding.portalName : ''
   const [name, setName] = useState(savedName)
   const [accent, setAccent] = useState<ResellerAccentColor>(branding?.accentColor ?? 'gold')
   const [uploading, setUploading] = useState(false)
@@ -87,12 +89,14 @@ export function BrandingCard({
             Portal name
             <input
               className="min-h-10 rounded-control border border-ink-900/15 bg-white px-3 text-sm"
-              placeholder={businessName}
+              placeholder={defaultName}
               maxLength={60}
               value={name}
               onChange={(event) => setName(event.target.value)}
             />
-            <span className="text-xs font-normal text-ink-500">Leave blank to use {businessName}.</span>
+            <span className="text-xs font-normal text-ink-500">
+              Leave blank to use {defaultName}. Resellers see it on the sign-in page and their home screen.
+            </span>
           </label>
           <fieldset className="flex flex-col gap-2">
             <legend className="mb-1.5 text-sm font-semibold">Accent color</legend>
@@ -135,7 +139,7 @@ export function BrandingCard({
               ) : (
                 <span className="size-8 rounded-[10px]" style={{ background: swatch }} aria-hidden />
               )}
-              <span className="truncate font-semibold">{name.trim() || businessName}</span>
+              <span className="truncate font-semibold">{name.trim() || defaultName}</span>
             </div>
             <span
               className="inline-flex min-h-9 items-center justify-center rounded-full px-4 text-sm font-bold text-ink-950"
@@ -170,7 +174,9 @@ export function BrandingCard({
               </Button>
             ) : null}
           </div>
-          <p className="text-xs text-ink-500">Square works best. PNG, JPG, or WebP.</p>
+          <p className="text-xs text-ink-500">
+            Square, at least 512 × 512, works best: it is also the app icon on resellers' phones. PNG, JPG, or WebP.
+          </p>
         </div>
       </div>
     </Glass>

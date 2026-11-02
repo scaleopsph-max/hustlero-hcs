@@ -11,7 +11,8 @@ import { CircleCheck } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 
 import { applyAccent } from '@/lib/branding'
-import { fileUrl, portalRequest } from '@/lib/portal-api'
+import { applyBusinessHead, rememberBusinessSlug } from '@/lib/business-link'
+import { apiBase, fileUrl, portalRequest } from '@/lib/portal-api'
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -40,6 +41,12 @@ export function ApplicationForm() {
       .then((loaded) => {
         setPortal(loaded)
         applyAccent(loaded.branding?.accentColor)
+        rememberBusinessSlug(loaded.tenantSlug)
+        applyBusinessHead(apiBase(), {
+          slug: loaded.tenantSlug,
+          portalName: loaded.branding?.portalName ?? `${loaded.businessName} Reseller`,
+          hasLogo: Boolean(loaded.branding?.logoUrl),
+        })
       })
       .catch(() => setUnavailable(true))
   }, [])

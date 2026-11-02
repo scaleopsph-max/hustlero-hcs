@@ -650,6 +650,46 @@ describe('reseller portal API', () => {
     }
     expect(publicPage.branding).not.toHaveProperty('logoStorageKey')
     expect(String(publicPage.branding.logoUrl)).toMatch(/^\/v1\/files\//)
+
+    const manifest = await app.request(
+      'http://api.example.test/v1/public/reseller-portal/sample/manifest.webmanifest',
+      {},
+      signing,
+    )
+    expect(manifest.status).toBe(200)
+    expect(manifest.headers.get('content-type')).toContain('application/manifest+json')
+    const app_ = (await manifest.json()) as { name: string; start_url: string; icons: { src: string }[] }
+    expect(app_.name).toBe('Kape Resellers')
+    expect(app_.start_url).toBe('https://reseller.example.test/?b=sample&source=pwa')
+    expect(app_.icons[0]?.src).toBe('http://api.example.test/v1/public/reseller-portal/sample/icon')
+    const icon = await app.request('/v1/public/reseller-portal/sample/icon', {}, signing)
+    expect(icon.status).toBe(302)
+    expect(icon.headers.get('location')).toMatch(/^\/v1\/files\//)
+    expect((await app.request('/v1/public/reseller-portal/bad_slug!/manifest.webmanifest', {}, signing)).status).toBe(
+      404,
+    )
+    const noOrigin = { ...signing, RESELLER_ORIGIN: undefined }
+    expect((await app.request('/v1/public/reseller-portal/sample/manifest.webmanifest', {}, noOrigin)).status).toBe(404)
+  })
+
+  it('serves the default icons when a business has no logo', async () => {
+    const app = portalApp(
+      repository({
+        loadPublic: vi.fn(async (slug: string) => ({
+          tenantSlug: slug,
+          businessName: 'Sample Store',
+          configured: true,
+          applicationsOpen: true,
+          branding: { portalName: 'Sample Store Reseller', accentColor: 'gold' as const, logoStorageKey: null },
+        })),
+      }),
+    )
+    const manifest = (await (
+      await app.request('/v1/public/reseller-portal/sample/manifest.webmanifest', {}, bindings)
+    ).json()) as { short_name: string; icons: { src: string }[] }
+    expect(manifest.short_name).toBe('Sample Store')
+    expect(manifest.icons[0]?.src).toBe('https://reseller.example.test/icon-192.png')
+    expect((await app.request('/v1/public/reseller-portal/sample/icon', {}, bindings)).status).toBe(404)
   })
 
   it('shows a reseller their invoice and takes return requests', async () => {

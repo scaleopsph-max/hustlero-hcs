@@ -4,14 +4,19 @@ import { Button, Field, Glass, Logo } from '@hcs/ui'
 import { Mail } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 
-import { portalAuth } from '@/lib/portal-api'
+import { fileUrl, portalAuth } from '@/lib/portal-api'
 import { sendCodeError } from '@/lib/sign-in-errors'
 
 /**
  * Email one-time code sign-in. A typed code works inside an installed PWA,
  * where a magic link would open the regular browser instead.
  */
-export function SignIn() {
+export interface SignInBusiness {
+  portalName: string
+  logoUrl: string | null
+}
+
+export function SignIn({ business }: { business?: SignInBusiness | null }) {
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const [step, setStep] = useState<'email' | 'code'>('email')
@@ -50,9 +55,13 @@ export function SignIn() {
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-8 px-5 py-10">
       <div className="flex items-center gap-3">
-        <Logo size={44} />
-        <div>
-          <p className="font-display text-h3">Reseller Portal</p>
+        {business?.logoUrl ? (
+          <img src={fileUrl(business.logoUrl)} alt="" className="size-11 flex-none rounded-[14px] object-cover" />
+        ) : (
+          <Logo size={44} />
+        )}
+        <div className="min-w-0">
+          <p className="font-display text-h3 break-words">{business?.portalName ?? 'Reseller Portal'}</p>
           <p className="text-small text-ink-300">Order at your wholesale price, anytime.</p>
         </div>
       </div>

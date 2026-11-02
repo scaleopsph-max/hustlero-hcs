@@ -48,6 +48,7 @@ import { PortalActivation, PortalOffSwitch } from './PortalActivation'
 import { fileUrl } from './ProductPhotos'
 import {
   applicationLink,
+  signInLink,
   approvalRequest,
   commandKey,
   orderReviewRequest,
@@ -237,6 +238,7 @@ export function ResellerPortalWorkspace() {
 
   const canManage = admin.canManage !== false
   const link = applicationLink(portalOrigin, admin.tenantSlug)
+  const portalLink = signInLink(portalOrigin, admin.tenantSlug)
   const pendingApplications = admin.applications.filter((application) => application.status === 'pending')
   const awaiting = admin.awaitingPayment ?? []
   const tabs: { id: PortalTab; label: string; count: number }[] = [
@@ -592,6 +594,7 @@ export function ResellerPortalWorkspace() {
             busy={busy !== null}
             saving={busy === 'settings'}
             link={link}
+            portalLink={portalLink}
             onSave={(body) =>
               run(
                 'settings',
@@ -864,19 +867,21 @@ function SettingsCard({
   busy,
   saving,
   link,
+  portalLink,
   onSave,
 }: {
   admin: ResellerPortalAdmin
   busy: boolean
   saving: boolean
   link: string | null
+  portalLink: string | null
   onSave: (body: unknown) => void
 }) {
   const [location, setLocation] = useState(admin.settings?.fulfillmentLocationId ?? admin.locations[0]?.id ?? '')
   const [priceList, setPriceList] = useState(admin.settings?.defaultPriceListId ?? '')
   const [open, setOpen] = useState(admin.settings?.applicationsOpen ?? true)
   const [instructions, setInstructions] = useState(admin.settings?.paymentInstructions ?? '')
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState<'apply' | 'portal' | null>(null)
 
   function submit(event: FormEvent) {
     event.preventDefault()
@@ -957,11 +962,23 @@ function SettingsCard({
             <Button
               size="sm"
               onClick={() => {
-                void navigator.clipboard.writeText(link).then(() => setCopied(true))
+                void navigator.clipboard.writeText(link).then(() => setCopied('apply'))
               }}
             >
               <Copy size={16} className="mr-2" />
-              {copied ? 'Link copied' : 'Copy application link'}
+              {copied === 'apply' ? 'Link copied' : 'Copy application link'}
+            </Button>
+          ) : null}
+          {portalLink ? (
+            <Button
+              size="sm"
+              title="Your portal with your name and logo. Share it with approved resellers."
+              onClick={() => {
+                void navigator.clipboard.writeText(portalLink).then(() => setCopied('portal'))
+              }}
+            >
+              <Copy size={16} className="mr-2" />
+              {copied === 'portal' ? 'Link copied' : 'Copy sign-in link'}
             </Button>
           ) : (
             <span className="text-sm text-ink-500">

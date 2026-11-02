@@ -16,6 +16,7 @@ import {
   resellerFavoriteResponseSchema,
   resellerStockAlertResponseSchema,
   resellerPortalSessionSchema,
+  resellerPortalPublicSchema,
   type ResellerNotification,
   type ResellerCatalogItem,
   resellerTierSchema,
@@ -28,6 +29,7 @@ import {
   type ResellerOrderSubmitRequest,
   type ResellerPortalCatalog,
   type ResellerPortalSession,
+  type ResellerPortalPublic,
 } from '@hcs/contracts'
 import {
   Button,
@@ -49,8 +51,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 
 import { readCart, setCartQuantity, summarizeCart, writeCart, type CartLine } from '@/lib/cart'
 import { applyAccent } from '@/lib/branding'
+import { applyBusinessHead, forgetBusinessSlug, readBusinessSlug, rememberBusinessSlug } from '@/lib/business-link'
 import {
   PortalApiError,
+  apiBase,
   fileUrl,
   newIdempotencyKey,
   portalAuth,
@@ -83,6 +87,8 @@ export function PortalApp() {
   const [session, setSession] = useState<ResellerPortalSession | null>(null)
   const [tenantId, setTenantId] = useState<string | null>(null)
   const [catalog, setCatalog] = useState<ResellerPortalCatalog | null>(null)
+  // The business named in the link (or opened last on this phone): branding before sign-in.
+  const [business, setBusiness] = useState<ResellerPortalPublic | null>(null)
   const [invoiceView, setInvoiceView] = useState<{
     invoice: ResellerInvoice | null
     loading: boolean
@@ -128,8 +134,12 @@ export function PortalApp() {
     portalRequest('/v1/portal/session', (value) => resellerPortalSessionSchema.parse(value), { token })
       .then((next) => {
         setSession(next)
+        const linked = readBusinessSlug()
         const stored = readSelectedTenant()
-        const chosen = next.accounts.find((entry) => entry.tenantId === stored) ?? next.accounts[0]
+        const chosen =
+          next.accounts.find((entry) => entry.tenantSlug === linked) ??
+          next.accounts.find((entry) => entry.tenantId === stored) ??
+          next.accounts[0]
         setTenantId(chosen?.tenantId ?? null)
       })
       .catch((sessionError: unknown) => setError(messageOf(sessionError)))
@@ -396,10 +406,47 @@ export function PortalApp() {
     [tenantId],
   )
 
+  // Before sign-in, a business link (/?b=pablo) shows that business's name, logo, and color.
+  useEffect(() => {
+    const slug = readBusinessSlug()
+    if (!slug) return
+    let active = true
+    portalRequest(`/v1/public/reseller-portal/${slug}`, (value) => resellerPortalPublicSchema.parse(value))
+      .then((loaded) => {
+        if (!active) return
+        setBusiness(loaded)
+        rememberBusinessSlug(loaded.tenantSlug)
+        applyBusinessHead(apiBase(), {
+          slug: loaded.tenantSlug,
+          portalName: loaded.branding?.portalName ?? `${loaded.businessName} Reseller`,
+          hasLogo: Boolean(loaded.branding?.logoUrl),
+        })
+      })
+      .catch((loadError: unknown) => {
+        // An unknown or closed business falls back to the plain portal; a dropped signal keeps the link.
+        if (loadError instanceof PortalApiError && loadError.status === 404) forgetBusinessSlug()
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
   // The business's accent color recolors the portal.
   useEffect(() => {
-    applyAccent(catalog?.branding?.accentColor)
-  }, [catalog?.branding?.accentColor])
+    applyAccent(catalog?.branding?.accentColor ?? business?.branding?.accentColor)
+  }, [catalog?.branding?.accentColor, business?.branding?.accentColor])
+
+  // Signed in, the open business becomes this phone's business: its name and icon for the installed app.
+  const openBusiness = session?.accounts.find((entry) => entry.tenantId === tenantId)
+  useEffect(() => {
+    if (!catalog || !openBusiness) return
+    rememberBusinessSlug(openBusiness.tenantSlug)
+    applyBusinessHead(apiBase(), {
+      slug: openBusiness.tenantSlug,
+      portalName: catalog.branding?.portalName ?? `${openBusiness.businessName} Reseller`,
+      hasLogo: Boolean(catalog.branding?.logoUrl),
+    })
+  }, [catalog, openBusiness])
 
   const cartCount = useMemo(() => (catalog ? summarizeCart(cart, catalog.items).itemCount : 0), [cart, catalog])
 
@@ -533,7 +580,19 @@ export function PortalApp() {
 
   let body: ReactNode
   if (!authReady) body = <Loading />
-  else if (!token) body = <SignIn />
+  else if (!token)
+    body = (
+      <SignIn
+        business={
+          business
+            ? {
+                portalName: business.branding?.portalName ?? `${business.businessName} Reseller`,
+                logoUrl: business.branding?.logoUrl ?? null,
+              }
+            : null
+        }
+      />
+    )
   else if (error && !catalog)
     body = (
       <Centered>

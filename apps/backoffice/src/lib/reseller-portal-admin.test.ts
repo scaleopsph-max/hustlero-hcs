@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   accountRequest,
   applicationLink,
+  signInLink,
   approvalRequest,
   commandKey,
   orderReviewRequest,
@@ -53,6 +54,10 @@ describe('reseller portal admin helpers', () => {
       'https://reseller.example.test/apply?b=kape-ni-juan',
     )
     expect(applicationLink(undefined, 'kape-ni-juan')).toBeNull()
+    expect(signInLink('https://reseller.example.test/', 'kape-ni-juan')).toBe(
+      'https://reseller.example.test/?b=kape-ni-juan',
+    )
+    expect(signInLink(undefined, 'kape-ni-juan')).toBeNull()
   })
 
   it('reuses a command key for the same target until cleared', () => {
