@@ -36,6 +36,16 @@ Production stays a separate, later approval.
 5. Supabase Auth redirect for the portal; entitlements for the UAT business; owner turns the portal on.
 6. UAT with generated businesses and resellers only.
 
+## Lessons from the first Staging sign-in (Nov 2)
+
+- `401` on `/auth/v1/otp`: the reseller build carried the wrong publishable key. Rebuild with the Staging
+  `sb_publishable_` key and check the built `dist/client` before deploying.
+- `500` with `535 5.7.8 Username and Password not accepted`: Gmail SMTP needs a Google App Password (no spaces) and
+  the same Gmail as Username and Sender email.
+- Staging Auth needs the same email setup as Development: custom SMTP, `{{ .Token }}` in the Magic Link and Confirm
+  signup templates, Email provider and sign-ups on, OTP length 6, a raised email rate limit, and the reseller redirect.
+- The UAT business's Advanced wholesale entitlement had expired (ended Oct 14); renew entitlements before UAT.
+
 ## Rollback
 
 API and web apps: `wrangler rollback <previous-version-id> --name <worker>` (see RECOVERY_RUNBOOK.md). Database: the
