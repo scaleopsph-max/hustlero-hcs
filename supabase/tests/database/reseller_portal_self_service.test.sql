@@ -47,9 +47,9 @@ select app.save_reseller_portal_settings('aa000000-0000-4000-8000-000000000001',
     'defaultPriceListId', (select id from app.price_lists where tenant_id = 'bb000000-0000-4000-8000-000000000001' and code = 'RESELLER'),
     'applicationsOpen', true, 'autoConfirm', true), 'seed-settings-00001', 'seed', 'seed');
 select app.submit_reseller_application('kape-ni-juan',
-  '{"fullName":"Maria Santos","businessName":"Maria Sari-Sari Store","email":"maria@demo.invalid","phone":"09171234567","city":"Tagaytay"}', 'seed');
+  '{"fullName":"Maria Santos","businessName":"Maria Sari-Sari Store","email":"maria@demo.invalid","phone":"09171234567","address":{"line":"Blk 4 Lot 12, Mabini St.","barangayCode":"0402119001","barangay":"Kaybagal Central","cityCode":"0402119000","city":"Tagaytay City","provinceCode":"0402100000","province":"Cavite"}}', 'seed');
 select app.submit_reseller_application('kape-ni-juan',
-  '{"fullName":"Jun dela Cruz","email":"jun@demo.invalid","phone":"09181112222","city":"Silang","message":"May tindahan po ako malapit sa palengke."}', 'seed');
+  '{"fullName":"Jun dela Cruz","email":"jun@demo.invalid","phone":"09181112222","message":"May tindahan po ako malapit sa palengke.","address":{"line":"Blk 4 Lot 12, Mabini St.","barangayCode":"0402119001","barangay":"Kaybagal Central","cityCode":"0402119000","city":"Tagaytay City","provinceCode":"0402100000","province":"Cavite"}}', 'seed');
 select app.decide_reseller_application('aa000000-0000-4000-8000-000000000001', 'bb000000-0000-4000-8000-000000000001',
   (select id from app.reseller_applications where email = 'maria@demo.invalid'),
   jsonb_build_object('decision', 'approve',

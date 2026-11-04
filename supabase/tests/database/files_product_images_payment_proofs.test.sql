@@ -101,7 +101,7 @@ select lives_ok($$
     jsonb_build_object('fulfillmentLocationId', '3f200000-0000-4000-8000-000000000001', 'applicationsOpen', true, 'autoConfirm', true),
     'files-settings-key-1', 'h', 'r')
 $$, 'portal is configured');
-select app.submit_reseller_application('files-a', '{"fullName":"Rosa Reyes","email":"files-reseller@example.invalid","phone":"09170000001"}', 'r');
+select app.submit_reseller_application('files-a', '{"fullName":"Rosa Reyes","email":"files-reseller@example.invalid","phone":"09170000001","address":{"line":"Blk 4 Lot 12, Mabini St.","barangayCode":"0402119001","barangay":"Kaybagal Central","cityCode":"0402119000","city":"Tagaytay City","provinceCode":"0402100000","province":"Cavite"}}', 'r');
 select lives_ok($$
   select app.decide_reseller_application('1f200000-0000-4000-8000-000000000001', '2f200000-0000-4000-8000-000000000001',
     (select id from app.reseller_applications where tenant_id = '2f200000-0000-4000-8000-000000000001'),

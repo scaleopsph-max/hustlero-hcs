@@ -23,6 +23,7 @@ import {
 import { useEffect, useState } from 'react'
 
 import { compactPeso, paymentTermLabel } from '@/lib/labels'
+import { formatAddress } from '@/lib/ph-address'
 import { nextTierProgress, tierLabel, tierStyle } from '@/lib/tiers'
 
 import { LoyaltyCard } from './LoyaltyCard'
@@ -121,6 +122,10 @@ export function AccountView({
               value={account.paymentTerm ? paymentTermLabel[account.paymentTerm] : 'Not set yet'}
             />
             <Detail label="Price list" value={account.priceListName} />
+            <Detail
+              label="Delivery address"
+              value={account.deliveryAddress ? formatAddress(account.deliveryAddress) : 'Not set yet'}
+            />
             <Detail label="Pickup and dispatch" value={catalog.fulfillmentLocationName} />
           </Glass>
         )}

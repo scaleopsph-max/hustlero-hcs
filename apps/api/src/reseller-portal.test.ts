@@ -22,6 +22,15 @@ const variantId = '50000000-0000-4000-8000-000000000001'
 const orderId = '60000000-0000-4000-8000-000000000001'
 const applicationId = '70000000-0000-4000-8000-000000000001'
 const bindings = { ENVIRONMENT: 'test', RESELLER_ORIGIN: 'https://reseller.example.test' }
+const address = {
+  line: 'Blk 4 Lot 12, Mabini St.',
+  barangayCode: '0402119001',
+  barangay: 'Kaybagal Central',
+  cityCode: '0402119000',
+  city: 'Tagaytay City',
+  provinceCode: '0402100000',
+  province: 'Cavite',
+}
 
 const catalog: Omit<ResellerPortalCatalog, 'branding'> = {
   account: {
@@ -160,14 +169,19 @@ describe('reseller portal API', () => {
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ fullName: 'Maria Santos', email: 'maria@example.test', phone: '0917-123-4567' }),
+        body: JSON.stringify({
+          fullName: 'Maria Santos',
+          email: 'maria@example.test',
+          phone: '+63 917 123 4567',
+          address: { ...address, line: '  Blk 4 Lot 12, Mabini St.  ' },
+        }),
       },
       bindings,
     )
     expect(received.status).toBe(202)
     expect(repo.submitApplication).toHaveBeenCalledWith(
       'sample-store',
-      { fullName: 'Maria Santos', email: 'maria@example.test', phone: '09171234567' },
+      { fullName: 'Maria Santos', email: 'maria@example.test', phone: '09171234567', address },
       expect.any(String),
       bindings,
     )
@@ -183,12 +197,38 @@ describe('reseller portal API', () => {
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ fullName: 'Maria Santos', email: 'maria@example.test', phone: '09171234567' }),
+        body: JSON.stringify({ fullName: 'Maria Santos', email: 'maria@example.test', phone: '09171234567', address }),
       },
       bindings,
     )
     expect(response.status).toBe(409)
     expect(apiErrorResponseSchema.parse(await response.json()).error.code).toBe('RESELLER_APPLICATIONS_CLOSED')
+  })
+
+  it('refuses an email or mobile number already used with the business, and applications without an address', async () => {
+    const submitApplication = vi.fn(async () => Promise.reject(postgresError('HCRPA')))
+    const app = portalApp(repository({ submitApplication }))
+    const send = (body: unknown) =>
+      app.request(
+        '/v1/public/reseller-portal/sample-store/applications',
+        { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) },
+        bindings,
+      )
+    const duplicate = await send({
+      fullName: 'Maria Santos',
+      email: 'maria@example.test',
+      phone: '09171234567',
+      address,
+    })
+    expect(duplicate.status).toBe(409)
+    expect(apiErrorResponseSchema.parse(await duplicate.json()).error.code).toBe('RESELLER_ALREADY_APPLIED')
+    expect((await send({ fullName: 'Maria Santos', email: 'maria@example.test', phone: '09171234567' })).status).toBe(
+      400,
+    )
+    expect(
+      (await send({ fullName: 'Maria Santos', email: 'maria@example.test', phone: '0281234567', address })).status,
+    ).toBe(400)
+    expect(submitApplication).toHaveBeenCalledTimes(1)
   })
 
   it('requires a verified reseller token and a selected business', async () => {

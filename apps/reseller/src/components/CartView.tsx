@@ -11,6 +11,7 @@ import { CircleCheck, Clock, ShoppingCart, TriangleAlert, Upload } from 'lucide-
 import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 
 import { formatQuantity, shippingFeeFor, summarizeCart, type CartLine } from '@/lib/cart'
+import { formatAddress } from '@/lib/ph-address'
 import { formatTime, paymentLabel, reviewReasonLabel, stockLabel } from '@/lib/labels'
 import { newIdempotencyKey } from '@/lib/portal-api'
 import { readStockIssues, stockIssueText } from '@/lib/stock-issues'
@@ -39,7 +40,10 @@ export function CartView({
   const summary = useMemo(() => summarizeCart(cart, catalog.items), [cart, catalog.items])
   const holdHours = catalog.payment?.holdHours ?? 4
   const [method, setMethod] = useState<'delivery' | 'pickup'>('delivery')
-  const [address, setAddress] = useState('')
+  // Starts from the address given when applying; the reseller can change it for this order.
+  const [address, setAddress] = useState(() =>
+    catalog.account.deliveryAddress ? formatAddress(catalog.account.deliveryAddress) : '',
+  )
   const [payment, setPayment] = useState<'gcash' | 'bank_transfer'>('gcash')
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)

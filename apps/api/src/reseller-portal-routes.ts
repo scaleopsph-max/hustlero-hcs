@@ -164,6 +164,12 @@ const errorMap: Record<string, { status: ContentfulStatusCode; code: string; mes
     message: 'Add more items to reach the wholesale minimum quantity.',
   },
   HCRP6: { status: 409, code: 'RESELLER_APPLICATIONS_CLOSED', message: 'Reseller applications are closed right now.' },
+  HCRPA: {
+    status: 409,
+    code: 'RESELLER_ALREADY_APPLIED',
+    message:
+      'This email or mobile number is already used with this business. Sign in instead, or contact the business.',
+  },
   HCRP7: {
     status: 409,
     code: 'RESELLER_ITEM_OUT_OF_STOCK',
@@ -407,7 +413,12 @@ export function registerResellerPortalRoutes(
       return fail(context, 404, 'RESELLER_PORTAL_UNAVAILABLE', 'The reseller portal is not available.')
     const request = await readJson(context, resellerApplicationRequestSchema)
     if (!request)
-      return fail(context, 400, 'INVALID_RESELLER_APPLICATION', 'Check your name, email, and mobile number.')
+      return fail(
+        context,
+        400,
+        'INVALID_RESELLER_APPLICATION',
+        'Check your name, email, mobile number (09XX XXX XXXX), and address.',
+      )
     return run(context, async () =>
       context.json(
         await dependencies.repository.submitApplication(slug, request, context.get('requestId'), context.env),

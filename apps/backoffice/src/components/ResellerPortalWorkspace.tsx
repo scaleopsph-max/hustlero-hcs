@@ -1213,8 +1213,20 @@ function ApplicationCard({
           </p>
           <p className="text-sm text-ink-500">
             {application.email} · {application.phone}
-            {application.city ? ` · ${application.city}` : ''}
+            {!application.address && application.city ? ` · ${application.city}` : ''}
           </p>
+          {application.address ? (
+            <p className="mt-1 text-sm text-ink-700">
+              {[
+                application.address.line,
+                /^barangay\s/i.test(application.address.barangay)
+                  ? application.address.barangay
+                  : `Brgy. ${application.address.barangay}`,
+                application.address.city,
+                application.address.province,
+              ].join(', ')}
+            </p>
+          ) : null}
           {application.message ? <p className="mt-1 text-sm text-ink-700">“{application.message}”</p> : null}
           {application.referredByName ? (
             <p className="mt-1 text-sm text-ink-700">Referred by {application.referredByName}</p>

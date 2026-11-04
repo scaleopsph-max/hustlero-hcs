@@ -3,3 +3,4 @@
 **/dist/
 **/next-env.d.ts
 node_modules/
+apps/reseller/public/ph-address/

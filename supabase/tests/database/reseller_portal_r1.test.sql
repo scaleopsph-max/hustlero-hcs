@@ -72,7 +72,7 @@ select lives_ok($$
 $$, 'reseller price list is configured');
 
 -- Public application form.
-select throws_ok($$ select app.submit_reseller_application('portal-a', '{"fullName":"Maria Santos","email":"maria@example.invalid","phone":"09171234567"}', 'req-app-0') $$,
+select throws_ok($$ select app.submit_reseller_application('portal-a', '{"fullName":"Maria Santos","email":"maria@example.invalid","phone":"09171234567","address":{"line":"Blk 4 Lot 12, Mabini St.","barangayCode":"0402119001","barangay":"Kaybagal Central","cityCode":"0402119000","city":"Tagaytay City","provinceCode":"0402100000","province":"Cavite"}}', 'req-app-0') $$,
   'HCRP6', null, 'applications are closed until the portal is configured');
 select lives_ok($$
   select app.save_reseller_portal_settings('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
@@ -84,13 +84,27 @@ $$, 'owner saves portal settings');
 select is(app.load_reseller_portal_public('PORTAL-A')->>'applicationsOpen', 'true', 'public portal info is resolved by tenant slug');
 select throws_ok($$ select app.load_reseller_portal_public('no-such-business') $$, 'HCRP0', null, 'unknown slugs are not disclosed');
 select is(app.submit_reseller_application('portal-a',
-  '{"fullName":"Maria Santos","businessName":"Maria Sari-Sari","email":"Maria@Example.invalid","phone":"0917-123-4567","city":"Tagaytay"}',
+  '{"fullName":"Maria Santos","businessName":"Maria Sari-Sari","email":"Maria@Example.invalid","phone":"0917-123-4567","address":{"line":"Blk 4 Lot 12, Mabini St.","barangayCode":"0402119001","barangay":"Kaybagal Central","cityCode":"0402119000","city":"Tagaytay City","provinceCode":"0402100000","province":"Cavite"}}',
   'req-app-1')->>'status', 'received', 'a public application is received');
-select is(app.submit_reseller_application('portal-a',
-  '{"fullName":"Maria Again","email":"maria@example.invalid","phone":"09171234567"}', 'req-app-2')->>'status', 'received',
-  'a duplicate pending application is acknowledged the same way');
+select throws_ok($$ select app.submit_reseller_application('portal-a',
+  '{"fullName":"Maria Again","email":"maria@example.invalid","phone":"09179999999","address":{"line":"Blk 4 Lot 12, Mabini St.","barangayCode":"0402119001","barangay":"Kaybagal Central","cityCode":"0402119000","city":"Tagaytay City","provinceCode":"0402100000","province":"Cavite"}}', 'req-app-2') $$,
+  'HCRPA', null, 'the same email cannot apply twice to one business');
+select throws_ok($$ select app.submit_reseller_application('portal-a',
+  '{"fullName":"Maria Again","email":"other@example.invalid","phone":"+63 917 123 4567","address":{"line":"Blk 4 Lot 12, Mabini St.","barangayCode":"0402119001","barangay":"Kaybagal Central","cityCode":"0402119000","city":"Tagaytay City","provinceCode":"0402100000","province":"Cavite"}}', 'req-app-2b') $$,
+  'HCRPA', null, 'the same mobile number, in any format, cannot apply twice to one business');
 select is((select count(*)::integer from app.reseller_applications where tenant_id = '2e100000-0000-4000-8000-000000000001'), 1,
-  'duplicate pending applications are not stored twice');
+  'duplicate applications are not stored');
+select is((select address->>'city' || '|' || city || '|' || phone from app.reseller_applications where tenant_id = '2e100000-0000-4000-8000-000000000001'),
+  'Tagaytay City|Tagaytay City|09171234567', 'the address is kept and the mobile number is stored as 09XXXXXXXXX');
+select throws_ok($$ select app.submit_reseller_application('portal-a',
+  '{"fullName":"No Address","email":"noaddr@example.invalid","phone":"09175550000"}', 'req-app-2c') $$,
+  'HCRP3', null, 'an application needs a delivery address');
+select throws_ok($$ select app.submit_reseller_application('portal-a',
+  '{"fullName":"Short Line","email":"short@example.invalid","phone":"09175550001","address":{"line":"x","barangayCode":"0402119001","barangay":"Kaybagal Central","cityCode":"0402119000","city":"Tagaytay City","provinceCode":"0402100000","province":"Cavite"}}', 'req-app-2d') $$,
+  'HCRP3', null, 'the house and street details are required');
+select throws_ok($$ select app.submit_reseller_application('portal-a',
+  '{"fullName":"Landline","email":"landline@example.invalid","phone":"0281234567","address":{"line":"Blk 4 Lot 12, Mabini St.","barangayCode":"0402119001","barangay":"Kaybagal Central","cityCode":"0402119000","city":"Tagaytay City","provinceCode":"0402100000","province":"Cavite"}}', 'req-app-2e') $$,
+  'HCRP3', null, 'a Philippine mobile number is required');
 select throws_ok($$ select app.submit_reseller_application('portal-a', '{"fullName":"X","email":"bad","phone":"1"}', 'req-app-3') $$,
   'HCRP3', null, 'invalid applications are rejected');
 select throws_ok($$ select app.submit_reseller_application('portal-a', '{"fullName":"Maria Santos","email":"m@example.invalid","phone":"09171234567","role":"owner"}', 'req-app-4') $$,
@@ -117,6 +131,21 @@ select throws_ok($$ select app.decide_reseller_application('1e100000-0000-4000-8
   (select id from app.reseller_applications where tenant_id = '2e100000-0000-4000-8000-000000000001'),
   '{"decision":"reject","reason":"Second decision"}', 'portal-approve-key-02', 'reject-hash', 'reject-request') $$,
   'HCRA5', null, 'a decided application cannot be decided again');
+select is((select delivery_address->>'line' || ', ' || (delivery_address->>'barangay') from app.reseller_accounts
+  where tenant_id = '2e100000-0000-4000-8000-000000000001'), 'Blk 4 Lot 12, Mabini St., Kaybagal Central',
+  'approval copies the application address to the reseller account');
+select throws_ok($$ select app.submit_reseller_application('portal-a',
+  '{"fullName":"Maria Santos","email":"MARIA@example.invalid","phone":"09170001111","address":{"line":"Blk 4 Lot 12, Mabini St.","barangayCode":"0402119001","barangay":"Kaybagal Central","cityCode":"0402119000","city":"Tagaytay City","provinceCode":"0402100000","province":"Cavite"}}', 'req-app-dup-approved') $$,
+  'HCRPA', null, 'an approved reseller cannot apply again');
+select is(app.submit_reseller_application('portal-a',
+  '{"fullName":"Pedro Cruz","email":"pedro@example.invalid","phone":"09182223333","address":{"line":"Blk 4 Lot 12, Mabini St.","barangayCode":"0402119001","barangay":"Kaybagal Central","cityCode":"0402119000","city":"Tagaytay City","provinceCode":"0402100000","province":"Cavite"}}', 'req-pedro-1')->>'status', 'received',
+  'another applicant is received');
+select app.decide_reseller_application('1e100000-0000-4000-8000-000000000001', '2e100000-0000-4000-8000-000000000001',
+  (select id from app.reseller_applications where email = 'pedro@example.invalid'),
+  '{"decision":"reject","reason":"Incomplete details"}', 'portal-reject-pedro', 'reject-pedro', 'reject-pedro');
+select is(app.submit_reseller_application('portal-a',
+  '{"fullName":"Pedro Cruz","email":"pedro@example.invalid","phone":"09182223333","address":{"line":"Blk 4 Lot 12, Mabini St.","barangayCode":"0402119001","barangay":"Kaybagal Central","cityCode":"0402119000","city":"Tagaytay City","provinceCode":"0402100000","province":"Cavite"}}', 'req-pedro-2')->>'status', 'received',
+  'a declined applicant may apply again');
 
 -- Sign-in linking requires the invited, verified email.
 select is(jsonb_array_length(app.load_reseller_portal_session('1e100000-0000-4000-8000-000000000011')->'accounts'), 0,
@@ -129,6 +158,10 @@ select is((select status from app.reseller_accounts where tenant_id = '2e100000-
   'linking activates the account');
 
 -- Catalog: reseller price, SRP, and stock badges only.
+select is(app.load_reseller_portal_catalog('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001')->'account'->'deliveryAddress'->>'city',
+  'Tagaytay City', 'the portal knows the reseller''s delivery address');
+select ok((select bool_and(entry ? 'address') from jsonb_array_elements(app.load_reseller_portal_admin('1e100000-0000-4000-8000-000000000001',
+  '2e100000-0000-4000-8000-000000000001')->'applications') entry), 'the Back Office sees each applicant''s address');
 select is(jsonb_array_length(app.load_reseller_portal_catalog('1e100000-0000-4000-8000-000000000010', '2e100000-0000-4000-8000-000000000001')->'items'), 3,
   'reseller sees every variant in the assigned price list');
 select is((select item->>'stockStatus' from jsonb_array_elements(app.load_reseller_portal_catalog('1e100000-0000-4000-8000-000000000010',

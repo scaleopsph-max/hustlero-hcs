@@ -66,6 +66,26 @@ export const resellerPortalPublicSchema = z.object({
   applicationsOpen: z.boolean(),
 })
 
+const psgcCode = z.string().regex(/^[0-9]{10}$/)
+/** A Philippine delivery address: places from the PSGC lists, plus house number, street, and building. */
+export const resellerAddressSchema = z.strictObject({
+  line: z.string().trim().min(5).max(200),
+  barangayCode: psgcCode,
+  barangay: z.string().trim().min(1).max(120),
+  cityCode: psgcCode,
+  city: z.string().trim().min(2).max(120),
+  provinceCode: psgcCode,
+  province: z.string().trim().min(2).max(120),
+})
+
+/** "+63 917 123 4567", "639171234567", and "0917-123-4567" all become "09171234567". */
+export function normalizePhMobile(value: string): string {
+  const digits = value.replace(/[^0-9]/g, '')
+  if (/^63[0-9]{10}$/.test(digits)) return `0${digits.slice(2)}`
+  if (/^9[0-9]{9}$/.test(digits)) return `0${digits}`
+  return digits
+}
+
 export const resellerApplicationRequestSchema = z.strictObject({
   fullName: z.string().trim().min(2).max(160),
   businessName: z.string().trim().min(2).max(160).optional(),
@@ -73,9 +93,9 @@ export const resellerApplicationRequestSchema = z.strictObject({
   phone: z
     .string()
     .trim()
-    .transform((value) => value.replace(/[^0-9+]/g, ''))
-    .pipe(z.string().regex(/^\+?[0-9]{7,15}$/)),
-  city: z.string().trim().min(2).max(120).optional(),
+    .transform(normalizePhMobile)
+    .pipe(z.string().regex(/^09[0-9]{9}$/)),
+  address: resellerAddressSchema,
   message: z.string().trim().max(1000).optional(),
   /** From a reseller's referral link; an unknown code is ignored. */
   referralCode: z
@@ -150,6 +170,8 @@ export const resellerPortalCatalogSchema = z.object({
     creditLimitMinor: minor.nullable(),
     availableCreditMinor: minor.nullable(),
     pointsBalance: z.number().int().nonnegative(),
+    /** Where this reseller's orders are delivered by default; null until known. */
+    deliveryAddress: resellerAddressSchema.nullable().optional(),
     tier: z.lazy(() => resellerTierNameSchema).optional(),
     /** Set when this reseller can order on credit right now: what is left of the limit. */
     creditOrderingMinor: minor.nullable().optional(),
@@ -535,6 +557,7 @@ export const resellerPortalAdminSchema = z.object({
       email: z.string().min(1),
       phone: z.string().min(1),
       city: z.string().nullable(),
+      address: resellerAddressSchema.nullable().optional(),
       message: z.string().nullable(),
       status: z.enum(['pending', 'approved', 'rejected']),
       decisionReason: z.string().nullable(),
@@ -802,6 +825,7 @@ export type ResellerPointsSettingsRequest = z.infer<typeof resellerPointsSetting
 
 export type ResellerAccentColor = z.infer<typeof resellerAccentColorSchema>
 export type ResellerBranding = z.infer<typeof resellerBrandingSchema>
+export type ResellerAddress = z.infer<typeof resellerAddressSchema>
 export type ResellerBrandingSaveRequest = z.infer<typeof resellerBrandingSaveRequestSchema>
 
 // Shipping fee ---------------------------------------------------------------

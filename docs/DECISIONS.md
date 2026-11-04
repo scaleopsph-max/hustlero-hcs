@@ -261,3 +261,14 @@ authorized by these development decisions.
   - **Later.** A subdomain per business (`<slug>.<domain>`) once the owner buys a domain; custom domains per business as a paid add-on.
 - **Reason:** Owner request on 2026-11-02 to show "LOKAL RECIPE Reseller", "PABLO Reseller", and so on based on the business, with the installed app branded too.
 - **Review trigger:** Moving to subdomains or custom domains.
+
+## ADR-056: Reseller applications need a delivery address and refuse duplicates
+
+- **Date:** 2026-11-04
+- **Status:** Accepted
+- **Decision:**
+  - **Address.** The application form asks for a delivery address: province, city or municipality, and barangay picked from the official PSGC lists (Philippine Statistics Authority, via `@aivangogh/ph-address`, generated into `apps/reseller/public/ph-address` by `scripts/generate-ph-address.mjs`), plus house number, street, and building typed in. Metro Manila is listed as a province and Manila's districts are folded into Manila City. The address is kept on the application (`address`, PSGC codes and names), shown in the Back Office, and copied to the reseller account on approval as the default delivery address, which fills the cart's delivery address and appears in Account details. It can still be changed per order.
+  - **Mobile number.** A Philippine mobile number is required and stored as `09XXXXXXXXX` (`+63 917…`, `0917-…` and `917…` are accepted).
+  - **Duplicates.** Within one business, an email or mobile number already on a pending or approved application, or on a reseller account, cannot apply again; the applicant is told to sign in or contact the business (`HCRPA`, 409 `RESELLER_ALREADY_APPLIED`). Declined applicants may reapply. Other businesses are not checked, so one person can resell for several. This replaces the earlier silent acknowledgment of duplicate applications; it reveals that an email or number is already used with that business, which the owner accepted.
+- **Reason:** Owner request on 2026-11-04, with "per business" and "declined may reapply" chosen the same day.
+- **Review trigger:** Editing the delivery address from the portal, several saved addresses, or courier integration.

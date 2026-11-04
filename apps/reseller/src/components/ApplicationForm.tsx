@@ -8,11 +8,14 @@ import {
 } from '@hcs/contracts'
 import { Button, Field, Glass, Logo, StateCard, Surface } from '@hcs/ui'
 import { CircleCheck } from 'lucide-react'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 
 import { applyAccent } from '@/lib/branding'
+import type { Place, Province } from '@/lib/ph-address'
 import { applyBusinessHead, rememberBusinessSlug } from '@/lib/business-link'
-import { apiBase, fileUrl, portalRequest } from '@/lib/portal-api'
+import { PortalApiError, apiBase, fileUrl, portalRequest } from '@/lib/portal-api'
+
+import { AddressPicker, addressFromDraft, emptyAddressDraft, type AddressDraft } from './AddressPicker'
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -22,7 +25,17 @@ export function ApplicationForm() {
   const [referralCode, setReferralCode] = useState<string | null>(null)
   const [portal, setPortal] = useState<ResellerPortalPublic | null>(null)
   const [unavailable, setUnavailable] = useState(false)
-  const [form, setForm] = useState({ fullName: '', businessName: '', email: '', phone: '', city: '', message: '' })
+  const [form, setForm] = useState({ fullName: '', businessName: '', email: '', phone: '', message: '' })
+  const [address, setAddress] = useState<AddressDraft>(emptyAddressDraft)
+  const [lists, setLists] = useState<{ provinces: Province[]; barangays: Record<string, Place[]> }>({
+    provinces: [],
+    barangays: {},
+  })
+  const keepLists = useCallback(
+    (provinces: Province[], barangays: Record<string, Place[]>) => setLists({ provinces, barangays }),
+    [],
+  )
+  const [alreadyApplied, setAlreadyApplied] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [received, setReceived] = useState(false)
@@ -54,21 +67,40 @@ export function ApplicationForm() {
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (!slug) return
+    const fullAddress = addressFromDraft(address, lists.provinces, lists.barangays)
+    if (!fullAddress) {
+      setError(
+        address.barangayCode
+          ? 'Add your house number and street (at least 5 characters).'
+          : 'Choose your province, city or municipality, and barangay.',
+      )
+      return
+    }
     const parsed = resellerApplicationRequestSchema.safeParse({
       fullName: form.fullName,
       email: form.email.trim(),
       phone: form.phone,
+      address: fullAddress,
       ...(form.businessName.trim() ? { businessName: form.businessName } : {}),
-      ...(form.city.trim() ? { city: form.city } : {}),
       ...(form.message.trim() ? { message: form.message } : {}),
       ...(referralCode ? { referralCode } : {}),
     })
     if (!parsed.success) {
-      setError('Check your name, email, and mobile number (e.g. 09171234567).')
+      const field = parsed.error.issues[0]?.path[0]
+      setError(
+        field === 'phone'
+          ? 'Enter a Philippine mobile number, like 0917 123 4567.'
+          : field === 'email'
+            ? 'Enter a valid email address.'
+            : field === 'fullName'
+              ? 'Enter your full name.'
+              : 'Check your details and try again.',
+      )
       return
     }
     setBusy(true)
     setError(null)
+    setAlreadyApplied(false)
     try {
       await portalRequest(
         `/v1/public/reseller-portal/${slug}/applications`,
@@ -80,6 +112,7 @@ export function ApplicationForm() {
       )
       setReceived(true)
     } catch (submitError) {
+      setAlreadyApplied(submitError instanceof PortalApiError && submitError.code === 'RESELLER_ALREADY_APPLIED')
       setError(submitError instanceof Error ? submitError.message : 'Not sent. Please try again.')
     } finally {
       setBusy(false)
@@ -169,10 +202,12 @@ export function ApplicationForm() {
                 autoComplete="tel"
                 inputMode="tel"
                 required
+                placeholder="0917 123 4567"
                 value={form.phone}
                 onChange={set('phone')}
+                hint="One application per email and mobile number."
               />
-              <Field label="City (optional)" autoComplete="address-level2" value={form.city} onChange={set('city')} />
+              <AddressPicker value={address} onChange={setAddress} onLists={keepLists} />
               <label className="flex flex-col gap-2">
                 <span className="text-sm font-semibold">Message (optional)</span>
                 <textarea
@@ -182,7 +217,16 @@ export function ApplicationForm() {
                   onChange={set('message')}
                 />
               </label>
-              {error ? <p className="text-small text-signal-dark-critical-fg">{error}</p> : null}
+              {error ? (
+                <p className="text-small text-signal-dark-critical-fg" role="alert">
+                  {error}{' '}
+                  {alreadyApplied && slug ? (
+                    <a className="font-semibold underline" href={`/?b=${encodeURIComponent(slug)}`}>
+                      Go to sign in
+                    </a>
+                  ) : null}
+                </p>
+              ) : null}
               <Button type="submit" variant="primary" disabled={busy}>
                 {busy ? 'Sending…' : 'Send application'}
               </Button>
