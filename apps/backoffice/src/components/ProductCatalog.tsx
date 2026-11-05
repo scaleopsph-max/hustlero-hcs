@@ -1,6 +1,7 @@
 'use client'
 
 import { createClient, type SupabaseClient } from '@/lib/supabase-browser'
+import { fileUrl } from './ProductPhotos'
 import { ArrowLeft, ChevronRight, Loader2, Package, Plus, Search } from 'lucide-react'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
@@ -312,7 +313,21 @@ export function ProductCatalog() {
                 <tbody>
                   {filteredProducts.map((product) => (
                     <tr key={product.id} className="border-t border-ink-900/10">
-                      <td className="py-4 font-semibold">{product.name}</td>
+                      <td className="py-4 font-semibold">
+                        <span className="flex items-center gap-3">
+                          {product.images?.[0] ? (
+                            <img
+                              src={fileUrl(product.images[0].thumbUrl)}
+                              alt=""
+                              className="size-10 flex-none rounded-control object-cover"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <span aria-hidden="true" className="size-10 flex-none rounded-control bg-ink-900/[0.06]" />
+                          )}
+                          {product.name}
+                        </span>
+                      </td>
                       <td className="py-4 text-ink-600">{product.category?.name ?? 'Uncategorized'}</td>
                       <td className="py-4 font-medium">{product.variants.length}</td>
                       <td className="py-4 text-ink-600">

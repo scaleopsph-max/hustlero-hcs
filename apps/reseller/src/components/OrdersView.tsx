@@ -1,31 +1,64 @@
 'use client'
 
-import type { ResellerOrder } from '@hcs/contracts'
+import type { ResellerOrder, ResellerPaymentAccount } from '@hcs/contracts'
 import { Button, Chip, Glass, formatPeso } from '@hcs/ui'
-import { ChevronDown, PackageSearch, RefreshCw } from 'lucide-react'
-import { useState } from 'react'
+import { ChevronDown, FileText, PackageSearch, RefreshCw, Undo2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 import { formatQuantity } from '@/lib/cart'
-import { formatDateTime, orderStatusLabel, paymentLabel, reviewReasonLabel } from '@/lib/labels'
+import { PaymentProofs } from './PaymentProofs'
+import {
+  courierLabel,
+  formatDateTime,
+  formatTime,
+  orderBadge,
+  paymentLabel,
+  reviewReasonLabel,
+  timeLeft,
+} from '@/lib/labels'
+import { PaymentInstructions } from './PaymentInstructions'
+import { ShipmentTracker } from './ShipmentTracker'
 
 export function OrdersView({
   orders,
   loading,
   onRefresh,
   onReorder,
+  onUploadProof,
+  focusOrderId,
+  paymentInstructions,
+  paymentAccounts,
+  onOpenInvoice,
+  onRequestReturn,
 }: {
+  onOpenInvoice: (invoiceId: string) => void
+  onRequestReturn: (order: ResellerOrder, invoiceId: string) => void
   orders: ResellerOrder[]
+  /** Order to open on arrival, e.g. right after checkout. */
+  focusOrderId?: string | null
+  paymentInstructions?: string | null
+  paymentAccounts?: ResellerPaymentAccount[] | undefined
   loading: boolean
   onRefresh: () => void
   onReorder: (order: ResellerOrder) => void
+  onUploadProof: (orderId: string, body: FormData, idempotencyKey: string) => Promise<void>
 }) {
-  const [openId, setOpenId] = useState<string | null>(null)
+  const [openId, setOpenId] = useState<string | null>(focusOrderId ?? null)
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (focusOrderId) setOpenId(focusOrderId)
+  }, [focusOrderId])
+  // Keeps the payment countdown current.
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <h1 className="text-h3">Mga order</h1>
-        <Button size="sm" onClick={onRefresh} disabled={loading} aria-label="I-refresh ang orders">
+        <h1 className="text-h3">Orders</h1>
+        <Button size="sm" onClick={onRefresh} disabled={loading} aria-label="Refresh orders">
           <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
         </Button>
       </div>
@@ -33,12 +66,14 @@ export function OrdersView({
       {orders.length === 0 ? (
         <Glass className="flex flex-col items-center gap-3 rounded-sheet px-6 py-12 text-center">
           <PackageSearch size={40} className="text-ink-300" />
-          <p className="text-ink-200">{loading ? 'Kinukuha ang orders…' : 'Wala ka pang order.'}</p>
+          <p className="text-ink-200">{loading ? 'Loading orders…' : 'You have no orders yet.'}</p>
         </Glass>
       ) : (
         <ul className="flex flex-col gap-3">
           {orders.map((order) => {
-            const status = orderStatusLabel[order.status]
+            const status = orderBadge(order)
+            const awaitingPayment = order.status === 'submitted' && order.reviewReason === 'awaiting_payment'
+            const left = awaitingPayment && order.paymentDueAt ? timeLeft(order.paymentDueAt, now) : null
             const open = openId === order.id
             return (
               <li key={order.id}>
@@ -52,7 +87,8 @@ export function OrdersView({
                     <div className="min-w-0">
                       <p className="font-semibold">{order.orderNumber}</p>
                       <p className="text-small text-ink-300">
-                        {formatDateTime(order.createdAt)} · {order.lines.length} item
+                        {formatDateTime(order.createdAt)} · {order.lines.length}{' '}
+                        {order.lines.length === 1 ? 'item' : 'items'}
                       </p>
                     </div>
                     <div className="flex flex-none flex-col items-end gap-1.5">
@@ -64,14 +100,27 @@ export function OrdersView({
 
                   {open ? (
                     <div className="flex flex-col gap-3 border-t border-white/10 p-4">
-                      {order.status === 'submitted' && order.reviewReason ? (
+                      {awaitingPayment && order.paymentDueAt ? (
+                        <div className="flex flex-col gap-2">
+                          <p className="rounded-control bg-signal-dark-attention-bg px-3 py-2 text-small text-signal-dark-attention-fg">
+                            {left
+                              ? `Pay by ${formatTime(order.paymentDueAt)} (${left}). Upload your proof before then or the order is cancelled.`
+                              : 'The payment window has closed. Refresh to see the latest status.'}
+                          </p>
+                          <PaymentInstructions
+                            accounts={paymentAccounts}
+                            instructions={paymentInstructions}
+                            defaultMethod={order.paymentPreference}
+                          />
+                        </div>
+                      ) : order.status === 'submitted' && order.reviewReason ? (
                         <p className="rounded-control bg-signal-dark-attention-bg px-3 py-2 text-small text-signal-dark-attention-fg">
                           {reviewReasonLabel[order.reviewReason]}
                         </p>
                       ) : null}
                       {order.status === 'cancelled' && order.reviewDecisionReason ? (
                         <p className="rounded-control bg-white/10 px-3 py-2 text-small text-ink-200">
-                          Dahilan: {order.reviewDecisionReason}
+                          Reason: {order.reviewDecisionReason}
                         </p>
                       ) : null}
                       <ul className="flex flex-col gap-2">
@@ -82,7 +131,7 @@ export function OrdersView({
                               {line.fulfilledQuantityMilli > 0 &&
                               line.fulfilledQuantityMilli < line.orderedQuantityMilli ? (
                                 <span className="block text-ink-400">
-                                  {formatQuantity(line.fulfilledQuantityMilli)} na ang na-release
+                                  {formatQuantity(line.fulfilledQuantityMilli)} released so far
                                 </span>
                               ) : null}
                             </span>
@@ -91,29 +140,172 @@ export function OrdersView({
                         ))}
                       </ul>
                       <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-small text-ink-300">
-                        <dt>Kukunin</dt>
+                        <dt>Fulfillment</dt>
                         <dd className="text-ink-100">
                           {order.fulfillmentMethod === 'pickup'
-                            ? `Pickup sa ${order.locationName}`
+                            ? `Pickup at ${order.locationName}`
                             : (order.deliveryAddress ?? 'Delivery')}
                         </dd>
                         {order.paymentPreference ? (
                           <>
-                            <dt>Bayad</dt>
+                            <dt>Payment</dt>
                             <dd className="text-ink-100">{paymentLabel[order.paymentPreference]}</dd>
                           </>
                         ) : null}
-                        {order.invoices.length > 0 ? (
+                        {order.shippingFeeMinor ? (
                           <>
-                            <dt>Invoice</dt>
-                            <dd className="text-ink-100">
-                              {order.invoices.map((invoice) => invoice.invoiceNumber).join(', ')}
-                            </dd>
+                            <dt>Shipping</dt>
+                            <dd className="text-ink-100">{formatPeso(order.shippingFeeMinor)}</dd>
                           </>
                         ) : null}
                       </dl>
+                      {order.invoices.length > 0 ? (
+                        <ul className="flex flex-col gap-2">
+                          {order.invoices.map((invoice) => {
+                            const pending = order.returnRequests?.some(
+                              (request) => request.invoiceId === invoice.id && request.status === 'pending',
+                            )
+                            const returnable = invoice.lines?.some((line) => line.returnableMilli >= 1000)
+                            return (
+                              <li
+                                key={invoice.id}
+                                className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-white/10 bg-white/5 px-3 py-2"
+                              >
+                                <span className="min-w-0 text-small">
+                                  <span className="block font-semibold">{invoice.invoiceNumber}</span>
+                                  <span className="text-ink-300">{formatPeso(invoice.totalMinor)}</span>
+                                </span>
+                                <span className="flex gap-2">
+                                  <Button size="sm" onClick={() => onOpenInvoice(invoice.id)}>
+                                    <FileText size={15} className="mr-1.5" />
+                                    Invoice
+                                  </Button>
+                                  {returnable && !pending ? (
+                                    <Button size="sm" onClick={() => onRequestReturn(order, invoice.id)}>
+                                      <Undo2 size={15} className="mr-1.5" />
+                                      Return
+                                    </Button>
+                                  ) : null}
+                                </span>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      ) : null}
+                      {order.returnRequests?.length ? (
+                        <div className="flex flex-col gap-2 rounded-control border border-white/10 bg-white/5 p-3">
+                          <p className="text-small font-semibold">Return requests</p>
+                          {order.returnRequests.map((request) => (
+                            <div key={request.requestId} className="text-small">
+                              <p className="flex justify-between gap-3">
+                                <span>{formatDateTime(request.createdAt)}</span>
+                                <Chip
+                                  tone={
+                                    request.status === 'approved'
+                                      ? 'success'
+                                      : request.status === 'declined'
+                                        ? 'critical'
+                                        : 'attention'
+                                  }
+                                >
+                                  {request.status === 'approved'
+                                    ? 'Approved'
+                                    : request.status === 'declined'
+                                      ? 'Declined'
+                                      : 'Waiting for review'}
+                                </Chip>
+                              </p>
+                              <p className="text-ink-300">
+                                {request.lines
+                                  .map(
+                                    (line) =>
+                                      `${formatQuantity(line.quantityMilli)} × ${line.productName} ${line.variantName}`,
+                                  )
+                                  .join(', ')}
+                              </p>
+                              <p className="text-caption text-ink-400">
+                                {request.reason}
+                                {request.photoCount
+                                  ? ` · ${request.photoCount} photo${request.photoCount === 1 ? '' : 's'}`
+                                  : ''}
+                              </p>
+                              {request.status === 'declined' && request.decisionReason ? (
+                                <p className="text-caption text-signal-dark-critical-fg">
+                                  Reason: {request.decisionReason}
+                                </p>
+                              ) : request.status === 'approved' ? (
+                                <p className="text-caption text-signal-dark-success-fg">
+                                  Approved. The return is recorded once the items are received.
+                                </p>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      {order.returns?.length ? (
+                        <div className="flex flex-col gap-2 rounded-control border border-white/10 bg-white/5 p-3">
+                          <p className="text-small font-semibold">Returns</p>
+                          {order.returns.map((entry) => (
+                            <div key={entry.id} className="text-small">
+                              <p className="flex justify-between gap-3">
+                                <span>{formatDateTime(entry.recordedAt)}</span>
+                                <span className="font-semibold text-signal-dark-success-fg">
+                                  −{formatPeso(entry.amountMinor)}
+                                </span>
+                              </p>
+                              <p className="text-ink-300">
+                                {entry.lines
+                                  .map(
+                                    (line) =>
+                                      `${formatQuantity(line.quantityMilli)} × ${line.productName} ${line.variantName}`,
+                                  )
+                                  .join(', ')}
+                              </p>
+                              <p className="text-caption text-ink-400">
+                                {entry.reason}
+                                {entry.creditMinor > 0 ? ` · ${formatPeso(entry.creditMinor)} kept as credit` : ''}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      {order.parcels?.length ? (
+                        <div className="flex flex-col gap-2 rounded-control border border-white/10 p-3">
+                          <p className="text-small font-semibold">Sent ahead</p>
+                          {order.parcels.map((parcel) => (
+                            <div key={parcel.parcelId} className="text-small">
+                              <p className="flex justify-between gap-3">
+                                <span className="font-semibold">Parcel {parcel.parcelNumber}</span>
+                                <span className="text-ink-300">
+                                  {parcel.deliveredAt ? 'Delivered' : `Shipped ${formatDateTime(parcel.shippedAt)}`}
+                                </span>
+                              </p>
+                              <p className="text-ink-300">
+                                {courierLabel[parcel.courier]}
+                                {parcel.trackingNumber ? ` · ${parcel.trackingNumber}` : ''}
+                              </p>
+                              <p className="text-caption text-ink-400">
+                                {parcel.lines
+                                  .map(
+                                    (line) =>
+                                      `${formatQuantity(line.quantityMilli)} × ${line.productName} ${line.variantName}`,
+                                  )
+                                  .join(', ')}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      {order.shipment && order.status !== 'cancelled' ? (
+                        <ShipmentTracker shipment={order.shipment} method={order.fulfillmentMethod} />
+                      ) : null}
+                      <PaymentProofs
+                        order={order}
+                        onUpload={onUploadProof}
+                        startOpen={awaitingPayment && left !== null}
+                      />
                       <Button size="sm" onClick={() => onReorder(order)}>
-                        Order ulit
+                        Order again
                       </Button>
                     </div>
                   ) : null}

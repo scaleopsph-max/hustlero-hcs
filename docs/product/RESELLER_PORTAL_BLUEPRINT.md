@@ -30,6 +30,7 @@ Goals: faster reseller ordering, inventory and profit tracked on the existing le
 - Approval creates (or links) the reseller customer through `app.create_customer`, records explicit credit settings through `app.save_wholesale_customer_credit_settings`, assigns the price list, and creates an invited portal account. Existing reseller customers can be invited directly.
 - Sign-in by email one-time code (works inside an installed PWA). The first sign-in with the invited, verified email links the Supabase user to the account.
 - Catalog: assigned price list entries with reseller price, SRP (variant retail price), pricing-group minimum and stock badge at the portal fulfillment branch.
+- Catalog cards are one per product (photo, variant count, price range, best stock badge, quantity in cart). A product with several variants opens a glass bottom sheet listing each variant with its own price, SRP, margin, minimum, stock badge and quantity; a single-variant product keeps its quantity controls on the card.
 - Cart and checkout: wholesale minimum per pricing group, delivery address or branch pickup, GCash or bank transfer, notes, estimated reseller profit at SRP.
 - Orders: status, review reason, rejection reason, lines, fulfilled quantities and invoices; reorder.
 - Back Office `/reseller-portal`: settings, application decisions, review queue, accounts with suspend/restore and invitations.
@@ -69,13 +70,25 @@ The credit limit caps confirmed orders that are not yet paid, including prepaid 
 | R3      | Promotions with start/end dates and a Sale tab; SRP management; Reseller Sales & Profit and Logistics Status reports     | Promo snapshots and profit report verified in Staging                                     |
 | R4      | Points from wholesale invoices (₱100 = 1 point), reversal on credit notes, rewards and redemption                        | Loyalty ledger reconciles after returns                                                   |
 
+## Pay-first ordering (2026-10-30, ADR-042)
+
+1. Checkout holds the stock for 4 hours; the order shows **Awaiting payment** with the deadline and **Where to pay**: the reseller picks GCash or Bank and sees that method's QR codes, account names and numbers (with copy), as set under **Payment accounts** in Back Office (up to 6 shown; QR images stored like product photos, kind `payment_qr`).
+2. The reseller uploads a GCash or bank proof (a downpayment is fine). The order becomes **Payment sent** and appears under **Paid orders to confirm** in Back Office with its proofs.
+3. The team checks the reference in GCash or the bank app and clicks **Verify payment & confirm order** (or **Reject order** with a reason, which releases the stock).
+4. No proof within 4 hours: the order is cancelled automatically ("Payment was not received within 4 hours.") and the stock returns.
+5. Balance payments on confirmed orders are verified one by one under **Balance payments to verify**. Payments are still recorded through Wholesale payments.
+6. Confirmed orders move to the **Logistics** tab: To pack → Packed → Shipped (J&T, Lalamove or other, with tracking) → Delivered; pickup orders go Packed (ready for pickup) → Picked up. The reseller's order shows each step and the tracking number (ADR-043).
+
 ## Before Staging
 
 - Create the `hustlero-hcs-reseller` Worker and set `RESELLER_ORIGIN` for the API and `NEXT_PUBLIC_RESELLER_PORTAL_URL` for the Back Office per environment.
-- Enable Supabase email OTP with a 6-digit code template; reseller sign-up must be allowed for OTP. Confirm rate limits for the public application endpoint at the edge.
+- Enable Supabase email OTP and add `{{ .Token }}` to the Magic Link and Confirm signup templates (the portal accepts 6–10 digit codes; set Email OTP Length to 6 for the shortest code). Reseller sign-up must be allowed for OTP. Configure custom SMTP and raise the email rate limit: Supabase's built-in sender hit `429 email rate limit exceeded` after a few codes in Development (Development now sends through Gmail SMTP; Staging and Production should use a domain sender). Confirm rate limits for the public application endpoint at the edge.
 - Apply the migration only through the normal environment-specific gate.
+- Apply `20261030090000_reseller_portal_block_out_of_stock.sql`, `20261030120000_reseller_portal_pay_first.sql`, `20261030150000_reseller_payment_accounts.sql` `20261030180000_reseller_portal_logistics.sql`, `20261031090000_reseller_portal_report.sql` and `20261031120000_reseller_portal_fulfillment_payments.sql` (shipping completes the sale and records verified payments, ADR-045; each business needs active E-wallet and Bank Transfer payment methods), and deploy the API so its five-minute cron (development and staging only in `wrangler.jsonc`) sweeps expired payment holds. Add the production cron together with the production migration.
+- Turning the portal on needs `advanced_wholesale` on and `reseller_portal` entitled (Admin console). The owner then turns it on from the Back Office Reseller portal page (ADR-048, `20261031200000_reseller_portal_enable_and_manager_orders.sql`).
+
+- Push notifications (ADR-047): apply `20261031150000_reseller_cart_stock_issues.sql`, `20261031160000_reseller_portal_notifications.sql` and `20261031180000_push_notifications.sql`, then run `npm run push:keys -- <environment>` once per environment and redeploy the API, reseller portal, and Back Office. Production also needs the cron and keys.
 
 ## Open questions
 
-- Points basis: invoice total after promo discount (assumed) or before.
-- Whether managers should review portal orders by default (R1 grants owners and admins only).
+- Resolved 2026-10-30 (ADR-048): points use the invoice total after discount; managers handle portal orders.

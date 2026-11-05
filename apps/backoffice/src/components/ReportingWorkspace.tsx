@@ -1,20 +1,34 @@
 'use client'
 
 import { selectActiveTenant } from '@/lib/active-tenant'
-import { reportCsv } from '@/lib/report-csv'
+import { ResellerPortalReportView } from './ResellerPortalReportView'
+import { WholesaleReportsView } from './WholesaleReportsView'
+import { downloadCsv, formatReportDate, MetricPanel, quantity, ReportHeader, ReportTable } from './report-parts'
 
 import { createClient } from '@/lib/supabase-browser'
-import { Clock3, CreditCard, Download, PackageSearch, Percent, ReceiptText, RefreshCw } from 'lucide-react'
+import {
+  Clock3,
+  CreditCard,
+  Download,
+  Landmark,
+  PackageSearch,
+  Percent,
+  ReceiptText,
+  RefreshCw,
+  Store,
+} from 'lucide-react'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   dashboardContextSchema,
   inventoryReportContextSchema,
+  resellerPortalReportSchema,
   salesReportContextSchema,
   shiftReportContextSchema,
   sessionContextResponseSchema,
   type DashboardContext,
   type InventoryReportContext,
+  type ResellerPortalReport,
   type SalesReportContext,
   type ShiftReportContext,
 } from '@hcs/contracts'
@@ -42,20 +56,6 @@ async function call(path: string, token: string, tenantId: string) {
   const data: unknown = await response.json()
   if (!response.ok) throw new Error((data as { error?: { message?: string } }).error?.message ?? 'Request failed.')
   return data
-}
-
-function downloadCsv(name: string, rows: Array<Array<string | number>>) {
-  const blob = new Blob([reportCsv(rows)], { type: 'text/csv;charset=utf-8' })
-  const href = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = href
-  link.download = name
-  link.click()
-  URL.revokeObjectURL(href)
-}
-
-function quantity(value: number) {
-  return (value / 1000).toLocaleString('en-PH', { maximumFractionDigits: 3 })
 }
 
 function SummaryCards({ summary }: { summary: DashboardContext['summary'] }) {
@@ -91,6 +91,10 @@ export function ReportingWorkspace({ mode }: { mode: 'dashboard' | 'reports' }) 
   const [sales, setSales] = useState<SalesReportContext | null>(null)
   const [inventory, setInventory] = useState<InventoryReportContext | null>(null)
   const [shifts, setShifts] = useState<ShiftReportContext | null>(null)
+  const [portal, setPortal] = useState<{ report: ResellerPortalReport | null; error: string | null }>({
+    report: null,
+    error: null,
+  })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -111,11 +115,21 @@ export function ReportingWorkspace({ mode }: { mode: 'dashboard' | 'reports' }) 
         if (mode === 'dashboard') {
           setDashboard(dashboardContextSchema.parse(await call(`/v1/dashboard?${query}`, nextToken, nextTenant)))
         } else {
-          const [salesData, inventoryData, shiftData] = await Promise.all([
+          const portalQuery = new URLSearchParams({ from: nextFrom, to: nextTo })
+          const [salesData, inventoryData, shiftData, portalData] = await Promise.all([
             call(`/v1/reports/sales?${query}`, nextToken, nextTenant),
             call(`/v1/reports/inventory?${query}`, nextToken, nextTenant),
             call(`/v1/reports/shifts?${query}`, nextToken, nextTenant),
+            // The portal report is optional: a business without the portal still sees its other reports.
+            call(`/v1/reports/reseller-portal?${portalQuery}`, nextToken, nextTenant).then(
+              (data) => ({ report: resellerPortalReportSchema.parse(data), error: null }),
+              (cause: unknown) => ({
+                report: null,
+                error: cause instanceof Error ? cause.message : 'Could not load the reseller portal report.',
+              }),
+            ),
           ])
+          setPortal(portalData)
           setSales(salesReportContextSchema.parse(salesData))
           setInventory(inventoryReportContextSchema.parse(inventoryData))
           setShifts(shiftReportContextSchema.parse(shiftData))
@@ -228,7 +242,7 @@ export function ReportingWorkspace({ mode }: { mode: 'dashboard' | 'reports' }) 
       ) : null}
       {!loading && dashboard ? <DashboardView data={dashboard} maxTrend={maxTrend} /> : null}
       {!loading && sales && inventory && shifts ? (
-        <ReportsView sales={sales} inventory={inventory} shifts={shifts} />
+        <ReportsView sales={sales} inventory={inventory} shifts={shifts} portal={portal} />
       ) : null}
     </div>
   )
@@ -308,18 +322,30 @@ function Metric({ label, value }: { label: string; value: string | number }) {
   )
 }
 
-type ReportView = 'sales' | 'payments' | 'discounts' | 'inventory' | 'operations'
+type ReportView = 'sales' | 'payments' | 'discounts' | 'inventory' | 'operations' | 'reseller' | 'wholesale'
+const reportViews: ReportView[] = ['sales', 'payments', 'discounts', 'inventory', 'operations', 'reseller', 'wholesale']
 
 function ReportsView({
   sales,
   inventory,
   shifts,
+  portal,
 }: {
   sales: SalesReportContext
   inventory: InventoryReportContext
   shifts: ShiftReportContext
+  portal: { report: ResellerPortalReport | null; error: string | null }
 }) {
-  const [view, setView] = useState<ReportView>('sales')
+  const [view, setViewState] = useState<ReportView>('sales')
+  // The open tab lives in the URL hash so links like /reports#reseller open it directly.
+  useEffect(() => {
+    const hash = window.location.hash.slice(1) as ReportView
+    if (reportViews.includes(hash)) setViewState(hash)
+  }, [])
+  const setView = (next: ReportView) => {
+    setViewState(next)
+    window.history.replaceState(null, '', `#${next}`)
+  }
   const salesRows = sales.byItem.map((item) => [
     item.label,
     item.variantName,
@@ -352,6 +378,8 @@ function ReportsView({
     { value: 'discounts', label: 'Discounts & taxes', Icon: Percent },
     { value: 'inventory', label: 'Inventory', Icon: PackageSearch },
     { value: 'operations', label: 'Shifts & receipts', Icon: Clock3 },
+    { value: 'reseller', label: 'Reseller portal', Icon: Store },
+    { value: 'wholesale', label: 'Wholesale', Icon: Landmark },
   ]
   return (
     <>
@@ -371,6 +399,18 @@ function ReportsView({
           </button>
         ))}
       </Glass>
+
+      {view === 'reseller' ? (
+        portal.report ? (
+          <ResellerPortalReportView report={portal.report} />
+        ) : (
+          <Glass variant="light" className="p-6 text-sm text-ink-600">
+            {portal.error ?? 'The reseller portal report is not available.'}
+          </Glass>
+        )
+      ) : null}
+
+      {view === 'wholesale' ? <WholesaleReportsView /> : null}
 
       {view === 'sales' ? (
         <>
@@ -630,36 +670,6 @@ function ReportsView({
   )
 }
 
-function ReportHeader({ title, subtitle, onExport }: { title: string; subtitle: string; onExport: () => void }) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-900/10 p-5">
-      <div>
-        <h2 className="font-display text-xl font-bold">{title}</h2>
-        <p className="text-sm text-ink-500">{subtitle}</p>
-      </div>
-      <Button type="button" variant="secondary" onClick={onExport}>
-        <Download size={16} className="mr-2" />
-        CSV
-      </Button>
-    </div>
-  )
-}
-
-function MetricPanel({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="border border-ink-900/10 bg-white p-4">
-      <div className="text-xs font-medium text-ink-500">{label}</div>
-      <div className="mt-2 break-words font-display text-2xl font-bold">{value}</div>
-    </div>
-  )
-}
-
-function formatReportDate(value: string) {
-  return new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' }).format(
-    new Date(value),
-  )
-}
-
 function Breakdown({ title, rows }: { title: string; rows: SalesReportContext['byCategory'] }) {
   return (
     <Glass variant="light" className="overflow-hidden">
@@ -676,42 +686,5 @@ function Breakdown({ title, rows }: { title: string; rows: SalesReportContext['b
         ])}
       />
     </Glass>
-  )
-}
-
-function ReportTable({ headings, rows }: { headings: string[]; rows: Array<Array<React.ReactNode>> }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[680px] text-left text-sm">
-        <thead>
-          <tr className="border-b border-ink-900/10 text-xs uppercase text-ink-500">
-            {headings.map((heading, index) => (
-              <th key={heading} className={`px-5 py-3 ${index ? 'text-right' : ''}`}>
-                {heading}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length ? (
-            rows.map((row, rowIndex) => (
-              <tr key={rowIndex} className="border-b border-ink-900/10 last:border-0">
-                {row.map((cell, index) => (
-                  <td key={index} className={`px-5 py-4 ${index ? 'text-right' : ''}`}>
-                    {cell}
-                  </td>
-                ))}
-              </tr>
-            ))
-          ) : (
-            <tr>
-              <td colSpan={headings.length} className="px-5 py-10 text-center text-ink-500">
-                No activity for this scope.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
   )
 }

@@ -6,7 +6,7 @@ export default function ResellerPortalPage() {
     <>
       <Topbar
         title="Reseller portal"
-        subtitle="Approve resellers, review held portal orders, and set how the portal confirms orders."
+        subtitle="Approve resellers, confirm paid portal orders, and set where resellers send payment."
       />
       <ResellerPortalWorkspace />
     </>

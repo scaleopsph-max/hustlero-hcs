@@ -24,6 +24,8 @@ export const apiErrorResponseSchema = z.object({
     code: z.string().min(1),
     message: z.string().min(1),
     requestId: z.string().min(1),
+    /** Extra machine-readable context for some errors, such as which cart items are short of stock. */
+    details: z.record(z.string(), z.unknown()).optional(),
   }),
 })
 

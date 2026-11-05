@@ -108,7 +108,8 @@ export const navGroups: NavGroup[] = [
         href: '/reseller-portal',
         icon: Users,
         feature: 'reseller_portal',
-        permission: 'reseller_portal.manage',
+        // Managers handle portal orders; owners and admins also have this permission.
+        permission: 'reseller_portal.orders',
       },
     ],
   },

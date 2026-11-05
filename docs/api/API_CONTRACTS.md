@@ -248,6 +248,15 @@ Current POS sales implementation:
 - Back Office (`reseller_portal.manage` or owner): `GET /v1/reseller-portal/admin`, `POST /v1/reseller-portal/settings`, `POST /v1/reseller-portal/applications/{id}/decision`, `POST /v1/reseller-portal/accounts`, `POST /v1/reseller-portal/accounts/{id}/status`, and `POST /v1/reseller-portal/orders/{id}/review`. Writes other than account status require an `Idempotency-Key`; application decisions allow at most 120 characters because nested customer and credit commands derive keys from it.
 - Errors: `HCRP0` portal unavailable (404), `HCRP1` reseller access denied (403), `HCRP2` not configured, `HCRP3` invalid request (400), `HCRP4` item or price list unavailable, `HCRP5` wholesale minimum not met, `HCRP6` applications closed, `HCRA1`–`HCRA5` Back Office permission and state errors. Review approval surfaces the existing confirmation errors (`HCQ10` stock, `HCCR*` credit).
 
+### Files, product photos, and payment proofs
+
+- `POST /v1/catalog/products/{id}/images` (multipart `image` + `thumb`, `Idempotency-Key`, `catalog.manage`), `POST /v1/catalog/products/{id}/images/order` (`fileIds`, primary first), and `POST /v1/catalog/products/{id}/images/{fileId}/archive`.
+- `POST /v1/portal/orders/{id}/payment-proofs` (multipart `file`, optional `thumb`, `method`, `amountMinor`, `reference`, `Idempotency-Key`) for the reseller who owns the order.
+- `GET /v1/reseller-portal/payment-proofs` and `POST /v1/reseller-portal/payment-proofs/{id}/review` (`accept`, or `reject` with a reason) for `reseller_portal.manage`.
+- `GET /v1/files/content?key&exp&sig` serves an object only for a valid, unexpired signature. File types are detected from the bytes; the declared type is ignored.
+- `GET /v1/catalog` products, `GET /v1/pos/context` items, `GET /v1/portal/catalog` items and portal orders gain optional signed photo or proof paths. Paths are API-relative; clients prefix their API URL.
+- Errors: `HCFL1` permission (403), `HCFL2` invalid file details (400), `HCFL3` target not found (404), `HCFL4` photo or pending-proof limit (409), `HCFL5` order not accepting proofs (409); `FILE_TYPE_NOT_ALLOWED` (415), `FILE_TOO_LARGE` (413), `FILES_NOT_CONFIGURED` (503).
+
 - The API derives tenant, actor, employee, location, and device context from trusted authentication/device state.
 - Clients never submit authoritative cost, COGS, tax outcome, available stock, entitlement, permission, expected cash, or ledger balances.
 - Critical command responses are stored against the idempotency record and replayed for identical retries.

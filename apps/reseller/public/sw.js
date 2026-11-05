@@ -1,7 +1,7 @@
 // HCS Reseller Portal service worker.
 // Caches only the public app shell and hashed build assets. API responses are never cached:
 // catalogs, prices, and orders belong to a signed-in reseller and phones are often shared.
-const VERSION = 'hcs-reseller-v1'
+const VERSION = 'hcs-reseller-v2'
 const SHELL = ['/', '/apply', '/manifest.webmanifest', '/icon-192.png']
 
 self.addEventListener('install', (event) => {
@@ -60,4 +60,40 @@ self.addEventListener('fetch', (event) => {
       ),
     )
   }
+})
+
+// Push notifications: order updates sent by the API. Tapping one opens that order.
+self.addEventListener('push', (event) => {
+  let message = { title: 'Order update', body: '', url: '/', tag: undefined }
+  try {
+    message = { ...message, ...event.data.json() }
+  } catch {
+    // Keep the generic message.
+  }
+  event.waitUntil(
+    Promise.all([
+      self.registration.showNotification(message.title, {
+        body: message.body,
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
+        tag: message.tag,
+        data: { url: message.url },
+      }),
+      self.clients
+        .matchAll({ type: 'window', includeUncontrolled: true })
+        .then((clients) => clients.forEach((client) => client.postMessage({ type: 'push-received' }))),
+    ]),
+  )
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const target = new URL(event.notification.data?.url || '/', self.location.origin).href
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      const open = clients.find((client) => new URL(client.url).origin === self.location.origin)
+      if (open) return open.focus().then((client) => client.navigate(target))
+      return self.clients.openWindow(target)
+    }),
+  )
 })
