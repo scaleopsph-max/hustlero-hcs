@@ -13,7 +13,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { applyAccent } from '@/lib/branding'
 import type { Place, Province } from '@/lib/ph-address'
 import { applyBusinessHead, rememberBusinessSlug } from '@/lib/business-link'
-import { PortalApiError, apiBase, fileUrl, portalRequest } from '@/lib/portal-api'
+import { PortalApiError, fileUrl, portalRequest } from '@/lib/portal-api'
 
 import { AddressPicker, addressFromDraft, emptyAddressDraft, type AddressDraft } from './AddressPicker'
 
@@ -55,7 +55,7 @@ export function ApplicationForm() {
         setPortal(loaded)
         applyAccent(loaded.branding?.accentColor)
         rememberBusinessSlug(loaded.tenantSlug)
-        applyBusinessHead(apiBase(), {
+        applyBusinessHead({
           slug: loaded.tenantSlug,
           portalName: loaded.branding?.portalName ?? `${loaded.businessName} Reseller`,
           hasLogo: Boolean(loaded.branding?.logoUrl),

@@ -30,12 +30,16 @@ export function readBusinessSlug(): string | null {
   return pickBusinessSlug(new URLSearchParams(window.location.search).get('b'), storedSlug())
 }
 
+// Read by the server so even a plain link renders this business's name for "Add to Home Screen".
+const cookieName = 'hcs_business'
+
 export function rememberBusinessSlug(slug: string): void {
   try {
     window.localStorage.setItem(storageKey, slug)
   } catch {
     // Without storage the portal is branded only when opened from the business link.
   }
+  document.cookie = `${cookieName}=${encodeURIComponent(slug)}; Path=/; Max-Age=31536000; SameSite=Lax; Secure`
 }
 
 export function forgetBusinessSlug(): void {
@@ -44,6 +48,7 @@ export function forgetBusinessSlug(): void {
   } catch {
     // Nothing stored.
   }
+  document.cookie = `${cookieName}=; Path=/; Max-Age=0; SameSite=Lax; Secure`
 }
 
 function headElement(selector: string, create: () => HTMLElement): HTMLElement {
@@ -58,19 +63,16 @@ function headElement(selector: string, create: () => HTMLElement): HTMLElement {
  * Points the page at the business's installed-app manifest and icon, so "Add to Home Screen" saves
  * "PABLO Reseller" with PABLO's logo. iPhone reads the title and touch icon; Android reads the manifest.
  */
-export function applyBusinessHead(
-  apiBase: string | undefined,
-  business: { slug: string; portalName: string; hasLogo: boolean },
-): void {
-  if (typeof document === 'undefined' || !apiBase) return
-  const base = `${apiBase.replace(/\/$/, '')}/v1/public/reseller-portal/${encodeURIComponent(business.slug)}`
+export function applyBusinessHead(business: { slug: string; portalName: string; hasLogo: boolean }): void {
+  if (typeof document === 'undefined') return
+  const base = `/b/${encodeURIComponent(business.slug)}`
   document.title = business.portalName
   const manifest = headElement('link[rel="manifest"]', () => {
     const link = document.createElement('link')
     link.rel = 'manifest'
     return link
   })
-  manifest.setAttribute('href', `${base}/manifest.webmanifest`)
+  manifest.setAttribute('href', `${base}/manifest`)
   const title = headElement('meta[name="apple-mobile-web-app-title"]', () => {
     const meta = document.createElement('meta')
     meta.name = 'apple-mobile-web-app-title'

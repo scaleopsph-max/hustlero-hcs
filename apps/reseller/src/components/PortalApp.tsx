@@ -54,7 +54,6 @@ import { applyAccent } from '@/lib/branding'
 import { applyBusinessHead, forgetBusinessSlug, readBusinessSlug, rememberBusinessSlug } from '@/lib/business-link'
 import {
   PortalApiError,
-  apiBase,
   fileUrl,
   newIdempotencyKey,
   portalAuth,
@@ -416,7 +415,7 @@ export function PortalApp() {
         if (!active) return
         setBusiness(loaded)
         rememberBusinessSlug(loaded.tenantSlug)
-        applyBusinessHead(apiBase(), {
+        applyBusinessHead({
           slug: loaded.tenantSlug,
           portalName: loaded.branding?.portalName ?? `${loaded.businessName} Reseller`,
           hasLogo: Boolean(loaded.branding?.logoUrl),
@@ -441,7 +440,7 @@ export function PortalApp() {
   useEffect(() => {
     if (!catalog || !openBusiness) return
     rememberBusinessSlug(openBusiness.tenantSlug)
-    applyBusinessHead(apiBase(), {
+    applyBusinessHead({
       slug: openBusiness.tenantSlug,
       portalName: catalog.branding?.portalName ?? `${openBusiness.businessName} Reseller`,
       hasLogo: Boolean(catalog.branding?.logoUrl),
