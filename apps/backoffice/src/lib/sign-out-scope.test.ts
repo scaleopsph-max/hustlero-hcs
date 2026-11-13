@@ -6,6 +6,7 @@ import { expect, it } from 'vitest'
 it.each([
   ['apps/admin/src/components/PlatformConsole.tsx', 1],
   ['apps/backoffice/src/app/setup/page.tsx', 2],
+  ['apps/backoffice/src/components/AccountMenu.tsx', 1],
 ] as const)('keeps every logout in %s local to its own session', async (path, count) => {
   const text = readFileSync(new URL(`../../../../${path}`, import.meta.url), 'utf8')
   const file = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
