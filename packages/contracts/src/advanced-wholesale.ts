@@ -150,7 +150,8 @@ export const wholesaleOrderCancelRequestSchema = z.object({ reason: z.string().t
 export const wholesaleOrderCancelResponseSchema = z.object({
   salesOrderId: id,
   status: z.literal('cancelled'),
-  releasedQuantityMilli: z.number().int().positive(),
+  /** Zero when a draft is cancelled: drafts reserve nothing. */
+  releasedQuantityMilli: z.number().int().nonnegative(),
 })
 
 export const wholesaleOrderFulfillRequestSchema = z

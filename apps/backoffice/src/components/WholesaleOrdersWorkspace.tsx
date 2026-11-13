@@ -240,7 +240,11 @@ export function WholesaleOrdersWorkspace() {
       )
       await load(token, tenantId)
       setCancelReason('')
-      setMessage('Order cancelled and the remaining reservation released.')
+      setMessage(
+        selectedOrder.status === 'draft'
+          ? 'Draft cancelled. It stays in the list as cancelled.'
+          : 'Order cancelled and the remaining reservation released.',
+      )
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not cancel the order.')
     } finally {
@@ -516,6 +520,23 @@ export function WholesaleOrdersWorkspace() {
                   <Button disabled={!data.canManage || busy || !!pendingAction} onClick={confirmOrder}>
                     <Check size={18} /> Confirm and reserve
                   </Button>
+                  <div className="grid gap-3 border-t border-ink-900/10 pt-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+                    <input
+                      value={cancelReason}
+                      onChange={(event) => setCancelReason(event.target.value)}
+                      placeholder="Reason for cancelling this draft"
+                      aria-label="Reason for cancelling this draft"
+                      maxLength={500}
+                      className="min-h-11 border border-ink-900/15 bg-white px-3"
+                    />
+                    <Button
+                      variant="secondary"
+                      disabled={!data.canManage || busy || !!pendingAction || cancelReason.trim().length < 2}
+                      onClick={cancelOrder}
+                    >
+                      <Ban size={18} /> Cancel draft
+                    </Button>
+                  </div>
                 </div>
               ) : selectedOrder.status === 'confirmed' || selectedOrder.status === 'partially_fulfilled' ? (
                 <div className="mt-4 grid gap-4">
