@@ -50,3 +50,10 @@ Production stays a separate, later approval.
 
 API and web apps: `wrangler rollback <previous-version-id> --name <worker>` (see RECOVERY_RUNBOOK.md). Database: the
 migrations are forward-only; restore from the Staging backup if a migration must be undone.
+
+## Staging redeploy 2026-11-13
+
+Owner redeployed Staging with the business links, PSGC address and duplicate check, server-rendered iPhone
+branding, Back Office account menu, and Super Admin expired label. API version `110dc20b-d305-4b34-9307-3db7da99e665`;
+Super Admin version `d5f05255-562e-4ee7-b901-1966e3de8c50`. Reseller and Back Office were rebuilt with the Staging
+publishable key in the same session.
