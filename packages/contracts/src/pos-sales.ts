@@ -72,6 +72,29 @@ export const posRegisterOpenResponseSchema = z.object({
   openingCashCentavos: z.number().int().nonnegative(),
 })
 
+/** Blind count: the cashier sends what was counted; expected cash and the variance come back afterward. */
+export const posRegisterCloseRequestSchema = z.strictObject({
+  countedCashCentavos: z.number().int().nonnegative().max(100_000_000_000),
+  note: z.string().trim().max(500).optional(),
+})
+export const posRegisterCloseResponseSchema = z.object({
+  registerSessionId: id,
+  status: z.enum(['closed', 'exception']),
+  openedAt: timestamp,
+  closedAt: timestamp,
+  expectedCashCentavos: z.number().int(),
+  countedCashCentavos: z.number().int().nonnegative(),
+  varianceCentavos: z.number().int(),
+  cash: z.object({
+    openingCentavos: z.number().int(),
+    salesCentavos: z.number().int(),
+    refundsCentavos: z.number().int(),
+    otherCentavos: z.number().int(),
+  }),
+  nonCash: z.array(z.object({ method: z.string(), amountCentavos: z.number().int() })),
+  salesCount: z.number().int().nonnegative(),
+})
+
 export const posSalePaymentRequestSchema = z.object({
   paymentMethodId: id,
   amountCentavos: z.number().int().positive(),
@@ -246,6 +269,8 @@ export const saleReversalResponseSchema = z.object({
 })
 
 export type PosSalesContext = z.infer<typeof posSalesContextSchema>
+export type PosRegisterCloseRequest = z.infer<typeof posRegisterCloseRequestSchema>
+export type PosRegisterCloseResponse = z.infer<typeof posRegisterCloseResponseSchema>
 export type PosRegisterOpenRequest = z.infer<typeof posRegisterOpenRequestSchema>
 export type PosRegisterOpenResponse = z.infer<typeof posRegisterOpenResponseSchema>
 export type PosSalePaymentRequest = z.infer<typeof posSalePaymentRequestSchema>

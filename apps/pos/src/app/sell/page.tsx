@@ -1,6 +1,7 @@
 'use client'
 
-import { Banknote, LogOut, Minus, Plus, ScanLine, ShoppingBag } from 'lucide-react'
+import { Banknote, LockKeyhole, LogOut, Minus, Plus, ScanLine, ShoppingBag } from 'lucide-react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import {
@@ -167,6 +168,12 @@ export default function SellScreen() {
         </div>
         <SyncPill status="online" />
         <span className="text-sm font-semibold text-white">{context.employee.displayName}</span>
+        {context.registerSession ? (
+          <Link href="/close" className={buttonClasses({ variant: 'secondary', className: 'bg-transparent' })}>
+            <LockKeyhole size={18} className="mr-2" />
+            Close register
+          </Link>
+        ) : null}
         <Button variant="secondary" className="bg-transparent" onClick={signOut}>
           <LogOut size={18} className="mr-2" />
           Sign out

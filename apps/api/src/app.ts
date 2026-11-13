@@ -99,6 +99,8 @@ import {
   wholesaleCreditOverridesContextSchema,
   posSaleCompleteRequestSchema,
   posSaleCompleteResponseSchema,
+  posRegisterCloseRequestSchema,
+  posRegisterCloseResponseSchema,
   posRegisterOpenRequestSchema,
   posRegisterOpenResponseSchema,
   posSalesContextSchema,
@@ -209,8 +211,10 @@ import {
   loadSaleReceiptFromPostgres,
   refundSaleInPostgres,
   voidSaleInPostgres,
+  closePosRegisterSessionInPostgres,
   openPosRegisterSessionInPostgres,
   type PosSaleCompleter,
+  type PosRegisterSessionCloser,
   type PosRegisterSessionOpener,
   type PosSalesContextLoader,
   type SalesLoader,
@@ -503,6 +507,7 @@ interface AppDependencies {
   authenticatePosEmployee: PosEmployeePinAuthenticator
   loadPosSalesContext: PosSalesContextLoader
   openPosRegisterSession: PosRegisterSessionOpener
+  closePosRegisterSession: PosRegisterSessionCloser
   completePosSale: PosSaleCompleter
   loadSales: SalesLoader
   loadSaleReceipt: SaleReceiptLoader
@@ -616,6 +621,7 @@ const defaultDependencies: AppDependencies = {
   authenticatePosEmployee: authenticatePosEmployeeInPostgres,
   loadPosSalesContext: loadPosSalesContextFromPostgres,
   openPosRegisterSession: openPosRegisterSessionInPostgres,
+  closePosRegisterSession: closePosRegisterSessionInPostgres,
   completePosSale: completePosSaleInPostgres,
   loadSales: loadSalesFromPostgres,
   loadSaleReceipt: loadSaleReceiptFromPostgres,
@@ -5081,6 +5087,76 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
       )
       return context.json(posRegisterOpenResponseSchema.parse(response), 201)
     } catch (error) {
+      return posError(context, error)
+    }
+  })
+
+  // Close from the POS: the cashier who opened the register counts the drawer (blind count).
+  app.post('/v1/pos/register-sessions/close', async (context) => {
+    const sessionHash = await readPosSessionHash(context)
+    const idempotencyKey = context.req.header('idempotency-key')
+    const parsed = posRegisterCloseRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!sessionHash)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'POS_SESSION_REQUIRED',
+            message: 'Sign in to the POS first.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey) || !parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_REGISTER_CLOSE',
+            message: 'Enter the counted cash and retry.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      const response = await dependencies.closePosRegisterSession(
+        sessionHash,
+        parsed.data,
+        idempotencyKey,
+        await requestHash(parsed.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(posRegisterCloseResponseSchema.parse(response))
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      const requestId = context.get('requestId')
+      if (code === 'HCRG2')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: { code: 'REGISTER_SESSION_NOT_OPEN', message: 'This register is not open.', requestId },
+          }),
+          409,
+        )
+      if (code === 'HCRG3')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'REGISTER_OPENED_BY_ANOTHER_EMPLOYEE',
+              message:
+                'Only the employee who opened this register can close it. An owner can close it in the Back Office.',
+              requestId,
+            },
+          }),
+          403,
+        )
+      if (code === 'HCRG1')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: { code: 'INVALID_REGISTER_CLOSE', message: 'Enter the counted cash and retry.', requestId },
+          }),
+          400,
+        )
       return posError(context, error)
     }
   })

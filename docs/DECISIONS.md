@@ -273,3 +273,15 @@ authorized by these development decisions.
   - **Duplicates.** Within one business, an email or mobile number already on a pending or approved application, or on a reseller account, cannot apply again; the applicant is told to sign in or contact the business (`HCRPA`, 409 `RESELLER_ALREADY_APPLIED`). Declined applicants may reapply. Other businesses are not checked, so one person can resell for several. This replaces the earlier silent acknowledgment of duplicate applications; it reveals that an email or number is already used with that business, which the owner accepted.
 - **Reason:** Owner request on 2026-11-04, with "per business" and "declined may reapply" chosen the same day.
 - **Review trigger:** Editing the delivery address from the portal, several saved addresses, or courier integration.
+
+## ADR-057: Close register from the POS
+
+- **Date:** 2026-11-13
+- **Status:** Accepted
+- **Decision:**
+  - The POS Sell screen has **Close register** while a session is open. The cashier counts bills by denomination and coins as a peso total, may add a note, confirms, and only then sees expected cash, the difference, and a shift summary (opening cash, cash sales, refunds, other cash movements, non-cash payments by method, sale count). This is a **blind count**.
+  - Only the employee who opened the session closes it from the POS (`HCRG3`). Owners can still close any session in the Back Office (Register sessions).
+  - Any difference still closes the session, with status `exception`, a `close_variance` cash movement carrying the cashier's note, and the existing closed-register-variance alert for the owner. Nothing closes silently and no manager PIN is required at the POS.
+  - `app.close_pos_register_session` is idempotent per request key and audited as the POS employee. `register_sessions` records `closed_by_employee_id` and `close_note`.
+- **Reason:** Owner request on 2026-11-13, choosing blind count, close-and-flag, and opener-only the same day. Replaces the unwired prototype close screen.
+- **Review trigger:** Manager PIN approval at the POS, cash in and cash out during a shift, or printed shift reports.
