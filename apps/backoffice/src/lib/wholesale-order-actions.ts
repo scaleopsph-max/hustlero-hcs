@@ -65,6 +65,8 @@ export function orderActionDefinitivelyRejected(command: PendingOrderAction, cod
   // Auth/scope/status failures may hide a previous commit. Keep their original identity.
   if (command.kind === 'fulfill' && command.payload.payment) return paidFulfillmentDefinitivelyRejected(code)
   return (
+    // Not enough stock rolls back the whole command, including its idempotency record, so nothing was saved.
+    code === 'INSUFFICIENT_AVAILABLE_STOCK' ||
     code === 'WHOLESALE_OVERRIDE_HCCO6' ||
     code === 'WHOLESALE_CREDIT_HCCR1' ||
     code === 'WHOLESALE_CREDIT_HCCR3' ||

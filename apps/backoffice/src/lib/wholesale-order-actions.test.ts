@@ -147,9 +147,14 @@ describe('wholesale order action selection and recovery', () => {
     'IDEMPOTENCY_KEY_CONFLICT',
     'WHOLESALE_CREDIT_HCCR2',
   ])('retains uncertain recovery %s', (code) => expect(orderActionDefinitivelyRejected(confirm, code)).toBe(false))
-  it.each(['WHOLESALE_OVERRIDE_HCCO6', 'WHOLESALE_CREDIT_HCCR1', 'WHOLESALE_CREDIT_HCCR3', 'WHOLESALE_CREDIT_HCCR4'])(
-    'unlocks definite command rollback %s',
-    (code) => expect(orderActionDefinitivelyRejected(confirm, code)).toBe(true),
+  it.each([
+    'INSUFFICIENT_AVAILABLE_STOCK',
+    'WHOLESALE_OVERRIDE_HCCO6',
+    'WHOLESALE_CREDIT_HCCR1',
+    'WHOLESALE_CREDIT_HCCR3',
+    'WHOLESALE_CREDIT_HCCR4',
+  ])('unlocks definite command rollback %s', (code) =>
+    expect(orderActionDefinitivelyRejected(confirm, code)).toBe(true),
   )
   it('validates confirmation order identity', () =>
     expect(
