@@ -130,7 +130,10 @@ export function Sidebar({ className, onNavigate }: { className?: string; onNavig
         ) : null}
       </div>
 
-      <nav aria-label="Main" className="flex flex-col">
+      <nav
+        aria-label="Main"
+        className="-mx-1.5 flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-1.5 pb-2"
+      >
         {groups.map((g) => (
           <div key={g.heading} className="flex flex-col">
             <div className="px-3 pb-1.5 pt-[18px] text-xs font-semibold text-ink-400">{g.heading}</div>

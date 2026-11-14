@@ -1,7 +1,6 @@
 'use client'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import Link from 'next/link'
-import { ArrowLeft, Calculator, Check, ChevronDown, RotateCcw, Download } from 'lucide-react'
+import { Calculator, Check, ChevronDown, RotateCcw, Download } from 'lucide-react'
 import {
   sessionContextResponseSchema,
   wholesaleReturnsContextSchema,
@@ -274,10 +273,6 @@ export function WholesaleReturnsWorkspace() {
   }
   return (
     <div className="min-w-0 space-y-5 p-4 md:p-6">
-      <Link href="/wholesale" className="inline-flex items-center gap-2">
-        <ArrowLeft size={18} />
-        Wholesale
-      </Link>
       {error && (
         <p role="alert" className="border-l-2 border-red-500 bg-red-50 p-3">
           {error}

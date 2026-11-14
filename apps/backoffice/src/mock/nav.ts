@@ -15,7 +15,6 @@ import {
   Percent,
   Receipt,
   ShoppingBag,
-  SlidersHorizontal,
   Smartphone,
   Store,
   Tags,
@@ -89,7 +88,6 @@ export const navGroups: NavGroup[] = [
       { label: 'POS devices', href: '/devices', icon: Smartphone },
       { label: 'Register sessions', href: '/register-sessions', icon: LockKeyhole },
       { label: 'Payment methods', href: '/payment-methods', icon: CircleDollarSign },
-      { label: 'Settings', href: '/settings', icon: SlidersHorizontal },
     ],
   },
   {

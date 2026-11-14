@@ -17,7 +17,7 @@ import {
   requiresPaymentReference,
 } from '@hcs/contracts'
 import { Button, Chip, Glass, formatPeso } from '@hcs/ui'
-import { Ban, Check, FilePlus2, PackageCheck, Printer, RotateCcw, Save, ShoppingCart } from 'lucide-react'
+import { Ban, Check, FilePlus2, PackageCheck, Printer, Save, ShoppingCart } from 'lucide-react'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState, useRef, type FormEvent } from 'react'
 import { preparePaidFulfillment } from '@/lib/wholesale-paid-fulfillment'
@@ -406,22 +406,6 @@ export function WholesaleOrdersWorkspace() {
       {actionScope && tenantId && (
         <StagingRecoveryControls family="orders" scope={{ user: actionScope.user, tenant: tenantId }} context={data} />
       )}
-      <Link href="/wholesale/credit" className="inline-flex items-center gap-2 text-sm">
-        <Save size={18} />
-        Terms and credit
-      </Link>
-      <Link href="/wholesale/returns" className="inline-flex items-center gap-2 text-sm">
-        <RotateCcw size={18} />
-        Returns and credits
-      </Link>
-      <Link href="/wholesale/approvals" className="inline-flex items-center gap-2 text-sm">
-        <Check size={18} />
-        Approval history
-      </Link>
-      <Link href="/wholesale/statements" className="inline-flex items-center gap-2 text-sm">
-        <Printer size={18} />
-        Statements and aging
-      </Link>
       {error ? <div className="border-l-2 border-red-600 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
       {pendingAction && (
         <div className="flex flex-wrap items-center gap-3 border-l-2 border-amber-500 bg-amber-50 p-3">

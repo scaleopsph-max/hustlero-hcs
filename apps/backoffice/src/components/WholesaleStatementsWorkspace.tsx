@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase-browser'
 import { statementCsv } from '@/lib/wholesale-statement'
 import { sessionContextResponseSchema, wholesaleStatementSchema, type WholesaleStatement } from '@hcs/contracts'
 import { formatPeso } from '@hcs/ui'
-import { ArrowLeft, Download, RefreshCw } from 'lucide-react'
+import { Download, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 const api = process.env.NEXT_PUBLIC_API_URL,
@@ -108,11 +108,7 @@ export function WholesaleStatementsWorkspace() {
   }
   return (
     <section className="min-w-0 space-y-4">
-      <div className="flex flex-wrap justify-between gap-3 print:hidden">
-        <Link href="/wholesale" className="inline-flex items-center gap-2 text-sm">
-          <ArrowLeft size={18} />
-          Orders
-        </Link>
+      <div className="flex flex-wrap justify-end gap-3 print:hidden">
         <div className="flex gap-2">
           <button
             title="Export CSV"

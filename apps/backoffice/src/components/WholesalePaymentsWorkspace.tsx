@@ -18,8 +18,7 @@ import {
   requiresPaymentReference,
 } from '@hcs/contracts'
 import { formatPeso } from '@hcs/ui'
-import { ArrowLeft, RefreshCw, Save } from 'lucide-react'
-import Link from 'next/link'
+import { RefreshCw, Save } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { StagingRecoveryControls, assertRecoveryPending, recoveryRequest } from '@/lib/staging-recovery-entry'
 
@@ -211,11 +210,7 @@ export function WholesalePaymentsWorkspace() {
   return (
     <div className="min-w-0 space-y-6 p-4 md:p-6">
       {scope && context && <StagingRecoveryControls family="payment" scope={scope} context={context} />}
-      <div className="flex items-center justify-between gap-4">
-        <Link href="/wholesale" className="inline-flex items-center gap-2">
-          <ArrowLeft size={18} />
-          Orders
-        </Link>
+      <div className="flex items-center justify-end gap-4">
         <button
           type="button"
           title="Refresh payments"

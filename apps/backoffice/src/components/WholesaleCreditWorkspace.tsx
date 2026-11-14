@@ -1,7 +1,6 @@
 'use client'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import Link from 'next/link'
-import { ArrowLeft, Check, RefreshCw, Save } from 'lucide-react'
+import { Check, RefreshCw, Save } from 'lucide-react'
 import {
   sessionContextResponseSchema,
   wholesaleCreditSettingsContextSchema,
@@ -220,11 +219,7 @@ export function WholesaleCreditWorkspace() {
   const selectedInvoice = receivables?.invoices.find((row) => row.invoiceId === invoice)
   return (
     <section className="min-w-0 space-y-6 p-4 md:p-6">
-      <div className="flex justify-between gap-3">
-        <Link href="/wholesale" className="inline-flex items-center gap-2 text-sm">
-          <ArrowLeft size={18} />
-          Orders
-        </Link>
+      <div className="flex justify-end gap-3">
         <button
           title="Refresh credit context"
           aria-label="Refresh credit context"
