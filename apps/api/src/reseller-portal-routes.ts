@@ -1,3 +1,4 @@
+import { applicationProblem } from './reseller-application-problem'
 import { buildPortalManifest } from './reseller-portal-manifest'
 import {
   apiErrorResponseSchema,
@@ -411,14 +412,10 @@ export function registerResellerPortalRoutes(
     const slug = context.req.param('slug')
     if (!slugPattern.test(slug) || slug.length > 63)
       return fail(context, 404, 'RESELLER_PORTAL_UNAVAILABLE', 'The reseller portal is not available.')
-    const request = await readJson(context, resellerApplicationRequestSchema)
-    if (!request)
-      return fail(
-        context,
-        400,
-        'INVALID_RESELLER_APPLICATION',
-        'Check your name, email, mobile number (09XX XXX XXXX), and address.',
-      )
+    const parsed = resellerApplicationRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!parsed.success)
+      return fail(context, 400, 'INVALID_RESELLER_APPLICATION', applicationProblem(parsed.error.issues))
+    const request = parsed.data
     return run(context, async () =>
       context.json(
         await dependencies.repository.submitApplication(slug, request, context.get('requestId'), context.env),
