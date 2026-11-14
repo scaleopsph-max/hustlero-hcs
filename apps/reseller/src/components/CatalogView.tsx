@@ -2,7 +2,7 @@
 
 import type { ResellerPortalCatalog } from '@hcs/contracts'
 import { Chip, Glass, cn, formatPeso } from '@hcs/ui'
-import { ChevronRight, Heart, Package, Search } from 'lucide-react'
+import { ChevronDown, ChevronRight, Heart, Package, Search } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 
 import { quantityInCart, type CartLine } from '@/lib/cart'
@@ -32,7 +32,6 @@ export function CatalogView({
   const [availableOnly, setAvailableOnly] = useState(false)
   const [favoritesOnly, setFavoritesOnly] = useState(false)
   const [newOnly, setNewOnly] = useState(false)
-  const [allCategories, setAllCategories] = useState(false)
   const [openProductId, setOpenProductId] = useState<string | null>(null)
 
   const groups = useMemo(() => groupCatalog(catalog.items), [catalog.items])
@@ -49,13 +48,6 @@ export function CatalogView({
   const openGroup = groups.find((group) => group.productId === openProductId) ?? null
   const closeSheet = useCallback(() => setOpenProductId(null), [])
 
-  // Up to five categories show as chips; the rest open with More. The chosen one always stays visible.
-  const categoryLimit = 5
-  const shownCategories = allCategories
-    ? categories
-    : categories.filter((name, index) => index < categoryLimit || name === category)
-  const hiddenCategoryCount = allCategories ? 0 : categories.length - shownCategories.length
-
   return (
     <section className="flex flex-col gap-4">
       <label className="relative block">
@@ -70,7 +62,7 @@ export function CatalogView({
         />
       </label>
 
-      {/* Chips wrap instead of scrolling sideways; long category lists fold behind "More". */}
+      {/* Filters wrap instead of scrolling sideways; categories are one dropdown however many there are. */}
       <div className="flex flex-wrap gap-2">
         <FilterChip
           active={category === null && !availableOnly && !favoritesOnly && !newOnly}
@@ -94,24 +86,33 @@ export function CatalogView({
         <FilterChip active={availableOnly} onClick={() => setAvailableOnly((value) => !value)}>
           In stock
         </FilterChip>
-        {shownCategories.map((name) => (
-          <FilterChip
-            key={name}
-            active={category === name}
-            onClick={() => setCategory(category === name ? null : name)}
-          >
-            {name}
-          </FilterChip>
-        ))}
-        {hiddenCategoryCount > 0 || allCategories ? (
-          <button
-            type="button"
-            aria-expanded={allCategories}
-            onClick={() => setAllCategories((value) => !value)}
-            className="h-9 flex-none rounded-full px-3 text-small font-semibold text-gold-300 underline-offset-4 hover:underline"
-          >
-            {allCategories ? 'Fewer' : `More (${hiddenCategoryCount})`}
-          </button>
+        {categories.length > 0 ? (
+          <label className="relative flex-none">
+            <span className="sr-only">Category</span>
+            <select
+              value={category ?? ''}
+              onChange={(event) => setCategory(event.target.value || null)}
+              className={cn(
+                'h-9 appearance-none rounded-full border pl-4 pr-9 text-small font-semibold',
+                category ? 'border-gold-500 bg-gold-500 text-ink-950' : 'border-white/20 bg-white/5 text-ink-100',
+              )}
+            >
+              <option value="">All categories</option>
+              {categories.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              size={16}
+              aria-hidden="true"
+              className={cn(
+                'pointer-events-none absolute right-3 top-1/2 -translate-y-1/2',
+                category ? 'text-ink-950' : 'text-ink-200',
+              )}
+            />
+          </label>
         ) : null}
       </div>
 
