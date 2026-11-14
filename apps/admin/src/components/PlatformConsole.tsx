@@ -446,9 +446,13 @@ export function PlatformConsole() {
                             )}
                           </td>
                           <td className="px-3 py-4">
-                            <Chip tone={item.entitled ? 'success' : 'neutral'}>
-                              {item.entitled ? 'Granted' : 'Not granted'}
-                            </Chip>
+                            {item.entitled && item.endsAt && new Date(item.endsAt).getTime() <= Date.now() ? (
+                              <Chip tone="warning">Expired</Chip>
+                            ) : (
+                              <Chip tone={item.entitled ? 'success' : 'neutral'}>
+                                {item.entitled ? 'Granted' : 'Not granted'}
+                              </Chip>
+                            )}
                           </td>
                           <td className="px-3 py-4">
                             <Chip tone={item.enabled ? 'info' : 'neutral'}>

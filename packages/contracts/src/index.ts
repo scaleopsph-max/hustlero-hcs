@@ -62,6 +62,8 @@ export {
   posSaleCompleteRequestSchema,
   posSaleCompleteResponseSchema,
   posSalePaymentRequestSchema,
+  posRegisterCloseRequestSchema,
+  posRegisterCloseResponseSchema,
   posRegisterOpenRequestSchema,
   posRegisterOpenResponseSchema,
   posSalesContextSchema,
@@ -75,6 +77,8 @@ export {
   type PosSaleCompleteRequest,
   type PosSaleCompleteResponse,
   type PosSalePaymentRequest,
+  type PosRegisterCloseRequest,
+  type PosRegisterCloseResponse,
   type PosRegisterOpenRequest,
   type PosRegisterOpenResponse,
   type PosSalesContext,
@@ -390,3 +394,6 @@ export {
 export * from './payment-references'
 export * from './wholesale-returns'
 export * from './reseller-portal'
+export * from './reseller-portal-report'
+export * from './push'
+export * from './files'

@@ -1,7 +1,6 @@
 'use client'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import Link from 'next/link'
-import { ArrowLeft, Calculator, Check, ChevronDown, RotateCcw, Download } from 'lucide-react'
+import { Calculator, Check, ChevronDown, RotateCcw, Download } from 'lucide-react'
 import {
   sessionContextResponseSchema,
   wholesaleReturnsContextSchema,
@@ -96,7 +95,33 @@ export function WholesaleReturnsWorkspace() {
           if (restored) setMode(restored.operation)
         }
         const next = wholesaleReturnsContextSchema.parse(await call(session.session.access_token, tenant.tenantId))
-        if (active) setData(next)
+        if (active) {
+          setData(next)
+          // Opened from a reseller portal order: start a return for that invoice.
+          const params = new URLSearchParams(window.location.search)
+          const requested = params.get('invoice')
+          const target = next.invoices.find((row) => row.invoiceId === requested)
+          if (requested && !restored && target) {
+            setMode('return')
+            setInvoice(requested)
+            // Opened from an approved reseller return request: fill in the items and reason.
+            const asked = Object.fromEntries(
+              (params.get('lines') ?? '')
+                .split(',')
+                .map((entry) => entry.split(':'))
+                .filter(
+                  (pair): pair is [string, string] =>
+                    pair.length === 2 &&
+                    /^\d+$/.test(pair[1] ?? '') &&
+                    target.lines.some((line) => line.invoiceLineId === pair[0]),
+                )
+                .map(([lineId, milli]) => [lineId, String(Number(milli) / 1000)]),
+            )
+            if (Object.keys(asked).length > 0) setQuantities(asked)
+            const askedReason = params.get('reason')
+            if (askedReason) setReason(askedReason.slice(0, 200))
+          }
+        }
       } catch (cause) {
         if (active) {
           setData(null)
@@ -248,10 +273,6 @@ export function WholesaleReturnsWorkspace() {
   }
   return (
     <div className="min-w-0 space-y-5 p-4 md:p-6">
-      <Link href="/wholesale" className="inline-flex items-center gap-2">
-        <ArrowLeft size={18} />
-        Wholesale
-      </Link>
       {error && (
         <p role="alert" className="border-l-2 border-red-500 bg-red-50 p-3">
           {error}

@@ -40,7 +40,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Menu size={21} />
         </button>
       </div>
-      <Sidebar className="hidden lg:flex" />
+      {/* Stays in view while the page scrolls; its menu scrolls on its own when it is taller than the screen. */}
+      <Sidebar className="hidden lg:sticky lg:top-4 lg:flex lg:max-h-[calc(100dvh-2rem)] lg:self-start" />
       {mobileNavOpen ? (
         <div
           className="fixed inset-0 z-50 bg-black/45 p-3 lg:hidden"

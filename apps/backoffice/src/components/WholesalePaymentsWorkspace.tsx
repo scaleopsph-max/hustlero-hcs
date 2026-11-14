@@ -18,8 +18,7 @@ import {
   requiresPaymentReference,
 } from '@hcs/contracts'
 import { formatPeso } from '@hcs/ui'
-import { ArrowLeft, RefreshCw, Save } from 'lucide-react'
-import Link from 'next/link'
+import { RefreshCw, Save } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { StagingRecoveryControls, assertRecoveryPending, recoveryRequest } from '@/lib/staging-recovery-entry'
 
@@ -202,6 +201,7 @@ export function WholesalePaymentsWorkspace() {
     new Map(context?.invoices.map((item) => [item.customerId, item.customerName]) ?? []).entries(),
   )
   const invoices = context?.invoices.filter((item) => item.customerId === customer) ?? []
+  const nothingDue = customer !== '' && !invoices.some((item) => item.canAllocate && (item.openBalanceMinor ?? 0) > 0)
   const payments = context?.payments.filter((item) => !customer || item.customerId === customer) ?? []
   const disabled = busy || !!pending || !context?.canRecord
   const onlineReference = requiresPaymentReference(
@@ -210,11 +210,7 @@ export function WholesalePaymentsWorkspace() {
   return (
     <div className="min-w-0 space-y-6 p-4 md:p-6">
       {scope && context && <StagingRecoveryControls family="payment" scope={scope} context={context} />}
-      <div className="flex items-center justify-between gap-4">
-        <Link href="/wholesale" className="inline-flex items-center gap-2">
-          <ArrowLeft size={18} />
-          Orders
-        </Link>
+      <div className="flex items-center justify-end gap-4">
         <button
           type="button"
           title="Refresh payments"
@@ -311,6 +307,12 @@ export function WholesalePaymentsWorkspace() {
                     />
                   </label>
                 </div>
+                {nothingDue ? (
+                  <p className="border-l-2 border-gold-500 bg-gold-500/10 px-3 py-2 text-sm text-ink-900">
+                    This customer has no unpaid invoices. Every invoice below is fully paid, so there is nothing to
+                    record a payment against.
+                  </p>
+                ) : null}
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[600px] text-left text-sm">
                     <thead>
@@ -350,7 +352,7 @@ export function WholesalePaymentsWorkspace() {
                 {!invoices.length && <p className="text-ink-500">{customer ? 'No invoices.' : 'Select a customer.'}</p>}
                 <button
                   type="submit"
-                  disabled={busy || !context.canRecord || !customer}
+                  disabled={busy || !context.canRecord || !customer || (nothingDue && !pending)}
                   className="inline-flex min-h-10 items-center gap-2 rounded bg-ink-900 px-4 py-2 text-white disabled:opacity-50"
                 >
                   <Save size={18} />

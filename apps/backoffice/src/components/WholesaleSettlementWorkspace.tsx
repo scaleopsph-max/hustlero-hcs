@@ -8,8 +8,7 @@ import {
   type WholesaleSettlementReport,
 } from '@hcs/contracts'
 import { formatPeso } from '@hcs/ui'
-import { ArrowLeft, Download, RefreshCw } from 'lucide-react'
-import Link from 'next/link'
+import { Download, RefreshCw } from 'lucide-react'
 import { useEffect, useState, useRef, type FormEvent } from 'react'
 const apiUrl = process.env.NEXT_PUBLIC_API_URL
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -122,11 +121,7 @@ export function WholesaleSettlementWorkspace() {
     : []
   return (
     <div className="min-w-0 space-y-5 p-4 md:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link href="/wholesale/payments" className="inline-flex items-center gap-2">
-          <ArrowLeft size={18} />
-          Payments
-        </Link>
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <button
           type="button"
           onClick={download}

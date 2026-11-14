@@ -40,8 +40,14 @@ it('round-trips an escaped formula containing quotes and a comma', () => {
 })
 
 it('uses the guarded serializer at the actual general Reports download boundary', () => {
-  const source = readFileSync(new URL('../components/ReportingWorkspace.tsx', import.meta.url), 'utf8')
-  expect(source).toContain("import { reportCsv } from '@/lib/report-csv'")
-  expect(source).toContain('new Blob([reportCsv(rows)]')
-  expect(source).not.toContain('function csvCell(')
+  // Every Reports tab (including the reseller portal tab) downloads through report-parts.
+  const parts = readFileSync(new URL('../components/report-parts.tsx', import.meta.url), 'utf8')
+  expect(parts).toContain("import { reportCsv } from '@/lib/report-csv'")
+  expect(parts).toContain('new Blob([reportCsv(rows)]')
+  for (const file of ['ReportingWorkspace.tsx', 'ResellerPortalReportView.tsx']) {
+    const source = readFileSync(new URL(`../components/${file}`, import.meta.url), 'utf8')
+    expect(source).toContain("from './report-parts'")
+    expect(source).not.toContain('function csvCell(')
+    expect(source).not.toContain('new Blob(')
+  }
 })

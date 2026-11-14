@@ -17,11 +17,13 @@ export const orderStatusLabel: Record<ResellerOrder['status'], { text: string; t
 
 /** What the reseller sees while an order waits for review. */
 export const reviewReasonLabel: Record<ResellerReviewReason, string> = {
-  manual_review: 'Ire-review muna ng team ang order mo bago i-confirm.',
-  credit_settings_missing: 'Inaayos pa ng team ang payment terms mo. Ire-review nila ang order.',
-  credit_review: 'Kailangang i-check ng team ang account mo bago i-confirm.',
-  stock_insufficient: 'Kulang ang stock sa ngayon. Ire-review ng team kung kailan ito maipapadala.',
-  credit_limit: 'Lagpas ang order sa available credit mo. Ire-review ng team o mag-settle muna ng balance.',
+  manual_review: 'The team will review your order before confirming it.',
+  credit_settings_missing: 'The team is still setting up your payment terms and will review the order.',
+  credit_review: 'The team needs to check your account before confirming.',
+  stock_insufficient: 'Stock is short right now. The team will review when it can ship.',
+  credit_limit: 'This order is over your available credit. The team will review it, or settle your balance first.',
+  awaiting_payment: 'Send your payment and upload the proof to keep your stock on hold.',
+  payment_review: 'Payment proof received. The team is checking it and will confirm your order soon.',
 }
 
 export const paymentLabel = { gcash: 'GCash', bank_transfer: 'Bank transfer' } as const
@@ -45,4 +47,72 @@ const dateFormat = new Intl.DateTimeFormat('en-PH', {
 export function formatDateTime(value: string): string {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : dateFormat.format(date)
+}
+
+/** The badge for an order: pay-first orders show where they are in the payment step. */
+export function orderBadge(
+  order: Pick<ResellerOrder, 'status' | 'reviewReason'> &
+    Partial<Pick<ResellerOrder, 'shipment' | 'fulfillmentMethod'>>,
+): {
+  text: string
+  tone: ChipTone
+} {
+  if (order.status !== 'cancelled' && order.shipment) {
+    const pickup = order.fulfillmentMethod === 'pickup'
+    switch (order.shipment.status) {
+      case 'to_pack':
+        return { text: 'Packing', tone: 'info' }
+      case 'packed':
+        return pickup ? { text: 'Ready for pickup', tone: 'attention' } : { text: 'Packed', tone: 'info' }
+      case 'shipped':
+        return { text: 'Shipped', tone: 'info' }
+      case 'delivered':
+        return { text: pickup ? 'Picked up' : 'Delivered', tone: 'success' }
+    }
+  }
+  if (order.status === 'submitted' && order.reviewReason === 'awaiting_payment')
+    return { text: 'Awaiting payment', tone: 'attention' }
+  if (order.status === 'submitted' && order.reviewReason === 'payment_review')
+    return { text: 'Payment sent', tone: 'info' }
+  return orderStatusLabel[order.status]
+}
+
+const timeFormat = new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' })
+
+/** "8:31 PM" for a payment deadline. */
+export function formatTime(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : timeFormat.format(date)
+}
+
+/** "3h 52m left", "12m left", or null once the deadline has passed. */
+export function timeLeft(deadline: string, now: number): string | null {
+  const ms = new Date(deadline).getTime() - now
+  if (Number.isNaN(ms) || ms <= 0) return null
+  const minutes = Math.ceil(ms / 60_000)
+  const hours = Math.floor(minutes / 60)
+  return hours > 0 ? `${hours}h ${minutes % 60}m left` : `${minutes}m left`
+}
+
+export const courierLabel = { jnt: 'J&T Express', lalamove: 'Lalamove', other: 'Courier' } as const
+
+/** "Just now", "5m ago", "3h ago", then the date and time. */
+export function timeAgo(value: string, now: number = Date.now()): string {
+  const ms = now - new Date(value).getTime()
+  if (Number.isNaN(ms)) return value
+  const minutes = Math.floor(ms / 60_000)
+  if (minutes < 1) return 'Just now'
+  if (minutes < 60) return `${minutes}m ago`
+  if (minutes < 24 * 60) return `${Math.floor(minutes / 60)}h ago`
+  return formatDateTime(value)
+}
+
+/** Short peso amounts for one-line summaries: ₱950, ₱19.5k, ₱1.2M. */
+export function compactPeso(minor: number): string {
+  const pesos = minor / 100
+  const short = (value: number, unit: string) =>
+    `₱${value.toLocaleString('en-PH', { maximumFractionDigits: 1 })}${unit}`
+  if (pesos >= 1_000_000) return short(pesos / 1_000_000, 'M')
+  if (pesos >= 1_000) return short(pesos / 1_000, 'k')
+  return short(pesos, '')
 }

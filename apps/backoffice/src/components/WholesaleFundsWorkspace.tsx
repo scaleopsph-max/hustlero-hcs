@@ -1,7 +1,6 @@
 'use client'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import Link from 'next/link'
-import { ArrowLeft, Check, RefreshCw } from 'lucide-react'
+import { Check, RefreshCw } from 'lucide-react'
 import { WholesaleFundReversalForm } from './WholesaleFundReversalForm'
 import type { PendingFundReversal } from '@/lib/wholesale-fund-reversal'
 import {
@@ -186,11 +185,7 @@ export function WholesaleFundsWorkspace() {
   return (
     <div className="min-w-0 space-y-5 p-4 md:p-6">
       {scope && data && <StagingRecoveryControls family="funds" scope={scope} context={data} />}
-      <div className="flex items-center justify-between gap-4">
-        <Link href="/wholesale/payments" className="inline-flex items-center gap-2">
-          <ArrowLeft size={18} />
-          Payments
-        </Link>
+      <div className="flex items-center justify-end gap-4">
         <button
           type="button"
           title="Refresh funds"

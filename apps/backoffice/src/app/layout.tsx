@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Bricolage_Grotesque, Figtree } from 'next/font/google'
 import type { ReactNode } from 'react'
+import { ToastProvider } from '@hcs/ui'
 import './globals.css'
 import { AppShell } from '@/components/AppShell'
 
@@ -16,7 +17,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${display.variable} ${sans.variable}`}>
       <body className="app-backoffice min-h-screen bg-ink-100 text-ink-900">
-        <AppShell>{children}</AppShell>
+        <ToastProvider>
+          <AppShell>{children}</AppShell>
+        </ToastProvider>
       </body>
     </html>
   )

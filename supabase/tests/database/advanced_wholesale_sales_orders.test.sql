@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(44);
+select plan(48);
 
 select has_table('app', 'sales_orders', 'sales orders table exists');
 select has_table('app', 'sales_order_lines', 'sales order lines table exists');
@@ -209,6 +209,18 @@ select throws_ok($$
     'advanced-confirm-002', 'confirm-hash-2', 'confirm-request-2'
   )
 $$, 'HCQ10', 'Available stock is insufficient for this order', 'confirmation rejects insufficient available shared stock');
+
+select is(app.cancel_wholesale_order_remaining(
+    '1e000000-0000-4000-8000-000000000001', '2e000000-0000-4000-8000-000000000001',
+    (select id from app.sales_orders where tenant_id = '2e000000-0000-4000-8000-000000000001' and order_number = 'SO-AW-002'),
+    'Not enough stock', 'advanced-cancel-draft', 'cancel-draft-hash', 'cancel-draft-request'
+  )->>'releasedQuantityMilli', '0', 'a draft that could not be confirmed can be cancelled, releasing nothing');
+select is((select status from app.sales_orders where tenant_id = '2e000000-0000-4000-8000-000000000001' and order_number = 'SO-AW-002'),
+  'cancelled', 'the cancelled draft is kept as cancelled');
+select is((select count(*)::integer from app.sales_order_reservation_ledger where tenant_id = '2e000000-0000-4000-8000-000000000001'), 2,
+  'cancelling a draft writes no reservation movement');
+select is((select count(*)::integer from audit.audit_events where tenant_id = '2e000000-0000-4000-8000-000000000001'
+  and action = 'sales_order.cancelled' and reason = 'Not enough stock'), 1, 'the draft cancellation reason is audited');
 
 select * from finish();
 rollback;

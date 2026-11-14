@@ -1,3 +1,13 @@
+import {
+  decorateBackofficeCatalog,
+  decoratePosContext,
+  decorateResellerCatalog,
+  presentOrders,
+  registerFileRoutes,
+  signFileKey,
+} from './files-routes'
+import { filesPostgresRepository, type FilesRepository } from './files-repository'
+import type { FileBucket } from './files'
 import { registerResellerPortalRoutes } from './reseller-portal-routes'
 import { resellerPortalPostgresRepository, type ResellerPortalRepository } from './reseller-portal-repository'
 import {
@@ -89,6 +99,8 @@ import {
   wholesaleCreditOverridesContextSchema,
   posSaleCompleteRequestSchema,
   posSaleCompleteResponseSchema,
+  posRegisterCloseRequestSchema,
+  posRegisterCloseResponseSchema,
   posRegisterOpenRequestSchema,
   posRegisterOpenResponseSchema,
   posSalesContextSchema,
@@ -199,8 +211,10 @@ import {
   loadSaleReceiptFromPostgres,
   refundSaleInPostgres,
   voidSaleInPostgres,
+  closePosRegisterSessionInPostgres,
   openPosRegisterSessionInPostgres,
   type PosSaleCompleter,
+  type PosRegisterSessionCloser,
   type PosRegisterSessionOpener,
   type PosSalesContextLoader,
   type SalesLoader,
@@ -493,6 +507,7 @@ interface AppDependencies {
   authenticatePosEmployee: PosEmployeePinAuthenticator
   loadPosSalesContext: PosSalesContextLoader
   openPosRegisterSession: PosRegisterSessionOpener
+  closePosRegisterSession: PosRegisterSessionCloser
   completePosSale: PosSaleCompleter
   loadSales: SalesLoader
   loadSaleReceipt: SaleReceiptLoader
@@ -533,6 +548,8 @@ interface AppDependencies {
   revokeSupportAccess: SupportAccessRevoker
   loadSupportOverview: SupportOverviewLoader
   resellerPortal: ResellerPortalRepository
+  files: FilesRepository
+  fileBucket: (bindings: Bindings) => FileBucket | null
 }
 
 const defaultDependencies: AppDependencies = {
@@ -604,6 +621,7 @@ const defaultDependencies: AppDependencies = {
   authenticatePosEmployee: authenticatePosEmployeeInPostgres,
   loadPosSalesContext: loadPosSalesContextFromPostgres,
   openPosRegisterSession: openPosRegisterSessionInPostgres,
+  closePosRegisterSession: closePosRegisterSessionInPostgres,
   completePosSale: completePosSaleInPostgres,
   loadSales: loadSalesFromPostgres,
   loadSaleReceipt: loadSaleReceiptFromPostgres,
@@ -644,6 +662,8 @@ const defaultDependencies: AppDependencies = {
   revokeSupportAccess: revokeSupportAccessInPostgres,
   loadSupportOverview: loadSupportOverviewFromPostgres,
   resellerPortal: resellerPortalPostgresRepository,
+  files: filesPostgresRepository,
+  fileBucket: (bindings) => bindings.FILES ?? null,
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -673,6 +693,26 @@ async function sha256(value: string): Promise<string> {
 
 export function createApp(overrides: Partial<AppDependencies> = {}) {
   const dependencies: AppDependencies = { ...defaultDependencies, ...overrides }
+  // Product photos ride along with catalog-shaped responses for Back Office and POS.
+  const loadCatalogWithoutImages = dependencies.loadCatalog
+  dependencies.loadCatalog = async (userId, tenantId, bindings) =>
+    decorateBackofficeCatalog(
+      dependencies.files,
+      await loadCatalogWithoutImages(userId, tenantId, bindings),
+      userId,
+      tenantId,
+      bindings,
+      Math.floor(Date.now() / 1000),
+    )
+  const loadPosContextWithoutImages = dependencies.loadPosSalesContext
+  dependencies.loadPosSalesContext = async (sessionHash, bindings) =>
+    decoratePosContext(
+      dependencies.files,
+      await loadPosContextWithoutImages(sessionHash, bindings),
+      sessionHash,
+      bindings,
+      Math.floor(Date.now() / 1000),
+    )
   const app = new Hono<{ Bindings: Bindings }>()
 
   app.use('*', requestId())
@@ -2557,11 +2597,13 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
             ? 'The payout method or authorized open cash session is unavailable. Refresh and select an eligible payout option.'
             : code === 'HCWR5'
               ? 'Funded receipt requires a separate audited reconciliation before payout.'
-              : code === 'HCWR4'
-                ? 'Quantity, credit, original collection or register cash limit exceeded.'
-                : code === 'HCWR3'
-                  ? 'Original snapshots or inventory require reconciliation; this valuation may be unsupported.'
-                  : 'Check the return, credit or confirmed payout details.'
+              : code === 'HCWR4' && error instanceof Error && /held for the reseller/.test(error.message)
+                ? "Part of this credit is held for the reseller's open order in their wallet. It is used when that order is invoiced."
+                : code === 'HCWR4'
+                  ? 'Quantity, credit, original collection or register cash limit exceeded.'
+                  : code === 'HCWR3'
+                    ? 'Original snapshots or inventory require reconciliation; this valuation may be unsupported.'
+                    : 'Check the return, credit or confirmed payout details.'
     return context.json(
       { error: { code: `WHOLESALE_RETURN_${code}`, message, requestId: context.get('requestId') } },
       status,
@@ -5047,6 +5089,76 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
       )
       return context.json(posRegisterOpenResponseSchema.parse(response), 201)
     } catch (error) {
+      return posError(context, error)
+    }
+  })
+
+  // Close from the POS: the cashier who opened the register counts the drawer (blind count).
+  app.post('/v1/pos/register-sessions/close', async (context) => {
+    const sessionHash = await readPosSessionHash(context)
+    const idempotencyKey = context.req.header('idempotency-key')
+    const parsed = posRegisterCloseRequestSchema.safeParse(await context.req.json().catch(() => null))
+    if (!sessionHash)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'POS_SESSION_REQUIRED',
+            message: 'Sign in to the POS first.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        401,
+      )
+    if (!idempotencyKey || !/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey) || !parsed.success)
+      return context.json(
+        apiErrorResponseSchema.parse({
+          error: {
+            code: 'INVALID_REGISTER_CLOSE',
+            message: 'Enter the counted cash and retry.',
+            requestId: context.get('requestId'),
+          },
+        }),
+        400,
+      )
+    try {
+      const response = await dependencies.closePosRegisterSession(
+        sessionHash,
+        parsed.data,
+        idempotencyKey,
+        await requestHash(parsed.data),
+        context.get('requestId'),
+        context.env,
+      )
+      return context.json(posRegisterCloseResponseSchema.parse(response))
+    } catch (error) {
+      const code = postgresErrorCode(error)
+      const requestId = context.get('requestId')
+      if (code === 'HCRG2')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: { code: 'REGISTER_SESSION_NOT_OPEN', message: 'This register is not open.', requestId },
+          }),
+          409,
+        )
+      if (code === 'HCRG3')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'REGISTER_OPENED_BY_ANOTHER_EMPLOYEE',
+              message:
+                'Only the employee who opened this register can close it. An owner can close it in the Back Office.',
+              requestId,
+            },
+          }),
+          403,
+        )
+      if (code === 'HCRG1')
+        return context.json(
+          apiErrorResponseSchema.parse({
+            error: { code: 'INVALID_REGISTER_CLOSE', message: 'Enter the counted cash and retry.', requestId },
+          }),
+          400,
+        )
       return posError(context, error)
     }
   })
@@ -7915,6 +8027,25 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
     verifyAccessToken: dependencies.verifyAccessToken,
     resolveBackofficeTenant: resolveWholesaleTenant,
     repository: dependencies.resellerPortal,
+    requestHash,
+    postgresErrorCode,
+    decorateCatalog: (catalog, authUserId, tenantId, bindings) =>
+      decorateResellerCatalog(
+        dependencies.files,
+        catalog,
+        authUserId,
+        tenantId,
+        bindings,
+        Math.floor(Date.now() / 1000),
+      ),
+    presentOrders: (orders, bindings) => presentOrders(orders, bindings, Math.floor(Date.now() / 1000)),
+    signFileKey: (key, bindings) => signFileKey(key, bindings, Math.floor(Date.now() / 1000)),
+  })
+  registerFileRoutes(app, {
+    verifyAccessToken: dependencies.verifyAccessToken,
+    resolveBackofficeTenant: resolveWholesaleTenant,
+    repository: dependencies.files,
+    bucket: dependencies.fileBucket,
     requestHash,
     postgresErrorCode,
   })

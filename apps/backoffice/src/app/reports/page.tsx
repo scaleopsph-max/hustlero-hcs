@@ -6,17 +6,10 @@ import { ReceiptText } from 'lucide-react'
 export default function ReportsPage() {
   return (
     <>
-      <Topbar title="Reports" subtitle="Reconciled sales performance, profitability, inventory, and CSV exports." />
-      <Link
-        href="/wholesale/settlement"
-        className="mx-6 mb-6 inline-flex items-center gap-2 border-b border-ink-900/20 py-3 font-semibold"
-      >
-        <ReceiptText size={18} />
-        Wholesale settlement
-      </Link>
+      <Topbar title="Reports" subtitle="Sales, inventory, reseller portal, and wholesale reports with CSV exports." />
       <Link
         href="/reports/payments"
-        className="mx-6 inline-flex items-center gap-2 border-b border-ink-900/20 py-3 font-semibold"
+        className="mx-6 mb-6 inline-flex items-center gap-2 border-b border-ink-900/20 py-3 font-semibold"
       >
         <ReceiptText size={18} />
         Online payment records

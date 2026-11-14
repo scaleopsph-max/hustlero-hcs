@@ -1,6 +1,7 @@
 'use client'
 
-import { Banknote, LogOut, Minus, Plus, ScanLine, ShoppingBag } from 'lucide-react'
+import { Banknote, LockKeyhole, LogOut, Minus, Plus, ScanLine, ShoppingBag } from 'lucide-react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import {
@@ -26,6 +27,8 @@ import {
   type PosCartLine,
 } from '@/lib/pos-api'
 import { resolvePosPricing } from '@/lib/pos-pricing'
+
+const apiUrl = process.env.NEXT_PUBLIC_API_URL
 
 export default function SellScreen() {
   const router = useRouter()
@@ -165,6 +168,12 @@ export default function SellScreen() {
         </div>
         <SyncPill status="online" />
         <span className="text-sm font-semibold text-white">{context.employee.displayName}</span>
+        {context.registerSession ? (
+          <Link href="/close" className={buttonClasses({ variant: 'secondary', className: 'bg-transparent' })}>
+            <LockKeyhole size={18} className="mr-2" />
+            Close register
+          </Link>
+        ) : null}
         <Button variant="secondary" className="bg-transparent" onClick={signOut}>
           <LogOut size={18} className="mr-2" />
           Sign out
@@ -231,10 +240,20 @@ export default function SellScreen() {
                         : 'border-white/[0.14] bg-white/[0.07] text-white hover:bg-white/[0.12]',
                     )}
                   >
-                    <span>
-                      <span className="block font-semibold">{item.productName}</span>
-                      <span className="text-sm text-ink-300">
-                        {item.variantName} · {item.sku}
+                    <span className="flex items-start gap-3">
+                      {item.imageThumbUrl && apiUrl ? (
+                        <img
+                          src={`${apiUrl.replace(/\/$/, '')}${item.imageThumbUrl}`}
+                          alt=""
+                          loading="lazy"
+                          className="size-12 flex-none rounded-[10px] object-cover"
+                        />
+                      ) : null}
+                      <span className="min-w-0">
+                        <span className="block font-semibold">{item.productName}</span>
+                        <span className="text-sm text-ink-300">
+                          {item.variantName} · {item.sku}
+                        </span>
                       </span>
                     </span>
                     <span className="flex items-end justify-between gap-2">

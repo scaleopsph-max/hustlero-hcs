@@ -4,13 +4,19 @@ import { Button, Field, Glass, Logo } from '@hcs/ui'
 import { Mail } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 
-import { portalAuth } from '@/lib/portal-api'
+import { fileUrl, portalAuth } from '@/lib/portal-api'
+import { sendCodeError } from '@/lib/sign-in-errors'
 
 /**
  * Email one-time code sign-in. A typed code works inside an installed PWA,
  * where a magic link would open the regular browser instead.
  */
-export function SignIn() {
+export interface SignInBusiness {
+  portalName: string
+  logoUrl: string | null
+}
+
+export function SignIn({ business }: { business?: SignInBusiness | null }) {
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const [step, setStep] = useState<'email' | 'code'>('email')
@@ -28,7 +34,7 @@ export function SignIn() {
       options: { shouldCreateUser: true },
     })
     setBusy(false)
-    if (sendError) setError('Hindi naipadala ang code. I-check ang email at subukan ulit.')
+    if (sendError) setError(sendCodeError(sendError))
     else setStep('code')
   }
 
@@ -43,27 +49,31 @@ export function SignIn() {
       type: 'email',
     })
     setBusy(false)
-    if (verifyError) setError('Mali o expired na ang code. Humingi ng bagong code.')
+    if (verifyError) setError('The code is wrong or expired. Request a new code.')
   }
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-8 px-5 py-10">
       <div className="flex items-center gap-3">
-        <Logo size={44} />
-        <div>
-          <p className="font-display text-h3">Reseller Portal</p>
-          <p className="text-small text-ink-300">Order at wholesale price, anytime.</p>
+        {business?.logoUrl ? (
+          <img src={fileUrl(business.logoUrl)} alt="" className="size-11 flex-none rounded-[14px] object-cover" />
+        ) : (
+          <Logo size={44} />
+        )}
+        <div className="min-w-0">
+          <p className="font-display text-h3 break-words">{business?.portalName ?? 'Reseller Portal'}</p>
+          <p className="text-small text-ink-300">Order at your wholesale price, anytime.</p>
         </div>
       </div>
 
       <Glass className="rounded-sheet p-6">
         {!auth ? (
-          <p className="text-ink-200">Hindi pa naka-configure ang sign-in ng portal na ito.</p>
+          <p className="text-ink-200">Sign-in is not set up for this portal yet.</p>
         ) : step === 'email' ? (
           <form className="flex flex-col gap-5" onSubmit={sendCode}>
             <div>
-              <h1 className="text-h3">Mag-sign in</h1>
-              <p className="mt-1 text-ink-300">Gamitin ang email na inaprubahan ng business.</p>
+              <h1 className="text-h3">Sign in</h1>
+              <p className="mt-1 text-ink-300">Use the email the business approved.</p>
             </div>
             <Field
               label="Email"
@@ -77,30 +87,30 @@ export function SignIn() {
             />
             <Button type="submit" variant="primary" disabled={busy || !email}>
               <Mail size={18} className="mr-2" />
-              {busy ? 'Pinapadala…' : 'Ipadala ang code'}
+              {busy ? 'Sending…' : 'Send code'}
             </Button>
           </form>
         ) : (
           <form className="flex flex-col gap-5" onSubmit={verifyCode}>
             <div>
-              <h1 className="text-h3">Ilagay ang code</h1>
+              <h1 className="text-h3">Enter the code</h1>
               <p className="mt-1 text-ink-300">
-                Nagpadala kami ng 6-digit code sa <span className="font-semibold text-ink-50">{email}</span>.
+                We sent a sign-in code to <span className="font-semibold text-ink-50">{email}</span>.
               </p>
             </div>
             <Field
-              label="6-digit code"
+              label="Sign-in code"
               inputMode="numeric"
               autoComplete="one-time-code"
-              pattern="[0-9]{6}"
-              maxLength={6}
+              pattern="[0-9]{6,10}"
+              maxLength={10}
               required
               value={code}
               onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))}
               {...(error ? { error } : {})}
             />
-            <Button type="submit" variant="primary" disabled={busy || code.length !== 6}>
-              {busy ? 'Chine-check…' : 'Mag-sign in'}
+            <Button type="submit" variant="primary" disabled={busy || code.length < 6}>
+              {busy ? 'Checking…' : 'Sign in'}
             </Button>
             <button
               type="button"
@@ -111,7 +121,7 @@ export function SignIn() {
                 setError(null)
               }}
             >
-              Ibang email o bagong code
+              Use another email or get a new code
             </button>
           </form>
         )}

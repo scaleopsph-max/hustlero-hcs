@@ -39,6 +39,7 @@ import {
   wholesaleOrderDraftResponseSchema,
   wholesaleOrderFulfillResponseSchema,
   posSaleCompleteResponseSchema,
+  posRegisterCloseResponseSchema,
   posRegisterOpenResponseSchema,
   posSalesContextSchema,
   salesContextSchema,
@@ -553,6 +554,18 @@ const openPosRegisterSession = vi.fn(async () => ({
   status: 'open' as const,
   openedAt: '2026-09-25T02:00:00.000Z',
   openingCashCentavos: 100000,
+}))
+const closePosRegisterSession = vi.fn(async () => ({
+  registerSessionId: 'f0000000-0000-4000-8000-000000000001',
+  status: 'exception' as const,
+  openedAt: '2026-09-25T02:00:00.000Z',
+  closedAt: '2026-09-25T10:00:00.000Z',
+  expectedCashCentavos: 229800,
+  countedCashCentavos: 225000,
+  varianceCentavos: -4800,
+  cash: { openingCentavos: 100000, salesCentavos: 129800, refundsCentavos: 0, otherCentavos: 0 },
+  nonCash: [{ method: 'E-wallet', amountCentavos: 50000 }],
+  salesCount: 1,
 }))
 const completePosSale = vi.fn(async () => ({
   saleId: '12000000-0000-4000-8000-000000000001',
@@ -1121,6 +1134,7 @@ const authenticatedApp = createApp({
   authenticatePosEmployee,
   loadPosSalesContext,
   openPosRegisterSession,
+  closePosRegisterSession,
   completePosSale,
   loadSales,
   loadSaleReceipt,
@@ -1623,6 +1637,7 @@ describe('API', () => {
       authenticatePosEmployee,
       loadPosSalesContext,
       openPosRegisterSession,
+      closePosRegisterSession,
       completePosSale,
       loadSales,
       loadSaleReceipt,
@@ -1757,6 +1772,7 @@ describe('API', () => {
       authenticatePosEmployee,
       loadPosSalesContext,
       openPosRegisterSession,
+      closePosRegisterSession,
       completePosSale,
       loadSales,
       loadSaleReceipt,
@@ -3272,6 +3288,41 @@ describe('API', () => {
       expect.any(String),
       bindings,
     )
+  })
+
+  it('closes the register from the POS with a blind count', async () => {
+    closePosRegisterSession.mockClear()
+    const send = (body: unknown, key = 'pos-register-close-001') =>
+      authenticatedApp.request(
+        '/v1/pos/register-sessions/close',
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-pos-session-token': 'c'.repeat(64),
+            'idempotency-key': key,
+          },
+          body: JSON.stringify(body),
+        },
+        bindings,
+      )
+    const response = await send({ countedCashCentavos: 225_000, note: ' Short, gave wrong change ' })
+    expect(response.status).toBe(200)
+    expect(posRegisterCloseResponseSchema.parse(await response.json()).varianceCentavos).toBe(-4800)
+    expect(closePosRegisterSession).toHaveBeenCalledWith(
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+      { countedCashCentavos: 225_000, note: 'Short, gave wrong change' },
+      'pos-register-close-001',
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+      expect.any(String),
+      bindings,
+    )
+    expect((await send({ countedCashCentavos: -1 })).status).toBe(400)
+    expect((await send({ countedCashCentavos: 100, expectedCashCentavos: 100 })).status).toBe(400)
+    closePosRegisterSession.mockRejectedValueOnce(Object.assign(new Error('other'), { code: 'HCRG3' }))
+    const other = await send({ countedCashCentavos: 100 }, 'pos-register-close-002')
+    expect(other.status).toBe(403)
+    expect(apiErrorResponseSchema.parse(await other.json()).error.code).toBe('REGISTER_OPENED_BY_ANOTHER_EMPLOYEE')
   })
 
   it('completes a payment sale without accepting client prices or totals', async () => {

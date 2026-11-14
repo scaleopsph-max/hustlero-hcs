@@ -1,5 +1,6 @@
 import {
   posSaleCompleteResponseSchema,
+  posRegisterCloseResponseSchema,
   posRegisterOpenResponseSchema,
   posSalesContextSchema,
   salesContextSchema,
@@ -7,6 +8,8 @@ import {
   saleReversalResponseSchema,
   type PosSaleCompleteRequest,
   type PosSaleCompleteResponse,
+  type PosRegisterCloseRequest,
+  type PosRegisterCloseResponse,
   type PosRegisterOpenRequest,
   type PosRegisterOpenResponse,
   type PosSalesContext,
@@ -20,6 +23,14 @@ import { Client } from 'pg'
 import type { Bindings } from './env'
 
 export type PosSalesContextLoader = (sessionTokenHash: string, bindings: Bindings) => Promise<PosSalesContext>
+export type PosRegisterSessionCloser = (
+  sessionTokenHash: string,
+  request: PosRegisterCloseRequest,
+  idempotencyKey: string,
+  requestHash: string,
+  requestId: string,
+  bindings: Bindings,
+) => Promise<PosRegisterCloseResponse>
 export type PosRegisterSessionOpener = (
   sessionTokenHash: string,
   request: PosRegisterOpenRequest,
@@ -107,6 +118,24 @@ export const openPosRegisterSessionInPostgres: PosRegisterSessionOpener = async 
         bindings,
         'select app.open_pos_register_session($1::text,$2::bigint,$3::text,$4::text,$5::text) response',
         [sessionTokenHash, request.openingCashCentavos, idempotencyKey, requestHash, requestId],
+      )
+    ).rows[0]?.response,
+  )
+
+export const closePosRegisterSessionInPostgres: PosRegisterSessionCloser = async (
+  sessionTokenHash,
+  request,
+  idempotencyKey,
+  requestHash,
+  requestId,
+  bindings,
+) =>
+  posRegisterCloseResponseSchema.parse(
+    (
+      await query(
+        bindings,
+        'select app.close_pos_register_session($1::text,$2::bigint,$3::text,$4::text,$5::text,$6::text) response',
+        [sessionTokenHash, request.countedCashCentavos, request.note ?? null, idempotencyKey, requestHash, requestId],
       )
     ).rows[0]?.response,
   )

@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { productImageSchema } from './files'
+
 const identifierSchema = z.uuid()
 const moneyMinorSchema = z.number().int().min(0).max(99_999_999_999)
 
@@ -111,6 +113,8 @@ export const catalogProductSchema = z.object({
   status: z.enum(['active', 'inactive', 'archived']),
   category: catalogCategorySchema.nullable(),
   variants: z.array(catalogVariantSchema).min(1),
+  /** Active photos in display order; the first is the primary photo. */
+  images: z.array(productImageSchema).optional(),
 })
 
 export const catalogResponseSchema = z.object({

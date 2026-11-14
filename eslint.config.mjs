@@ -29,7 +29,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['apps/*/public/sw.js'],
+    files: ['apps/*/public/sw.js', 'apps/*/public/sw-*.js'],
     languageOptions: {
       globals: globals.serviceworker,
     },

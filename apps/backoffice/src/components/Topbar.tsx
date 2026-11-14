@@ -1,6 +1,7 @@
-import { Calendar, ChevronDown, Layers, MapPin, UserRound, type LucideIcon } from 'lucide-react'
+import { Calendar, ChevronDown, Layers, MapPin, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Glass } from '@hcs/ui'
+import { AccountMenu } from './AccountMenu'
 import { NotificationBell } from './NotificationBell'
 
 const filters: { label: string; Icon: LucideIcon }[] = [
@@ -49,14 +50,7 @@ export function Topbar({
           : null}
         {actions}
         <NotificationBell />
-        <span
-          role="img"
-          aria-label="Account"
-          title="Account"
-          className="ml-0.5 flex size-10 flex-none items-center justify-center rounded-full bg-ink-900 text-gold-300 sm:ml-1.5"
-        >
-          <UserRound size={20} aria-hidden="true" />
-        </span>
+        <AccountMenu />
       </div>
     </Glass>
   )

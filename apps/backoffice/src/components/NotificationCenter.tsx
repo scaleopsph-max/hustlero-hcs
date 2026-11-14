@@ -6,6 +6,8 @@ import { createClient, type SupabaseClient } from '@/lib/supabase-browser'
 import { BellRing, CheckCheck, Circle, Loader2, Mail, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
+
+import { PushAlerts } from './PushAlerts'
 import {
   notificationCenterSchema,
   notificationReadResponseSchema,
@@ -153,6 +155,14 @@ export function NotificationCenter() {
     }
   }
 
+  const pushRequest = useCallback(
+    (path: string, init?: RequestInit) => {
+      if (!auth || !token || !tenantId) return Promise.reject(new Error('Sign in again to change push alerts.'))
+      return apiRequest(path, token, tenantId, auth, init)
+    },
+    [auth, token, tenantId],
+  )
+
   if (loading && !data) {
     return (
       <div className="flex min-h-72 items-center justify-center text-sm text-ink-500">
@@ -167,6 +177,7 @@ export function NotificationCenter() {
       {notice ? (
         <p className="border-l-2 border-emerald-600 bg-emerald-50 p-3 text-sm text-emerald-900">{notice}</p>
       ) : null}
+      {token && tenantId ? <PushAlerts request={pushRequest} /> : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex border border-ink-900/15 bg-white/70 p-1" role="tablist">
           <button

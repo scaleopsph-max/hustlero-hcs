@@ -17,7 +17,7 @@ import {
   requiresPaymentReference,
 } from '@hcs/contracts'
 import { Button, Chip, Glass, formatPeso } from '@hcs/ui'
-import { Ban, Check, FilePlus2, PackageCheck, Printer, RotateCcw, Save, ShoppingCart } from 'lucide-react'
+import { Ban, Check, FilePlus2, PackageCheck, Printer, Save, ShoppingCart } from 'lucide-react'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState, useRef, type FormEvent } from 'react'
 import { preparePaidFulfillment } from '@/lib/wholesale-paid-fulfillment'
@@ -240,7 +240,11 @@ export function WholesaleOrdersWorkspace() {
       )
       await load(token, tenantId)
       setCancelReason('')
-      setMessage('Order cancelled and the remaining reservation released.')
+      setMessage(
+        selectedOrder.status === 'draft'
+          ? 'Draft cancelled. It stays in the list as cancelled.'
+          : 'Order cancelled and the remaining reservation released.',
+      )
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not cancel the order.')
     } finally {
@@ -402,22 +406,6 @@ export function WholesaleOrdersWorkspace() {
       {actionScope && tenantId && (
         <StagingRecoveryControls family="orders" scope={{ user: actionScope.user, tenant: tenantId }} context={data} />
       )}
-      <Link href="/wholesale/credit" className="inline-flex items-center gap-2 text-sm">
-        <Save size={18} />
-        Terms and credit
-      </Link>
-      <Link href="/wholesale/returns" className="inline-flex items-center gap-2 text-sm">
-        <RotateCcw size={18} />
-        Returns and credits
-      </Link>
-      <Link href="/wholesale/approvals" className="inline-flex items-center gap-2 text-sm">
-        <Check size={18} />
-        Approval history
-      </Link>
-      <Link href="/wholesale/statements" className="inline-flex items-center gap-2 text-sm">
-        <Printer size={18} />
-        Statements and aging
-      </Link>
       {error ? <div className="border-l-2 border-red-600 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
       {pendingAction && (
         <div className="flex flex-wrap items-center gap-3 border-l-2 border-amber-500 bg-amber-50 p-3">
@@ -516,6 +504,23 @@ export function WholesaleOrdersWorkspace() {
                   <Button disabled={!data.canManage || busy || !!pendingAction} onClick={confirmOrder}>
                     <Check size={18} /> Confirm and reserve
                   </Button>
+                  <div className="grid gap-3 border-t border-ink-900/10 pt-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+                    <input
+                      value={cancelReason}
+                      onChange={(event) => setCancelReason(event.target.value)}
+                      placeholder="Reason for cancelling this draft"
+                      aria-label="Reason for cancelling this draft"
+                      maxLength={500}
+                      className="min-h-11 border border-ink-900/15 bg-white px-3"
+                    />
+                    <Button
+                      variant="secondary"
+                      disabled={!data.canManage || busy || !!pendingAction || cancelReason.trim().length < 2}
+                      onClick={cancelOrder}
+                    >
+                      <Ban size={18} /> Cancel draft
+                    </Button>
+                  </div>
                 </div>
               ) : selectedOrder.status === 'confirmed' || selectedOrder.status === 'partially_fulfilled' ? (
                 <div className="mt-4 grid gap-4">
