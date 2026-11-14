@@ -46,6 +46,8 @@ export function CartView({
   )
   const [payment, setPayment] = useState<'gcash' | 'bank_transfer'>('gcash')
   const [notes, setNotes] = useState('')
+  // Wallet (credit from returns) is used by default; the reseller can keep it for later.
+  const [useWallet, setUseWallet] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [placed, setPlaced] = useState<ResellerOrderSubmitResponse | null>(null)
@@ -71,13 +73,21 @@ export function CartView({
           <p className="mt-1 text-ink-300">
             Order {placed.orderNumber} · {formatPeso(placed.totalMinor)}
           </p>
+          {placed.walletMinor ? (
+            <p className="text-small text-ink-300">
+              {formatPeso(placed.walletMinor)} paid from your wallet
+              {placed.amountDueMinor ? ` · ${formatPeso(placed.amountDueMinor)} to pay` : ''}
+            </p>
+          ) : null}
         </div>
         {awaitingPayment ? (
           <>
             <p className="text-ink-200">
               Your stock is on hold
               {placed.paymentDueAt ? ` until ${formatTime(placed.paymentDueAt)}` : ` for ${holdHours} hours`}. Upload
-              your payment proof for the full amount before then or the order is cancelled.
+              your payment proof for{' '}
+              {placed.walletMinor && placed.amountDueMinor ? formatPeso(placed.amountDueMinor) : 'the full amount'}{' '}
+              before then or the order is cancelled.
             </p>
             <PaymentInstructions
               accounts={catalog.payment?.accounts}
@@ -87,13 +97,15 @@ export function CartView({
           </>
         ) : (
           <p className="text-ink-200">
-            {confirmed && placed.onCredit
-              ? 'Charged to your Platinum credit. We are packing your order. Pay by the due date on your statement.'
-              : confirmed
-                ? 'Your stock is reserved. Watch for updates on payment and delivery.'
-                : placed.reviewReason
-                  ? reviewReasonLabel[placed.reviewReason]
-                  : 'The team will review your order first.'}
+            {confirmed && placed.walletMinor && !placed.amountDueMinor
+              ? 'Paid with your wallet. Your stock is reserved and we are preparing your order.'
+              : confirmed && placed.onCredit
+                ? 'Charged to your Platinum credit. We are packing your order. Pay by the due date on your statement.'
+                : confirmed
+                  ? 'Your stock is reserved. Watch for updates on payment and delivery.'
+                  : placed.reviewReason
+                    ? reviewReasonLabel[placed.reviewReason]
+                    : 'The team will review your order first.'}
           </p>
         )}
         <Button
@@ -130,9 +142,13 @@ export function CartView({
 
   const deliveryMissing = method === 'delivery' && address.trim().length < 5
   const shippingMinor = shippingFeeFor(catalog.shipping, summary.totalMinor, method)
+  const orderTotalMinor = summary.totalMinor + shippingMinor
+  const walletBalanceMinor = catalog.account.walletMinor ?? 0
+  const walletMinor = useWallet ? Math.min(walletBalanceMinor, orderTotalMinor) : 0
+  const dueMinor = orderTotalMinor - walletMinor
+  const paidByWallet = walletMinor > 0 && dueMinor === 0
   const onCredit =
-    catalog.account.creditOrderingMinor != null &&
-    catalog.account.creditOrderingMinor >= summary.totalMinor + shippingMinor
+    !paidByWallet && catalog.account.creditOrderingMinor != null && catalog.account.creditOrderingMinor >= dueMinor
   const blocked = summary.shortfalls.length > 0 || summary.hasOutOfStock || deliveryMissing || busy
 
   async function submit(event: FormEvent) {
@@ -144,6 +160,7 @@ export function CartView({
       paymentPreference: payment,
       ...(method === 'delivery' ? { deliveryAddress: address.trim() } : {}),
       ...(notes.trim() ? { notes: notes.trim() } : {}),
+      ...(walletBalanceMinor > 0 ? { useWallet } : {}),
     }
     const fingerprint = JSON.stringify(request)
     if (attempt.current?.fingerprint !== fingerprint) attempt.current = { key: newIdempotencyKey('rp'), fingerprint }
@@ -301,21 +318,56 @@ export function CartView({
           <span className="text-ink-300">
             Total ({summary.itemCount} {summary.itemCount === 1 ? 'item' : 'items'})
           </span>
-          <span className="text-pos-price">{formatPeso(summary.totalMinor + shippingMinor)}</span>
+          <span className="text-pos-price">{formatPeso(orderTotalMinor)}</span>
         </div>
+        {walletBalanceMinor > 0 ? (
+          <div className="flex flex-col gap-2 rounded-control border border-white/15 px-3 py-2.5">
+            <label className="flex items-center justify-between gap-3">
+              <span className="text-small">
+                <span className="block font-semibold">Use wallet</span>
+                <span className="text-ink-300">{formatPeso(walletBalanceMinor)} available from returns</span>
+              </span>
+              <input
+                type="checkbox"
+                role="switch"
+                checked={useWallet}
+                onChange={(event) => setUseWallet(event.target.checked)}
+                className="size-5 flex-none accent-gold-500"
+              />
+            </label>
+            {walletMinor > 0 ? (
+              <>
+                <div className="flex items-baseline justify-between text-small">
+                  <span className="text-ink-300">Wallet</span>
+                  <span>−{formatPeso(walletMinor)}</span>
+                </div>
+                <div className="flex items-baseline justify-between">
+                  <span className="font-semibold">To pay</span>
+                  <span className="font-semibold">{formatPeso(dueMinor)}</span>
+                </div>
+              </>
+            ) : null}
+          </div>
+        ) : null}
         {summary.potentialProfitMinor > 0 ? (
           <p className="text-small text-signal-dark-success-fg">
             Estimated profit if sold at SRP: {formatPeso(summary.potentialProfitMinor)}
           </p>
         ) : null}
-        {onCredit ? (
+        {paidByWallet ? (
+          <p className="rounded-control bg-signal-dark-success-bg px-3 py-2 text-small text-signal-dark-success-fg">
+            Your wallet covers this order, so it is confirmed right away. No payment needed.
+          </p>
+        ) : onCredit ? (
           <p className="rounded-control bg-signal-dark-success-bg px-3 py-2 text-small text-signal-dark-success-fg">
             Platinum credit: this order is confirmed right away and added to your balance.{' '}
             {formatPeso(catalog.account.creditOrderingMinor ?? 0)} of credit available.
           </p>
         ) : (
           <p className="text-small text-ink-300">
-            After you place the order, send your full payment within {holdHours} hours to keep the stock on hold.
+            After you place the order, send{' '}
+            {walletMinor > 0 ? `the remaining ${formatPeso(dueMinor)}` : 'your full payment'} within {holdHours} hours
+            to keep the stock on hold.
             {catalog.account.creditOrderingMinor != null
               ? ' This order is more than your available credit, so it is pay-first.'
               : ''}
@@ -323,7 +375,13 @@ export function CartView({
         )}
         {error ? <p className="text-small text-signal-dark-critical-fg">{error}</p> : null}
         <Button type="submit" variant="primary" size="xl" disabled={blocked}>
-          {busy ? 'Sending…' : onCredit ? 'Place order on credit' : 'Place order'}
+          {busy
+            ? 'Sending…'
+            : paidByWallet
+              ? 'Place order with wallet'
+              : onCredit
+                ? 'Place order on credit'
+                : 'Place order'}
         </Button>
       </Glass>
     </form>

@@ -1042,7 +1042,8 @@ function ReviewCard({
   const paidMinor = proofs
     .filter((proof) => proof.status !== 'rejected')
     .reduce((sum, proof) => sum + proof.amountMinor, 0)
-  const balanceMinor = Math.max(0, order.totalMinor - paidMinor)
+  const walletMinor = order.walletMinor ?? 0
+  const balanceMinor = Math.max(0, order.totalMinor - walletMinor - paidMinor)
   const [acting, setActing] = useState<'approve' | 'reject' | null>(null)
   function decide(decision: 'approve' | 'reject') {
     const request = orderReviewRequest(decision, note)
@@ -1066,7 +1067,10 @@ function ReviewCard({
             · {order.paymentPreference === 'gcash' ? 'GCash' : 'Bank transfer'}
           </p>
         </div>
-        <p className="text-h4">{formatPeso(order.totalMinor)}</p>
+        <div className="text-right">
+          <p className="text-h4">{formatPeso(order.totalMinor)}</p>
+          {walletMinor ? <p className="text-sm text-ink-500">Paid from wallet {formatPeso(walletMinor)}</p> : null}
+        </div>
       </div>
       {order.reviewReason ? (
         <p className="rounded-control bg-signal-light-attention-bg px-3 py-2 text-sm text-signal-light-attention-fg">

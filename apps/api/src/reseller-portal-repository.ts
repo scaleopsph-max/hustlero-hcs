@@ -53,8 +53,10 @@ import {
   type ResellerPointsRedeemResponse,
   type ResellerPointsSettingsRequest,
   resellerStatementSchema,
+  resellerWalletSchema,
   resellerLoyaltySchema,
   type ResellerStatement,
+  type ResellerWallet,
   type ResellerLoyalty,
   resellerPortalAvailabilitySchema,
   type ResellerPortalAvailability,
@@ -333,6 +335,7 @@ export interface ResellerPortalRepository {
     bindings: Bindings,
   ): Promise<ResellerPortalAvailability>
   loadStatement(authUserId: string, tenantId: string, bindings: Bindings): Promise<ResellerStatement>
+  loadWallet(authUserId: string, tenantId: string, bindings: Bindings): Promise<ResellerWallet>
   loadLoyalty(authUserId: string, tenantId: string, bindings: Bindings): Promise<ResellerLoyalty>
   applyCredit(
     authUserId: string,
@@ -554,6 +557,13 @@ export const resellerPortalPostgresRepository: ResellerPortalRepository = {
       'select app.set_reseller_portal_enabled($1::uuid, $2::uuid, $3::boolean, $4::text) response',
       [userId, tenantId, enabled, requestId],
       (value) => resellerPortalAvailabilitySchema.parse(value),
+    ),
+  loadWallet: (authUserId, tenantId, bindings) =>
+    queryOne(
+      bindings,
+      'select app.load_reseller_wallet($1::uuid, $2::uuid) response',
+      [authUserId, tenantId],
+      (value) => resellerWalletSchema.parse(value),
     ),
   loadStatement: (authUserId, tenantId, bindings) =>
     queryOne(

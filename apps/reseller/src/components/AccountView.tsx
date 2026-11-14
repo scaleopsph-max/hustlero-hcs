@@ -6,6 +6,7 @@ import type {
   ResellerPortalSession,
   ResellerStatement,
   ResellerTier,
+  ResellerWallet,
 } from '@hcs/contracts'
 import { Button, Glass, cn, formatPeso } from '@hcs/ui'
 import {
@@ -18,6 +19,7 @@ import {
   Star,
   UserRound,
   Users,
+  Wallet,
   type LucideIcon,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -29,16 +31,21 @@ import { nextTierProgress, tierLabel, tierStyle } from '@/lib/tiers'
 import { LoyaltyCard } from './LoyaltyCard'
 import { StatementCard } from './StatementCard'
 import { TierCard } from './TierCard'
+import { WalletCard } from './WalletCard'
 
-type Section = 'statement' | 'tier' | 'referrals' | 'points' | 'details'
+type Section = 'statement' | 'wallet' | 'tier' | 'referrals' | 'points' | 'details'
 
 const sectionTitle: Record<Section, string> = {
   statement: 'Statement of account',
+  wallet: 'Wallet',
   tier: 'Tier & credit',
   referrals: 'Invite resellers',
   points: 'Points',
   details: 'Account details',
 }
+
+/** Three tiles share a phone's width: amounts of ₱100,000 and up are shortened (₱155k). */
+const tileAmount = (minor: number) => (minor >= 10_000_000 ? compactPeso(minor) : formatPeso(minor))
 
 /** Account hub: a short summary, then one row per section; each section opens on its own page. */
 export function AccountView({
@@ -50,6 +57,7 @@ export function AccountView({
   loadStatement,
   loadLoyalty,
   loadTier,
+  loadWallet,
   onOpenOrder,
   onApplyCredit,
   onRedeemPoints,
@@ -62,6 +70,7 @@ export function AccountView({
   loadStatement: () => Promise<ResellerStatement>
   loadLoyalty: () => Promise<ResellerLoyalty>
   loadTier: () => Promise<ResellerTier>
+  loadWallet: () => Promise<ResellerWallet>
   onOpenOrder: (salesOrderId: string) => void
   onApplyCredit: (invoiceId: string, amountMinor: number, key: string) => Promise<unknown>
   onRedeemPoints: (invoiceId: string, points: number, key: string) => Promise<unknown>
@@ -108,6 +117,8 @@ export function AccountView({
             onApplyCredit={onApplyCredit}
             onRedeemPoints={onRedeemPoints}
           />
+        ) : section === 'wallet' ? (
+          <WalletCard load={loadWallet} fallbackMinor={account.walletMinor ?? 0} />
         ) : section === 'tier' ? (
           <TierCard load={loadTier} view="tier" />
         ) : section === 'referrals' ? (
@@ -158,22 +169,31 @@ export function AccountView({
         </div>
       </Glass>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
         <button type="button" onClick={() => open('statement')} className="text-left">
-          <Glass className="flex h-full flex-col gap-1 rounded-glass p-4">
+          <Glass className="flex h-full flex-col gap-1 rounded-glass p-3">
             <span className="text-caption text-ink-400">To pay</span>
-            <span className={cn('text-h4 font-semibold', overdue > 0 ? 'text-signal-dark-critical-fg' : '')}>
-              {toPay === undefined ? '—' : formatPeso(toPay)}
+            <span className={cn('text-lg font-semibold', overdue > 0 ? 'text-signal-dark-critical-fg' : '')}>
+              {toPay === undefined ? '—' : tileAmount(toPay)}
             </span>
             <span className="text-caption text-ink-400">
               {overdue > 0 ? `${formatPeso(overdue)} overdue` : toPay ? 'See invoices' : 'All paid up'}
             </span>
           </Glass>
         </button>
+        <button type="button" onClick={() => open('wallet')} className="text-left">
+          <Glass className="flex h-full flex-col gap-1 rounded-glass p-3">
+            <span className="text-caption text-ink-400">Wallet</span>
+            <span className="text-lg font-semibold">{tileAmount(account.walletMinor ?? 0)}</span>
+            <span className="text-caption text-ink-400">
+              {account.walletMinor ? 'Use at checkout' : 'From returns'}
+            </span>
+          </Glass>
+        </button>
         <button type="button" onClick={() => open('points')} className="text-left">
-          <Glass variant="gold" className="flex h-full flex-col gap-1 rounded-glass p-4">
+          <Glass variant="gold" className="flex h-full flex-col gap-1 rounded-glass p-3">
             <span className="text-caption text-ink-200">Points</span>
-            <span className="text-h4 font-semibold">{account.pointsBalance.toLocaleString('en-PH')}</span>
+            <span className="text-lg font-semibold">{account.pointsBalance.toLocaleString('en-PH')}</span>
             <span className="text-caption text-ink-200">See history</span>
           </Glass>
         </button>
@@ -209,6 +229,14 @@ export function AccountView({
           title="Statement of account"
           subtitle="Invoices, payments, returns"
           onClick={() => open('statement')}
+        />
+        <Row
+          icon={Wallet}
+          title="Wallet"
+          subtitle={
+            account.walletMinor ? `${formatPeso(account.walletMinor)} to spend at checkout` : 'Credit from your returns'
+          }
+          onClick={() => open('wallet')}
         />
         <Row icon={Star} title="Points" subtitle="How you earn and history" onClick={() => open('points')} />
         <Row

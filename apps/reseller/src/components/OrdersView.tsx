@@ -94,6 +94,9 @@ export function OrdersView({
                     <div className="flex flex-none flex-col items-end gap-1.5">
                       <Chip tone={status.tone}>{status.text}</Chip>
                       <span className="text-small font-semibold">{formatPeso(order.totalMinor)}</span>
+                      {order.walletMinor ? (
+                        <span className="text-caption text-ink-300">Wallet {formatPeso(order.walletMinor)}</span>
+                      ) : null}
                     </div>
                     <ChevronDown size={18} className={open ? 'flex-none rotate-180' : 'flex-none'} />
                   </button>

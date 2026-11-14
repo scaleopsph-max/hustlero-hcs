@@ -285,3 +285,15 @@ authorized by these development decisions.
   - `app.close_pos_register_session` is idempotent per request key and audited as the POS employee. `register_sessions` records `closed_by_employee_id` and `close_note`.
 - **Reason:** Owner request on 2026-11-13, choosing blind count, close-and-flag, and opener-only the same day. Replaces the unwired prototype close screen.
 - **Review trigger:** Manager PIN approval at the POS, cash in and cash out during a shift, or printed shift reports.
+
+## ADR-058: Reseller wallet from return credit
+
+- **Date:** 2026-11-14
+- **Status:** Accepted
+- **Decision:**
+  - A reseller's **Wallet** is the unapplied credit on their credit notes (approved returns and other credit), shown on the portal Account page with what is held and a history.
+  - At checkout the reseller chooses to use the wallet (on by default). The amount used is held on the order (`sales_orders.wallet_amount`) so the same credit cannot be spent twice or paid out while the order is open. An order the wallet covers in full is confirmed without a payment proof.
+  - The held wallet is applied to the order's invoice, oldest credit first, when payment is recorded; a cancelled or declined order releases it. Back Office refuses to apply or pay out credit that is held (`HCWR4`).
+  - Wallet credit does not expire. Resellers cannot top up the wallet with money; it only holds credit the business issued.
+- **Reason:** Owner request on 2026-11-14, choosing the name Wallet, reseller choice at checkout, and no expiry. No top-ups so the wallet is not stored value bought with cash.
+- **Review trigger:** Top-ups, expiry, transferring wallet credit, or using the wallet at the POS.

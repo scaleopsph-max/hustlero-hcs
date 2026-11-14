@@ -525,6 +525,14 @@ export function registerResellerPortalRoutes(
     )
   })
 
+  app.get('/v1/portal/wallet', async (context) => {
+    const reseller = await resolveReseller(context, true)
+    if (reseller instanceof Response) return reseller
+    return run(context, async () =>
+      context.json(await dependencies.repository.loadWallet(reseller.userId, reseller.tenantId, context.env)),
+    )
+  })
+
   app.get('/v1/portal/loyalty', async (context) => {
     const reseller = await resolveReseller(context, true)
     if (reseller instanceof Response) return reseller

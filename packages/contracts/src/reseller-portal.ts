@@ -175,6 +175,8 @@ export const resellerPortalCatalogSchema = z.object({
     tier: z.lazy(() => resellerTierNameSchema).optional(),
     /** Set when this reseller can order on credit right now: what is left of the limit. */
     creditOrderingMinor: minor.nullable().optional(),
+    /** Wallet balance: credit from returns, less what open orders hold. */
+    walletMinor: minor.optional(),
   }),
   fulfillmentLocationName: z.string().min(1),
   /** Where to send payment. Optional so older API versions still parse. */
@@ -261,6 +263,10 @@ export const portalShipmentSchema = z.object({
   /** What the reseller still owes on the invoice; null before the sale is completed. */
   balanceMinor: z.number().int().nullable().optional(),
   shippingFeeMinor: minor.optional(),
+  /** Paid from the reseller's wallet (credit from returns). */
+  walletMinor: minor.optional(),
+  /** Total less the wallet: what the reseller pays with a payment proof. */
+  amountDueMinor: minor.optional(),
   parcels: z.array(portalParcelSchema).optional(),
   lines: z.array(
     z.object({
@@ -332,6 +338,10 @@ export const resellerOrderSchema = z.object({
     }),
   ),
   shippingFeeMinor: minor.optional(),
+  /** Paid from the reseller's wallet (credit from returns). */
+  walletMinor: minor.optional(),
+  /** Total less the wallet: what the reseller pays with a payment proof. */
+  amountDueMinor: minor.optional(),
   parcels: z.array(portalParcelSchema).optional(),
   returnRequests: z.array(z.lazy(() => resellerReturnRequestSummarySchema)).optional(),
   paymentProofs: z.array(paymentProofSchema).optional(),
@@ -375,6 +385,8 @@ export const resellerOrderSubmitRequestSchema = z
     deliveryAddress: z.string().trim().min(5).max(500).optional(),
     paymentPreference: resellerPaymentPreferenceSchema,
     notes: z.string().trim().max(1000).optional(),
+    /** Pay with the wallet first; the reseller chooses, on by default. */
+    useWallet: z.boolean().optional(),
   })
   .refine((order) => order.fulfillmentMethod === 'pickup' || order.deliveryAddress !== undefined, {
     message: 'A delivery address is required.',
@@ -392,6 +404,8 @@ export const resellerOrderSubmitResponseSchema = z.object({
   shippingFeeMinor: minor.optional(),
   /** Platinum on credit: confirmed at once, billed with the reseller's term. */
   onCredit: z.boolean().optional(),
+  walletMinor: minor.optional(),
+  amountDueMinor: minor.optional(),
 })
 
 // Back Office administration ---------------------------------------------
@@ -714,7 +728,10 @@ export const resellerStatementSchema = z.object({
     /** Confirmed orders not shipped yet, less verified payments. */
     notInvoicedMinor: minor,
     pendingProofsMinor: minor,
+    /** The wallet: credit from returns the reseller can spend now. */
     creditAvailableMinor: minor,
+    /** Wallet set aside for open orders. */
+    walletHeldMinor: minor.optional(),
   }),
   points: z
     .object({
@@ -989,3 +1006,20 @@ export type ResellerTier = z.infer<typeof resellerTierSchema>
 export type ResellerTierSettings = z.infer<typeof resellerTierSettingsSchema>
 export type ResellerAccountTier = z.infer<typeof resellerAccountTierSchema>
 export type ResellerAccountControls = z.infer<typeof resellerAccountControlsSchema>
+
+/** The reseller's wallet: credit from approved returns, spent at checkout or refunded by the business. */
+export const resellerWalletSchema = z.object({
+  balanceMinor: minor,
+  heldMinor: minor,
+  held: z.array(z.object({ orderNumber: z.string().min(1), amountMinor: minor })),
+  history: z.array(
+    z.object({
+      id: z.string().min(1),
+      at: timestamp,
+      kind: z.enum(['return_credit', 'used', 'refunded']),
+      label: z.string().min(1),
+      amountMinor: z.number().int(),
+    }),
+  ),
+})
+export type ResellerWallet = z.infer<typeof resellerWalletSchema>

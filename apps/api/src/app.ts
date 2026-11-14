@@ -2597,11 +2597,13 @@ export function createApp(overrides: Partial<AppDependencies> = {}) {
             ? 'The payout method or authorized open cash session is unavailable. Refresh and select an eligible payout option.'
             : code === 'HCWR5'
               ? 'Funded receipt requires a separate audited reconciliation before payout.'
-              : code === 'HCWR4'
-                ? 'Quantity, credit, original collection or register cash limit exceeded.'
-                : code === 'HCWR3'
-                  ? 'Original snapshots or inventory require reconciliation; this valuation may be unsupported.'
-                  : 'Check the return, credit or confirmed payout details.'
+              : code === 'HCWR4' && error instanceof Error && /held for the reseller/.test(error.message)
+                ? "Part of this credit is held for the reseller's open order in their wallet. It is used when that order is invoiced."
+                : code === 'HCWR4'
+                  ? 'Quantity, credit, original collection or register cash limit exceeded.'
+                  : code === 'HCWR3'
+                    ? 'Original snapshots or inventory require reconciliation; this valuation may be unsupported.'
+                    : 'Check the return, credit or confirmed payout details.'
     return context.json(
       { error: { code: `WHOLESALE_RETURN_${code}`, message, requestId: context.get('requestId') } },
       status,

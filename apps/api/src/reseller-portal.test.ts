@@ -550,6 +550,29 @@ describe('reseller portal API', () => {
     expect((await app.request('/v1/portal/statement', {}, bindings)).status).toBe(401)
   })
 
+  it('serves the reseller wallet only to signed-in resellers', async () => {
+    const wallet = {
+      balanceMinor: 155_000,
+      heldMinor: 75_000,
+      held: [{ orderNumber: 'RP-000005', amountMinor: 75_000 }],
+      history: [
+        {
+          id: 'in:1',
+          at: '2026-11-14T08:00:00.000Z',
+          kind: 'return_credit',
+          label: 'Return credit · INV-1',
+          amountMinor: 230_000,
+        },
+      ],
+    }
+    const loadWallet = vi.fn(async () => wallet)
+    const app = portalApp(repository({ loadWallet }))
+    const headers = { authorization: 'Bearer reseller-token', 'x-tenant-id': tenantId }
+    expect(await (await app.request('/v1/portal/wallet', { headers }, bindings)).json()).toEqual(wallet)
+    expect(loadWallet).toHaveBeenCalledWith(resellerUserId, tenantId, bindings)
+    expect((await app.request('/v1/portal/wallet', {}, bindings)).status).toBe(401)
+  })
+
   it('lets resellers apply credit and pay with points, with clear refusals', async () => {
     const invoiceId = '70000000-0000-4000-8000-000000000001'
     const applyCredit = vi.fn(async () => ({ invoiceId, amountMinor: 46_000, balanceMinor: 146_000, applications: 1 }))

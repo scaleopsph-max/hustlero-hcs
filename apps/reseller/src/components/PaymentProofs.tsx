@@ -30,10 +30,11 @@ export function PaymentProofs({
   const verifiedMinor = proofs
     .filter((proof) => proof.status === 'accepted')
     .reduce((sum, proof) => sum + proof.amountMinor, 0)
-  // Returns lower what is owed on the order.
+  // Returns and the wallet lower what is owed on the order.
+  const walletMinor = order.walletMinor ?? 0
   const dueMinor = Math.max(
     0,
-    order.totalMinor - (order.returns ?? []).reduce((sum, entry) => sum + entry.amountMinor, 0),
+    order.totalMinor - walletMinor - (order.returns ?? []).reduce((sum, entry) => sum + entry.amountMinor, 0),
   )
   const remainingMinor = Math.max(0, dueMinor - verifiedMinor)
   const [open, setOpen] = useState(startOpen)
