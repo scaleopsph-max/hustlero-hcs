@@ -14,6 +14,7 @@ const accents: Array<{ value: ResellerAccentColor; label: string; swatch: string
   { value: 'rose', label: 'Rose', swatch: '#F43F5E' },
   { value: 'violet', label: 'Violet', swatch: '#8B5CF6' },
   { value: 'orange', label: 'Orange', swatch: '#F97316' },
+  { value: 'white', label: 'White', swatch: '#FFFFFF' },
 ]
 
 /** How the business's reseller portal looks to resellers: name, accent color, and logo. */
@@ -116,7 +117,11 @@ export function BrandingCard({
                     checked={accent === entry.value}
                     onChange={() => setAccent(entry.value)}
                   />
-                  <span className="size-4 rounded-full" style={{ background: entry.swatch }} aria-hidden />
+                  <span
+                    className="size-4 rounded-full ring-1 ring-ink-900/20"
+                    style={{ background: entry.swatch }}
+                    aria-hidden
+                  />
                   {entry.label}
                 </label>
               ))}

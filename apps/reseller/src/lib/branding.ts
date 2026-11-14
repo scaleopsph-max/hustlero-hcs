@@ -42,6 +42,8 @@ const hex: Record<ResellerAccentColor, string[]> = {
     '#9A3412',
     '#7C2D12',
   ],
+  // Black and white brands: light shades stay near white so buttons and highlights read on the dark portal.
+  white: ['#FFFFFF', '#FAFAFA', '#F4F4F5', '#F4F4F5', '#E4E4E7', '#FAFAFA', '#D4D4D8', '#A1A1AA', '#71717A', '#3F3F46'],
 }
 
 /** "#D4AF37" -> "212 175 55", the form the Tailwind accent variables use. */

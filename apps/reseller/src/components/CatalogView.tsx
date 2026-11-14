@@ -32,6 +32,7 @@ export function CatalogView({
   const [availableOnly, setAvailableOnly] = useState(false)
   const [favoritesOnly, setFavoritesOnly] = useState(false)
   const [newOnly, setNewOnly] = useState(false)
+  const [allCategories, setAllCategories] = useState(false)
   const [openProductId, setOpenProductId] = useState<string | null>(null)
 
   const groups = useMemo(() => groupCatalog(catalog.items), [catalog.items])
@@ -48,6 +49,13 @@ export function CatalogView({
   const openGroup = groups.find((group) => group.productId === openProductId) ?? null
   const closeSheet = useCallback(() => setOpenProductId(null), [])
 
+  // Up to five categories show as chips; the rest open with More. The chosen one always stays visible.
+  const categoryLimit = 5
+  const shownCategories = allCategories
+    ? categories
+    : categories.filter((name, index) => index < categoryLimit || name === category)
+  const hiddenCategoryCount = allCategories ? 0 : categories.length - shownCategories.length
+
   return (
     <section className="flex flex-col gap-4">
       <label className="relative block">
@@ -62,7 +70,8 @@ export function CatalogView({
         />
       </label>
 
-      <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
+      {/* Chips wrap instead of scrolling sideways; long category lists fold behind "More". */}
+      <div className="flex flex-wrap gap-2">
         <FilterChip
           active={category === null && !availableOnly && !favoritesOnly && !newOnly}
           onClick={() => {
@@ -85,7 +94,7 @@ export function CatalogView({
         <FilterChip active={availableOnly} onClick={() => setAvailableOnly((value) => !value)}>
           In stock
         </FilterChip>
-        {categories.map((name) => (
+        {shownCategories.map((name) => (
           <FilterChip
             key={name}
             active={category === name}
@@ -94,6 +103,16 @@ export function CatalogView({
             {name}
           </FilterChip>
         ))}
+        {hiddenCategoryCount > 0 || allCategories ? (
+          <button
+            type="button"
+            aria-expanded={allCategories}
+            onClick={() => setAllCategories((value) => !value)}
+            className="h-9 flex-none rounded-full px-3 text-small font-semibold text-gold-300 underline-offset-4 hover:underline"
+          >
+            {allCategories ? 'Fewer' : `More (${hiddenCategoryCount})`}
+          </button>
+        ) : null}
       </div>
 
       {visible.length === 0 ? (

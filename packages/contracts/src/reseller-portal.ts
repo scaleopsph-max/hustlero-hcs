@@ -43,7 +43,7 @@ export const resellerPaymentAccountSchema = z.object({
 // Public application form -------------------------------------------------
 
 /** Accent colors a business can choose for its reseller portal. */
-export const resellerAccentColorSchema = z.enum(['gold', 'emerald', 'sky', 'rose', 'violet', 'orange'])
+export const resellerAccentColorSchema = z.enum(['gold', 'emerald', 'sky', 'rose', 'violet', 'orange', 'white'])
 /** How a business's reseller portal looks: its name, accent color, and logo (a signed link). */
 export const resellerBrandingSchema = z.object({
   portalName: z.string().min(1),
