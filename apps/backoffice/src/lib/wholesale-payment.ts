@@ -91,11 +91,33 @@ export function prepareWholesalePayment(
       if (amountMinor > invoice.openBalanceMinor) throw new Error('Allocation exceeds the invoice balance.')
       return { invoiceId, amountMinor }
     })
-  return wholesalePaymentAllocationRequestSchema.parse({
+  const amountMinor = parsePaymentMoney(amount)
+  if (amountMinor <= 0) throw new Error('Enter the amount received.')
+  if (allocations.length === 0) {
+    const open = context.invoices.some(
+      (invoice) => invoice.customerId === customerId && invoice.canAllocate && (invoice.openBalanceMinor ?? 0) > 0,
+    )
+    throw new Error(
+      open
+        ? 'Under Allocate, enter how much of this payment goes to each invoice.'
+        : 'This customer has no unpaid invoices, so there is nothing to apply this payment to.',
+    )
+  }
+  const allocatedMinor = allocations.reduce((sum, item) => sum + item.amountMinor, 0)
+  if (allocatedMinor !== amountMinor)
+    throw new Error(
+      `The allocations add up to ${pesos(allocatedMinor)}, but the amount received is ${pesos(amountMinor)}. They must match.`,
+    )
+  const parsed = wholesalePaymentAllocationRequestSchema.safeParse({
     customerId,
     paymentMethodId,
-    amountMinor: parsePaymentMoney(amount),
+    amountMinor,
     reference,
     allocations,
   })
+  if (!parsed.success) throw new Error('Check the payment details and try again.')
+  return parsed.data
 }
+
+const pesos = (minor: number) =>
+  `₱${(minor / 100).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`

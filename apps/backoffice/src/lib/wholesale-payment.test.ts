@@ -213,3 +213,24 @@ describe('payment response and saved-command recovery', () => {
     ).toThrow('does not match')
   })
 })
+
+describe('prepareWholesalePayment messages', () => {
+  it('says plainly when there is nothing to apply the payment to', () => {
+    const paid = { ...context, invoices: context.invoices.map((invoice) => ({ ...invoice, openBalanceMinor: 0 })) }
+    expect(() => prepareWholesalePayment(paid, customerId, methodId, '5991', '', {})).toThrow(
+      'This customer has no unpaid invoices, so there is nothing to apply this payment to.',
+    )
+  })
+
+  it('asks for allocations when the customer has unpaid invoices', () => {
+    expect(() => prepareWholesalePayment(context, customerId, methodId, '100', '', {})).toThrow(
+      'Under Allocate, enter how much of this payment goes to each invoice.',
+    )
+  })
+
+  it('explains a mismatch between the amount and the allocations', () => {
+    expect(() => prepareWholesalePayment(context, customerId, methodId, '100', '', { [invoiceId]: '60' })).toThrow(
+      'The allocations add up to ₱60.00, but the amount received is ₱100.00. They must match.',
+    )
+  })
+})
