@@ -381,13 +381,18 @@ function ParcelForm({
       <p className="text-sm font-semibold">Send part now</p>
       <ul className="flex flex-col gap-2">
         {lines.map((line) => (
-          <li key={line.salesOrderLineId} className="flex items-center justify-between gap-3 text-sm">
-            <span className="min-w-0">
-              {line.productName} {line.variantName}
-              <span className="block text-xs text-ink-500">{(line.remainingMilli ?? 0) / 1000} not sent yet</span>
+          <li
+            key={line.salesOrderLineId}
+            className="flex items-center justify-between gap-3 rounded-control border border-ink-900/10 bg-white px-3 py-2 text-sm"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-semibold">
+                {line.productName} · {line.variantName}
+              </span>
+              <span className="block text-xs text-ink-500">{(line.remainingMilli ?? 0) / 1000} pcs not sent yet</span>
             </span>
             <input
-              className={cn(control, 'w-20 flex-none text-right')}
+              className="min-h-10 w-20 flex-none rounded-control border border-ink-900/15 bg-white px-3 text-right text-sm outline-none focus:border-ink-900"
               inputMode="numeric"
               placeholder="0"
               aria-label={`Quantity of ${line.productName} ${line.variantName} in this parcel`}
